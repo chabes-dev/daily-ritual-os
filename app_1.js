@@ -22,6 +22,7 @@ const ZNOTE={
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left. Not the optimistic number.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
+  wad:'Yes or no — then straight into the dump.',
   w8:'Work is done. Before you close, point at one personal thing for today — so a week of work days does not quietly swallow it.',
   w7:'Copy it down. Then close this and go and do it.',
   p1:'Health, money, family, the future — one line each. Anything sitting in TickTick counts too.',
@@ -31,7 +32,8 @@ const ZNOTE={
   p5:'Copy it down. Then close this.'
 };
 const RITUALS={
-  work:[{id:'w1',name:'Music on, timer set'},{id:'w2',name:'Dump everything — work'},{id:'w3',name:'Clear email inbox to zero'},
+  work:[{id:'w1',name:'Music on, timer set'},{id:'wad',name:'Already had your ad breakfast?'},
+    {id:'w2',name:'Dump everything — work'},{id:'w3',name:'Clear email inbox to zero'},
     {id:'w4',name:'Sort the dump'},{id:'w5',name:'How much time is actually free?'},{id:'w6',name:'Pick today'},
     {id:'w8',name:'One personal thing, before you close'},{id:'w7',name:'Copy to paper and close this'}],
   personal:[{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
@@ -61,6 +63,8 @@ S.week=S.week||{iso:null,work:false,personal:false};
    shape keeps changing. It never touches the daily budget math. */
 S.workWeekHours=S.workWeekHours||{weekIso:null,hours:null};
 if(S.workWeekHours.weekIso!==isoWeek())S.workWeekHours={weekIso:isoWeek(),hours:null};
+S.adCheck=S.adCheck||{date:null,answer:null};
+if(S.adCheck.date!==today())S.adCheck={date:today(),answer:null};
 S.streak=S.streak||{date:null,work:{count:0,hitToday:false},personal:{count:0,hitToday:false}};
 if(S.streak.date!==today())S.streak={date:today(),
   work:{count:S.streak.work?S.streak.work.count:0,hitToday:false},
@@ -988,7 +992,7 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
+const ZKIND={wk:'week',w1:'plain',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
              p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal only needs this once a week (its whole cadence is weekly). Work runs it
@@ -1255,6 +1259,14 @@ function paintZen(isStepChange){
     mid=zPlanStrip(m,ppCell)||`<div class="zkept">Nothing picked yet.</div>`;
     cta='Copy to paper';
   }
+  else if(kind==='adcheck'){
+    const ans=S.adCheck.date===today()?S.adCheck.answer:null;
+    mid=`<div class="hrow">
+        <button class="hbtn ${ans===true?'on':''}" id="adyes">Yes</button>
+        <button class="hbtn ${ans===false?'on':''}" id="adno">No</button>
+      </div>`;
+    cta=ans===null?'Skip for now':'Next';
+  }
   else{ mid=''; cta='Done'; }
 
   document.getElementById('zdots').innerHTML=steps.map((x,k)=>`<i class="${k<ZI?'on':k===ZI?'now':''}"></i>`).join('');
@@ -1273,6 +1285,9 @@ function paintZen(isStepChange){
     :'⏎ or space for the next step';
 
   const zb=document.getElementById('zback');if(zb)zb.onclick=zenBack;
+  const ady=zmidEl.querySelector('#adyes'),adn=zmidEl.querySelector('#adno');
+  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();zenNext()};
+  if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:false};save();zenNext()};
   zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{S.workWeekHours={weekIso:isoWeek(),hours:+b2.dataset.wh};save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
@@ -1296,7 +1311,15 @@ function paintZen(isStepChange){
     setBucket(it,b2.dataset.zw);
     it.snoozeUntil=null;   /* pulling it into this week clears any stale snooze */
     if(it.bucket==='backlog')clearFromPlan(it.mode,it.id);
-    save();paintZen(false)});
+    save();
+    /* Same cap enforcement as daily sort — committing to more than the cap here is exactly
+       the "delusional about the week" case. Give the same bump-or-raise decision instead
+       of silently letting the number tick past what closeTheDay already flags red. */
+    if(it.bucket!=='backlog'&&!isParked(it)&&overCap(it.mode)){
+      overflowSheet(it,()=>paintZen(false));
+      return;
+    }
+    paintZen(false)});
 
   document.getElementById('zgo').onclick=()=>{
     if(kind==='sort'&&nRaw){openTriage();return}   /* stays inside the ritual */
@@ -1327,8 +1350,11 @@ function paintZen(isStepChange){
 }
 
 /* ===== sorting ===== */
-let TQ=[],TI=0,TOPEN=false,TSTEP=1,TCAT=null,TCARD='';
-function openTriage(){TQ=raw(S.ui.mode).map(i=>i.id);TI=0;TSTEP=1;TCAT=null;TCARD='';if(!TQ.length)return;
+let TQ=[],TI=0,TOPEN=false,TSTEP=1,TCAT=null,TCARD='',TQUICKSOFT=false;
+/* TQUICKSOFT is per-sort-session only, never persisted — hard mode (interrupt for every
+   ⚡ task) is the default every time the sorter opens; picking "batch these" below just
+   quiets it for the rest of this pass. */
+function openTriage(){TQ=raw(S.ui.mode).map(i=>i.id);TI=0;TSTEP=1;TCAT=null;TCARD='';TQUICKSOFT=false;if(!TQ.length)return;
   TOPEN=true;document.body.style.overflow='hidden';
   layer.innerHTML=`<div class="veil in"><div class="sheet triage"><div id="tin"></div></div></div>`;drawTriage()}
 function closeTriage(){TOPEN=false;TSTEP=1;TCAT=null;TCARD='';layer.innerHTML='';
@@ -1362,11 +1388,23 @@ function step2Html(i){
     <div class="tfoot"><span class="keys">1–4 to file · ← back · esc stop</span>
       <button class="btn" data-skip="1">Skip</button></div>`;
 }
+function quickHtml(i){
+  return `<div class="seg-label">60 seconds — right now?</div>
+    <div class="seg">
+      <button class="opt" data-qdone="1" style="color:${C.green}">
+        <span class="ic">✓</span><span class="lb"><b>Did it just now</b><span>Marks it done — skips the board entirely</span></span></button>
+      <button class="opt" data-qlater="1" style="color:${C.yellow}">
+        <span class="ic">⚡</span><span class="lb"><b>Do it later</b><span>Goes to Batch as normal</span></span></button>
+    </div>
+    <div class="tfoot"><span class="keys">1 done now · 2 later · 3 batch these</span>
+      <button class="btn" data-back="1">← back</button>
+      <button class="btn" data-qsoft="1">Not now — batch these for the rest of this sort</button></div>`;
+}
 function drawTriage(){
   if(TI>=TQ.length){closeTriage();toast('inbox clear');return}
   const i=S.items.find(x=>x.id===TQ[TI]);if(!i){TI++;return drawTriage()}
   const tin=document.getElementById('tin');if(!tin)return;
-  const html=TSTEP===1?step1Html(i):step2Html(i);
+  const html=TSTEP===1?step1Html(i):TSTEP===3?quickHtml(i):step2Html(i);
   const fresh=TCARD!==i.id||!document.getElementById('tbody');
   if(fresh){
     tin.innerHTML=`<div class="tin anim">
@@ -1383,17 +1421,36 @@ function drawTriage(){
     tb.classList.remove('stepin');void tb.offsetWidth;tb.classList.add('stepin');
   }
   const pr=document.getElementById('tprog');
-  if(pr)pr.textContent=`Sorting ${TI+1} of ${TQ.length} · step ${TSTEP} of 2`;
+  if(pr)pr.textContent=`Sorting ${TI+1} of ${TQ.length} · step ${Math.min(TSTEP,2)} of 2`;
   const tb=document.getElementById('tbody');
   if(TSTEP===1)tb.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>pickCat(b.dataset.sort));
+  else if(TSTEP===3){
+    tb.querySelector('[data-qdone]').onclick=()=>quickDoneNow(i);
+    tb.querySelector('[data-qlater]').onclick=()=>commitIt(i,'quick');
+    tb.querySelector('[data-qsoft]').onclick=()=>{TQUICKSOFT=true;commitIt(i,'quick')};
+    tb.querySelector('[data-back]').onclick=()=>{TSTEP=2;drawTriage()};
+  }
   else{
-    tb.querySelectorAll('[data-put]').forEach(b=>b.onclick=()=>commitIt(i,b.dataset.put));
+    tb.querySelectorAll('[data-put]').forEach(b=>b.onclick=()=>{
+      /* Hard mode (default each sort): tagging something ⚡ interrupts right here instead
+         of letting it quietly join Batch — the whole point of a sub-60s task is that
+         "later" is more expensive than "now". "Not now — batch these" softens it for the
+         rest of this sort only; it resets to hard the next time the sorter opens. */
+      if(b.dataset.put==='quick'&&!TQUICKSOFT){TSTEP=3;drawTriage();return}
+      commitIt(i,b.dataset.put)});
     tb.querySelector('[data-back]').onclick=()=>{TSTEP=1;TCAT=null;drawTriage()};
   }
   const sk=tb.querySelector('[data-skip]');
   if(sk)sk.onclick=()=>{TI++;TSTEP=1;TCAT=null;drawTriage()};
 }
 function pickCat(v){TCAT=v;TSTEP=2;drawTriage()}
+function quickDoneNow(i){
+  i[GKEY[i.mode]]=TCAT;i.sorted=true;i.ord=maxOrd()+100;i.star=false;i.quick=true;
+  setBucket(i,'board');i.done=true;i.doneAt=Date.now();
+  save();TI++;TSTEP=1;TCAT=null;
+  toastUndo('done — cleared instantly',()=>{i.done=false;delete i.doneAt;save();render()});
+  drawTriage();
+}
 function commitIt(i,put){
   i[GKEY[i.mode]]=TCAT;i.sorted=true;i.ord=maxOrd()+100;
   i.star=put==='star';i.quick=put==='quick';setBucket(i,put==='later'?'backlog':'board');
@@ -1420,6 +1477,7 @@ function checkDay(){
   if(S.ritual.personalWeekIso!==isoWeek()){S.ritual.personalWeekIso=isoWeek();S.ritual.personal=[]}
   personalPlan();  /* rolls S.personal.plan over if the week has turned */
   if(S.workWeekHours.weekIso!==isoWeek())S.workWeekHours={weekIso:isoWeek(),hours:null};
+  if(S.adCheck.date!==DAY)S.adCheck={date:DAY,answer:null};
   if(S.personal.todayPick&&S.personal.todayPick.date!==DAY)S.personal.todayPick=null;
   const moved=migrateStaleBacklog();
   save();render();toast('new day — ritual reset');
@@ -1448,10 +1506,22 @@ document.addEventListener('keydown',e=>{
       if(e.key==='ArrowRight'){e.preventDefault();TI++;drawTriage()}
       return;
     }
+    if(TSTEP===3){
+      if(e.key==='ArrowLeft'){e.preventDefault();TSTEP=2;drawTriage();return}
+      if(typing)return;
+      if(e.key==='1'){e.preventDefault();quickDoneNow(i);return}
+      if(e.key==='2'){e.preventDefault();commitIt(i,'quick');return}
+      if(e.key==='3'){e.preventDefault();TQUICKSOFT=true;commitIt(i,'quick');return}
+      return;
+    }
     if(e.key==='ArrowLeft'){e.preventDefault();TSTEP=1;TCAT=null;drawTriage();return}
     if(typing)return;
     const map={'1':'star','2':'quick','3':'plain','4':'later'};
-    if(map[e.key]){e.preventDefault();commitIt(i,map[e.key])}
+    if(map[e.key]){
+      e.preventDefault();
+      if(map[e.key]==='quick'&&!TQUICKSOFT){TSTEP=3;drawTriage();return}
+      commitIt(i,map[e.key]);
+    }
     return;
   }
   const t=e.target;
