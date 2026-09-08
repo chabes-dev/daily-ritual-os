@@ -16,6 +16,7 @@ const GKEY={work:'lane',personal:'domain'};
 const PARKED={work:['hold','ideas'],personal:['wish']};
 const isParked=i=>(PARKED[i.mode]||[]).includes(i[GKEY[i.mode]]);
 const ZNOTE={
+  p0:'Not chores. Not tasks. Playing with the kids, cooking something good, calling your parents — the things that make a week actually good, not just handled.',
   w1:'Put the music on. Set the timer. Nothing starts until this does.',
   w2:'Everything in your head, one line each. No order, no judgement.',
   w3:'Read, act, archive. Anything over 60 seconds becomes a task.',
@@ -36,7 +37,7 @@ const RITUALS={
     {id:'w2',name:'Dump everything — work'},{id:'w3',name:'Clear email inbox to zero'},
     {id:'w4',name:'Sort the dump'},{id:'w5',name:'How much time is actually free?'},{id:'w6',name:'Pick today'},
     {id:'w8',name:'One personal thing, before you close'},{id:'w7',name:'Copy to paper and close this'}],
-  personal:[{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
+  personal:[{id:'p0',name:'What would make this week good for them?'},{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
     {id:'p4',name:'Pick this week'},
     {id:'p5',name:'Copy to paper and close this'}]};
 const VERBS=('call email write send book schedule buy pay file review read draft finish start fix ask reply confirm cancel renew sign submit upload download print scan check order collect pick drop take bring return update reserve register apply request find search compare choose decide plan prep prepare build make create edit revise cut record shoot design map outline talk speak meet visit go move clean sort organize backup export import install set setup test measure watch train close open add remove delete assign share draw list get put run rewrite pitch present brief align follow chase ligar escrever enviar comprar pagar marcar agendar renovar assinar reservar levar buscar terminar comecar organizar resolver ler revisar').split(' ');
@@ -85,8 +86,9 @@ if(S.plan.date!==today()){S.plan.date=today();S.plan.work=emptyPlan()}
    todayPick is the one personal thing surfaced by the work ritual's closing step, so it
    doesn't get forgotten during a week of work days — it clears every day like the rest
    of "today" does, independent of the weekly plan underneath it. */
-S.personal=S.personal||{deepCap:1,batchCap:5,weekIso:null,plan:{deep:[],batch:[],buffer:[],next:[]},todayPick:null,happyPick:null};
-if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null}
+S.personal=S.personal||{deepCap:1,batchCap:5,weekIso:null,plan:{deep:[],batch:[],buffer:[],next:[]},todayPick:null,happyPick:null,anchors:[],anchorPick:null};
+S.personal.anchors=S.personal.anchors||[];
+if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null;S.personal.anchorPick=null}
 if(S.personal.todayPick&&S.personal.todayPick.date!==today())S.personal.todayPick=null;
 delete S.pick;
 let healed=0;
@@ -215,11 +217,12 @@ function styleFor(i){const t=cardTint(i);return `--cc:${cardColor(i)}`+(t?`;--ti
    instead of a single slot, since "1-2 deep things a week" is the whole point of the
    personal restructure. Batch/buffer/next work the same as they always have. */
 function personalPlan(){
-  if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null}
+  if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null;S.personal.anchorPick=null}
   const p=S.personal.plan;
   p.deep=(p.deep||[]).filter(byId);p.batch=(p.batch||[]).filter(byId);
   p.buffer=(p.buffer||[]).filter(byId);p.next=(p.next||[]).filter(byId);
   if(S.personal.happyPick&&!byId(S.personal.happyPick))S.personal.happyPick=null;  /* done/deleted */
+  if(S.personal.anchorPick&&!(S.personal.anchors||[]).some(a=>a.id===S.personal.anchorPick))S.personal.anchorPick=null;
   return p;
 }
 function personalCaps(){return {deep:S.personal.deepCap,batch:S.personal.batchCap,buffer:BUFFER_SLOTS,next:2}}
@@ -852,9 +855,22 @@ function viewWeekThis(){
     ${(()=>{const hp=S.personal.happyPick?byId(S.personal.happyPick):null;
       return hp?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(hp.text)}
         <em><button class="act" data-done="${hp.id}" style="padding:0;color:#B06000">✓ mark done</button></em></div>`:'';})()}
+    ${(()=>{const ap=(S.personal.anchors||[]).find(a=>a.id===S.personal.anchorPick);
+      return ap?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(ap.text)}</div>`:'';})()}
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy this week → paper</button>
   </div>
+
+  ${(()=>{const anchors=S.personal.anchors||[];if(!anchors.length)return '';
+    return `<div class="rest" style="padding-top:0;border-top:none;margin-top:0">
+      <h3>What a good week looks like</h3>
+      ${anchors.map(a=>`<div class="mini" style="cursor:default">
+        <span class="d" style="background:#F9AB00"></span>
+        <span class="t">${esc(a.text)}</span>
+        <span class="floatbar"><button class="act" data-anchorpick="${a.id}"
+          ${S.personal.anchorPick===a.id?'style="color:#B06000;background:#FEF7E0"':''}>${S.personal.anchorPick===a.id?'💛 today':'pick for today'}</button></span>
+      </div>`).join('')}
+    </div>`;})()}
 
   <div class="planhead"><h2>This week</h2>
     <span>${caps.deep} deep max · ${caps.batch} batch · ${caps.buffer} buffer · ${caps.next} spare</span></div>
@@ -993,7 +1009,7 @@ function drawKeys(){
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
 const ZKIND={wk:'week',w1:'plain',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
-             p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
+             p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal only needs this once a week (its whole cadence is weekly). Work runs it
    every single ritual — the week's shape changes day to day, and this is the manual
@@ -1259,6 +1275,17 @@ function paintZen(isStepChange){
     mid=zPlanStrip(m,ppCell)||`<div class="zkept">Nothing picked yet.</div>`;
     cta='Copy to paper';
   }
+  else if(kind==='anchors'){
+    const anchors=S.personal.anchors||[];
+    mid=`<div class="dsec">
+      ${anchors.map(a=>`<div class="stepline">
+        <input class="sinput" data-aedit="${a.id}" value="${esc(a.text)}" />
+        <button class="act del" data-adel="${a.id}">×</button></div>`).join('')}
+      ${anchors.length<5?`<input class="snew" id="anew" placeholder="Play with Léo, cook something good, call your parents — press ⏎" />`
+        :`<div class="zkept">Five is plenty — delete one above to add another.</div>`}
+    </div>`;
+    cta=anchors.length?'That is the week':'Skip for now';
+  }
   else if(kind==='adcheck'){
     const ans=S.adCheck.date===today()?S.adCheck.answer:null;
     mid=`<div class="hrow">
@@ -1285,6 +1312,20 @@ function paintZen(isStepChange){
     :'⏎ or space for the next step';
 
   const zb=document.getElementById('zback');if(zb)zb.onclick=zenBack;
+  zmidEl.querySelectorAll('[data-aedit]').forEach(el=>{
+    el.oninput=()=>{const a=(S.personal.anchors||[]).find(x=>x.id===el.dataset.aedit);
+      if(a){a.text=el.value;save()}};
+  });
+  zmidEl.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{
+    S.personal.anchors=(S.personal.anchors||[]).filter(x=>x.id!==b.dataset.adel);
+    if(S.personal.anchorPick===b.dataset.adel)S.personal.anchorPick=null;
+    save();paintZen(false)});
+  const anew=zmidEl.querySelector('#anew');
+  if(anew)anew.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
+    const v=anew.value.trim();if(!v)return;
+    S.personal.anchors=S.personal.anchors||[];
+    if(S.personal.anchors.length>=5)return;
+    S.personal.anchors.push({id:nid(),text:v});save();paintZen(false)}};
   const ady=zmidEl.querySelector('#adyes'),adn=zmidEl.querySelector('#adno');
   if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();zenNext()};
   if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:false};save();zenNext()};
@@ -1593,6 +1634,9 @@ function wire(){
     save();render();toast(i.bucket==='backlog'?'moved to backlog':'on the board')});
   app.querySelectorAll('[data-fq]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.fq);if(i){i.quick=!i.quick;if(i.quick)i.star=false;save();render()}});
+  app.querySelectorAll('[data-anchorpick]').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const id=b.dataset.anchorpick;
+    S.personal.anchorPick=S.personal.anchorPick===id?null:id;save();render()});
   app.querySelectorAll('[data-fs]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.fs);if(i){i.star=!i.star;if(i.star)i.quick=false;save();render()}});
   app.querySelectorAll('[data-date]').forEach(b=>b.onclick=e=>{e.stopPropagation();
