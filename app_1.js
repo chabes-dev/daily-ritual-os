@@ -1,6 +1,6 @@
 "use strict";
 const KEY='os_v3';
-const APPVER='v11';
+const APPVER='v12';
 let STORE_OK=true;
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){STORE_OK=false;return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}}
@@ -18,6 +18,7 @@ const isParked=i=>(PARKED[i.mode]||[]).includes(i[GKEY[i.mode]]);
 const ZNOTE={
   p0:'Not chores. Not tasks. Playing with the kids, cooking something good, calling your parents — the things that make a week actually good, not just handled.',
   w1:'Put the music on. Set the timer. Nothing starts until this does.',
+  wj:'However it is actually going. No structure needed — just get it out before the operating starts.',
   w2:'Everything in your head, one line each. No order, no judgement.',
   w3:'Read, act, archive. Anything over 60 seconds becomes a task.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
@@ -33,7 +34,7 @@ const ZNOTE={
   p5:'Copy it down. Then close this.'
 };
 const RITUALS={
-  work:[{id:'w1',name:'Music on, timer set'},{id:'wad',name:'Already had your ad breakfast?'},
+  work:[{id:'w1',name:'Music on, timer set'},{id:'wj',name:'Morning pages'},{id:'wad',name:'Already had your ad breakfast?'},
     {id:'w2',name:'Dump everything — work'},{id:'w3',name:'Clear email inbox to zero'},
     {id:'w4',name:'Sort the dump'},{id:'w5',name:'How much time is actually free?'},{id:'w6',name:'Pick today'},
     {id:'w8',name:'One personal thing, before you close'},{id:'w7',name:'Copy to paper and close this'}],
@@ -53,8 +54,11 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
   ui:{mode:'work',workView:'today',personalView:'today',keys:false,open:{}},lastBackup:null};
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
-if(!['today','board','backlog'].includes(S.ui.workView))S.ui.workView='today';
-if(!['today','board','backlog'].includes(S.ui.personalView))S.ui.personalView='today';
+if(!['today','board','backlog','fire'].includes(S.ui.workView))S.ui.workView='today';
+if(!['today','board','backlog','fire','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
+S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};
+S.north=S.north||'';
+S.extLink=S.extLink||null;
 S.cap=Object.assign({work:12,personal:8},S.cap||{});
 S.hours=S.hours||{date:null,work:null,personal:null};
 S.week=S.week||{iso:null,work:false,personal:false};
@@ -132,6 +136,7 @@ const filed=m=>mine(m).filter(i=>i.sorted);
 const onBoard=m=>filed(m).filter(i=>i.bucket!=='backlog');
 const inBacklog=m=>filed(m).filter(i=>i.bucket==='backlog');
 const load_=m=>onBoard(m).filter(i=>!isParked(i)).length;
+const quickPool=m=>onBoard(m).filter(i=>i.quick&&!isParked(i)).sort(byOrd);
 const capOf=m=>S.cap[m]||0;
 const overCap=m=>load_(m)>capOf(m);
 /* A week has a shape: it starts intact and erodes. The survival rate now tapers across
@@ -296,7 +301,7 @@ function noRoomSheet(m,slot){
     <div class="sheet-acts"><button class="btn" id="fix">Change my hours</button>
       <span style="flex:1"></span><button class="btn btn-hot" id="ok">Fair enough</button></div>`,
   el=>{el.querySelector('#ok').onclick=()=>{closeSheet();if(ZEN)paintZen(false);else render()};
-    el.querySelector('#fix').onclick=()=>{closeSheet();if(ZEN){ZI=zSteps(m).findIndex(x=>ZKIND[x.id]==='hours');paintZen(true)}else hoursSheet()}});
+    el.querySelector('#fix').onclick=()=>{closeSheet();if(ZEN){ZI=ZSTEPS.findIndex(x=>ZKIND[x.id]==='hours');paintZen(true)}else hoursSheet()}});
 }
 function suggestDeep(m){
   const pool=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id));
@@ -409,19 +414,6 @@ function finish(id,el){
   i.done=true;i.doneAt=Date.now();clearFromPlan(i.mode,id);save();render();
   toastUndo('done',()=>{i.done=false;delete i.doneAt;save();render()});
 }
-function flyIn(text,src){
-  const target=document.querySelector('.nav .n.target');if(!target||!src)return;
-  const a=src.getBoundingClientRect(),b=target.getBoundingClientRect();
-  const g=document.createElement('div');g.className='ghost';g.textContent=text.split('\n')[0].slice(0,54);
-  g.style.cssText+=`left:${a.left}px;top:${a.top+22}px;max-width:${Math.min(a.width,760)}px;font-size:34px`;
-  document.body.appendChild(g);
-  const dx=b.left-a.left,dy=b.top-(a.top+22);
-  g.animate([{transform:'translate(0,0) scale(1)',opacity:1},
-    {transform:`translate(${dx*.35}px,${dy*.55}px) scale(.55)`,opacity:.85,offset:.55},
-    {transform:`translate(${dx}px,${dy}px) scale(.12)`,opacity:0}],
-    {duration:640,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>{g.remove();
-      const n=document.querySelector('.nav .n.target');if(n){n.classList.remove('pulse');void n.offsetWidth;n.classList.add('pulse')}};
-}
 function exportBackup(silent){
   const payload=JSON.stringify(S,null,2);
   const b=new Blob([payload],{type:'application/json'});
@@ -460,6 +452,11 @@ function importBackup(){
   f.click();
 }
 const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
+function openExternalWrite(){
+  if(S.extLink){window.open(S.extLink,'_blank');return}
+  sheetPrompt('Where do you write?','Paste the link to whatever you use — remembered from now on.','https://…',v=>{
+    S.extLink=v;save();window.open(v,'_blank')});
+}
 
 /* ===== dialogs ===== */
 const mlayer=document.getElementById('mlayer');
@@ -713,8 +710,11 @@ function render(){
   document.body.dataset.mode=m;
   const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
-  const body=v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog'):viewCols('board');
-  const tabs=[['today',m==='personal'?'This week':'Today',''],['board','Board',onBoard(m).length],['backlog','Backlog',inBacklog(m).length]];
+  const body=v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
+    :v==='board'?viewCols('board'):v==='fire'?viewFire():v==='journal'?viewJournal():v==='north'?viewNorth()
+    :(m==='personal'?viewWeekThis():viewToday());
+  const tabs=[['today',m==='personal'?'This week':'Today',''],['board','Board',onBoard(m).length],['backlog','Backlog',inBacklog(m).length],['fire','Fire',quickPool(m).length]];
+  if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -727,10 +727,6 @@ function render(){
     ${!STORE_OK?`<div class="alarm"><b>This copy can't save.</b> Storage is blocked here. Download the file and open it from your own machine.</div>`:''}
     ${healed?`<div class="alarm">${healed} item${healed===1?'':'s'} were filed under a category that no longer exists. They're back in the sort queue.</div>`:''}
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
-    <div class="dump" id="dumpbox">
-      <textarea id="cap" rows="1" placeholder="Dump it. Start with a verb."></textarea>
-      <div class="dump-key">⏎ keep · ⇧⏎ new line</div>
-    </div>
     <div class="nav">
       ${tabs.map(([k,l,n])=>`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n ${k==='board'?'target':''}">${n}</span>`:''}</button>`).join('')}
       <span class="spacer"></span>
@@ -781,6 +777,7 @@ function viewToday(){
     ${(()=>{const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
       return pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E)">Personal: ${esc(pp.text)}
         <em><button class="act" data-done="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:'';})()}
+    <button class="db-chip" id="extwrite" title="Opens your journaling tool in a new tab">Write about it now ↗</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy today → paper</button>
     <button class="btn" id="resetday" title="Untick the ritual and clear today’s picks">↻</button>
@@ -857,6 +854,7 @@ function viewWeekThis(){
         <em><button class="act" data-done="${hp.id}" style="padding:0;color:#B06000">✓ mark done</button></em></div>`:'';})()}
     ${(()=>{const ap=(S.personal.anchors||[]).find(a=>a.id===S.personal.anchorPick);
       return ap?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(ap.text)}</div>`:'';})()}
+    <button class="db-chip" id="extwrite" title="Opens your journaling tool in a new tab">Write about it now ↗</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy this week → paper</button>
   </div>
@@ -995,8 +993,68 @@ function viewCols(bucket){
         :`<button class="addbtn" data-addto="${bucket}:${d.id}">＋ Add</button>`}
     </div>`}).join('')}</div>`;
 }
+
+/* ---- fire (quick, sub-60s tasks — one at a time, no ceremony) ---- */
+function viewFire(){
+  const m=S.ui.mode,pool=quickPool(m);
+  if(!pool.length){
+    return `<div class="empty"><h3>Nothing quick queued.</h3>
+      <p>Tag something ⚡ Quick from its detail panel and it lands here — one at a time, done and gone, no sorting ceremony.</p></div>`;
+  }
+  const i=pool[0],g=groupOf(i);
+  return `
+  <div class="planhead"><h2>Fire</h2><span>${pool.length} quick task${pool.length===1?'':'s'} queued</span></div>
+  <div class="deep" data-id="${i.id}" style="${styleFor(i)}">
+    <span class="wash"></span>
+    <div class="deep-t">${esc(i.text)}</div>
+    <svg class="strike" viewBox="0 0 200 26" preserveAspectRatio="none"><path d="M2,15 C46,9 78,20 118,13 C150,8 172,18 198,11"/></svg>
+    <span class="seal">✓</span>
+    <div class="meta">
+      ${g?`<span class="dot" style="color:${g.color}"><b></b>${g.name}</span>`:''}
+      <span class="tag pill" style="background:${C.yellow};color:#202124">⚡ under 60s</span>
+    </div>
+    <div class="acts">
+      <button class="btn btn-hot" data-done="${i.id}">Done · next</button>
+      <button class="btn" data-fireskip="${i.id}">Skip for now</button>
+      <button class="btn" data-open2="${i.id}">Edit</button>
+    </div>
+  </div>
+  ${pool.length>1?`<div class="slotlabel">Queued after this — ${pool.length-1}</div>
+  <div class="restgrid"><div class="restgroup">${pool.slice(1,8).map(mini).join('')}</div></div>`:''}`;
+}
+
+/* ---- journal (daily morning pages — triggered from the work ritual, which runs
+   daily; personal's own ritual runs weekly, so it's the wrong cadence to hang this off) ---- */
+function viewJournal(){
+  const d=today();
+  const entries=Object.entries(S.journal.personal).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
+  return `
+  <div class="planhead"><h2>Journal</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span></div>
+  <div class="dsec" style="margin-bottom:34px">
+    <div class="seg-label" style="margin:0 0 10px">Today</div>
+    <div class="zdump" style="border-bottom:3px solid var(--line)">
+      <textarea id="jtoday" rows="5" placeholder="However it's actually going. No structure needed.">${esc(S.journal.personal[d]||'')}</textarea>
+    </div>
+  </div>
+  <div class="seg-label" style="margin:0 0 14px">Past entries</div>
+  ${entries.length?entries.map(([dt,txt])=>`
+    <div class="restgroup" style="margin-bottom:26px;max-width:70ch">
+      <h4 style="color:var(--ink-3)"><span>${new Date(dt+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})}</span></h4>
+      <div style="font-family:var(--serif);font-size:19px;font-weight:300;line-height:1.55;white-space:pre-wrap">${esc(txt)}</div>
+    </div>`).join(''):`<div class="col-empty">Nothing yet — it fills in one morning at a time.</div>`}`;
+}
+
+/* ---- north star (goals / mission / how you're doing) ---- */
+function viewNorth(){
+  return `
+  <div class="planhead"><h2>North Star</h2><span>goals · mission · how you're doing</span></div>
+  <div class="zdump" style="border-bottom:3px solid var(--line)">
+    <textarea id="northtext" rows="12" placeholder="What are you actually building toward? Come back here whenever the tasks start feeling untethered from a reason.">${esc(S.north)}</textarea>
+  </div>
+  <div class="db-chip flat" style="display:inline-flex">autosaves as you type</div>`;
+}
 function drawKeys(){
-  const rows=[['Anywhere',[['⇥ Tab','switch mode'],['1 / 2','work / personal'],['/','jump to dump'],['t','sort raw items']]],
+  const rows=[['Anywhere',[['⇥ Tab','switch mode'],['1 / 2','work / personal'],['t','sort raw items'],['q','jump to Fire — quick tasks']]],
     ['Sorting · step 1',[['1–6','choose the category'],['→','skip'],['esc','stop']]],
     ['Sorting · step 2',[['1','★ deep — this week'],['2','⚡ quick — this week'],['3','• normal — this week'],['4','⌛ later — backlog'],['←','back']]],
     ['Ritual',[['▶ Begin','full-screen, one step at a time'],['⏎ / space','next step'],['esc','leave, keeps your place']]],
@@ -1008,7 +1066,7 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
+const ZKIND={wk:'week',w1:'plain',wj:'journal',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
              p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal only needs this once a week (its whole cadence is weekly). Work runs it
@@ -1024,7 +1082,7 @@ function zSteps(m){
   const at=sortIdx>=0?sortIdx+1:0;
   return [...base.slice(0,at),WEEKSTEP,...base.slice(at)];
 }
-let ZEN=false,ZI=0,ZT0=0,ZTICK=null,ZJUST=[];
+let ZEN=false,ZI=0,ZT0=0,ZTICK=null,ZJUST=[],ZSTEPS=[];
 const zlayer=(()=>{const d=document.createElement('div');document.body.appendChild(d);return d})();
 
 function carryOver(m){
@@ -1051,8 +1109,13 @@ function buildZenShell(){
 }
 function startZen(){
   ZEN=true;ZT0=Date.now();document.body.style.overflow='hidden';
-  const steps=RITUALS[S.ui.mode],done=S.ritual[S.ui.mode]||[];
-  const first=steps.findIndex(x=>!done.includes(x.id));ZI=first<0?0:first;
+  /* freeze the step list for this whole ritual run — zSteps(m) changes length the
+     instant the wk step completes (S.week[m] flips), which otherwise shifts every
+     later index by one and silently skips the step right after it (confirmed: it
+     was eating "Pick this week" on personal's weekly-gated wk step every time). */
+  ZSTEPS=zSteps(S.ui.mode);
+  const done=S.ritual[S.ui.mode]||[];
+  const first=ZSTEPS.findIndex(x=>!done.includes(x.id));ZI=first<0?0:first;
   buildZenShell();
   ZTICK=setInterval(()=>{const el=document.getElementById('zclock');
     if(el){const s=Math.floor((Date.now()-ZT0)/1000);
@@ -1061,11 +1124,11 @@ function startZen(){
 }
 function endZen(){ZEN=false;clearInterval(ZTICK);zlayer.innerHTML='';document.body.style.overflow='';render()}
 function zenNext(){
-  const m=S.ui.mode,steps=zSteps(m),st=steps[ZI];
+  const m=S.ui.mode,st=ZSTEPS[ZI];
   if(st&&st.id==='wk'){S.week.iso=isoWeek();S.week[m]=true}
   if(st&&!(S.ritual[m]||[]).includes(st.id))S.ritual[m]=[...(S.ritual[m]||[]),st.id];
   save();
-  if(ZI>=steps.length-1){endZen();closeTheDay();return}
+  if(ZI>=ZSTEPS.length-1){endZen();closeTheDay();return}
   ZI++;paintZen(true);
 }
 function zenBack(){if(ZI>0){ZI--;paintZen(true)}}
@@ -1108,7 +1171,7 @@ function zPlanStrip(m,extra){
    remove / done / backlog / hours pick) — this is what stops those interactions from
    blinking, since #zen itself is never destroyed and rebuilt anymore. */
 function paintZen(isStepChange){
-  const m=S.ui.mode,steps=zSteps(m),st=steps[ZI],kind=ZKIND[st.id]||'plain';
+  const m=S.ui.mode,steps=ZSTEPS,st=steps[ZI],kind=ZKIND[st.id]||'plain';
   const nRaw=raw(m).length;
   let mid='',cta='Done',dispName=st.name,dispNote=ZNOTE[st.id]||'';
 
@@ -1130,12 +1193,19 @@ function paintZen(isStepChange){
       </div>`:''}`;
     cta='Done dumping';
   }
+  else if(kind==='journal'){
+    const d=today(),val=S.journal.personal[d]||'';
+    mid=`<div class="zdump"><textarea id="zjournal" rows="5" placeholder="However it's actually going. No structure needed.">${esc(val)}</textarea></div>
+      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Journal tab in Personal.</div>`;
+    cta='Done writing';
+  }
   else if(kind==='week'){
     const cap=capOf(m),now=load_(m);
     if(m==='work'){
       dispName=`${st.name} — adjust as needed`;
       dispNote=`If nothing's changed since yesterday, skim and move on. If it has, shift things in or out, snooze, or clear them here — before Pick Today filters down to just today.`;
     }
+    const capOpts=m==='work'?[8,10,12,15,20]:[4,6,8,10,12];
     const pool=filed(m).filter(i=>!isParked(i))
       .sort((x,y)=>{
         const gx=x.bucket==='backlog'?(x.snoozeUntil&&x.snoozeUntil>today()?2:1):0;
@@ -1143,7 +1213,9 @@ function paintZen(isStepChange){
         if(gx!==gy)return gx-gy;
         const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
         if(dx!==dy)return dx-dy;return (x.created||0)-(y.created||0)});
-    mid=`<div class="zkept ${now>cap?'warn':''}">${now} chosen for this week · your cap is ${cap}${now>cap?' · over':''}</div>
+    mid=`${m==='personal'?`<div class="seg-label" style="margin:0 0 10px">How many can you actually get through this week?</div>
+      <div class="hrow">${capOpts.map(v=>`<button class="hbtn ${v===cap?'on':''}" data-wkcap="${v}">${v}</button>`).join('')}</div>`:''}
+      <div class="zkept ${now>cap?'warn':''}">${now} chosen for this week · your cap is ${cap}${now>cap?' · over':''}</div>
       ${pool.length?`<div class="zpick">${pool.map(i=>{
         const on=i.bucket!=='backlog';
         const ready=i.snoozeUntil&&i.snoozeUntil<=today();
@@ -1309,6 +1381,7 @@ function paintZen(isStepChange){
   document.getElementById('zhint').textContent=kind==='dump'?'⏎ keeps a line · then press Done dumping'
     :kind==='pick'||kind==='pickweek'?'tap Deep · Batch · Spare — or ⌛ backlog / ✓ already done'
     :kind==='pnudge'?'pick one thing, or skip — it is just for today'
+    :kind==='journal'?'write as much or as little as you want · then press Done writing'
     :'⏎ or space for the next step';
 
   const zb=document.getElementById('zback');if(zb)zb.onclick=zenBack;
@@ -1330,11 +1403,14 @@ function paintZen(isStepChange){
   if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();zenNext()};
   if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:false};save();zenNext()};
   zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
+  zmidEl.querySelectorAll('[data-wkcap]').forEach(b2=>b2.onclick=()=>{S.cap[m]=+b2.dataset.wkcap;save();paintZen(false)});
+  const zj=zmidEl.querySelector('#zjournal');
+  if(zj){autosize(zj);zj.addEventListener('input',()=>{autosize(zj);S.journal.personal[today()]=zj.value;save()})}
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{S.workWeekHours={weekIso:isoWeek(),hours:+b2.dataset.wh};save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
     if(b2.disabled)return;zenAssign(b2.dataset.zs,b2.dataset.zid)});
   const zsh=zmidEl.querySelector('#zsethours');
-  if(zsh)zsh.onclick=()=>{ZI=zSteps(m).findIndex(x=>ZKIND[x.id]==='hours');paintZen(true)};
+  if(zsh)zsh.onclick=()=>{ZI=ZSTEPS.findIndex(x=>ZKIND[x.id]==='hours');paintZen(true)};
   const zpc=zmidEl.querySelector('#zpcaps');
   if(zpc)zpc.onclick=()=>personalCapSheet();
   zmidEl.querySelectorAll('[data-ppick]').forEach(b2=>b2.onclick=()=>{
@@ -1572,21 +1648,20 @@ document.addEventListener('keydown',e=>{
   if(t.tagName==='TEXTAREA'||t.tagName==='INPUT'||t.isContentEditable)return;
   if(e.key==='1'){S.ui.mode='work';save();render()}
   if(e.key==='2'){S.ui.mode='personal';save();render()}
-  if(e.key==='/'){e.preventDefault();const c=document.getElementById('cap');if(c)c.focus()}
   if(e.key==='t'&&raw(S.ui.mode).length)openTriage();
+  if(e.key==='q'){if(S.ui.mode==='work')S.ui.workView='fire';else S.ui.personalView='fire';save();render()}
 });
 
 /* ===== wiring ===== */
 function wire(){
   const m=S.ui.mode;
-  const cap=document.getElementById('cap');
-  if(cap){autosize(cap);cap.addEventListener('input',()=>autosize(cap));
-    cap.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){
-      e.preventDefault();const v=cap.value.trim();if(!v)return;
-      const made=add(v,m);flyIn(v,document.getElementById('dumpbox'));
-      document.getElementById('dumpbox').classList.add('flash');cap.value='';autosize(cap);
-      setTimeout(()=>{render();const c=document.getElementById('cap');if(c)c.focus()},280);
-      toast(made.length>1?made.length+' kept':'kept')}})}
+  const jt=document.getElementById('jtoday');
+  if(jt){autosize(jt);jt.addEventListener('input',()=>{autosize(jt);S.journal.personal[today()]=jt.value;save()})}
+  const nt=document.getElementById('northtext');
+  if(nt){autosize(nt);nt.addEventListener('input',()=>{autosize(nt);S.north=nt.value;save()})}
+  app.querySelectorAll('[data-fireskip]').forEach(b=>b.onclick=()=>{
+    const it=byId(b.dataset.fireskip);if(!it)return;it.ord=maxOrd()+100;save();render()});
+  const ew=document.getElementById('extwrite');if(ew)ew.onclick=openExternalWrite;
   const comp=document.getElementById('comp');
   if(comp){autosize(comp);comp.focus();comp.addEventListener('input',()=>autosize(comp));
     comp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){
