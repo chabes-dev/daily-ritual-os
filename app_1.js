@@ -944,7 +944,7 @@ function deepCard(i){
 }
 function slotCard(i,slot){
   const g=groupOf(i);
-  return `<div class="slot ${slot==='next'?'next':''}" draggable="true" data-id="${i.id}" style="${styleFor(i)}">
+  return `<div class="slot ${slot==='next'?'next':slot==='buffer'?'buffer':''}" draggable="true" data-id="${i.id}" style="${styleFor(i)}">
     <span class="wash"></span>
     <svg class="strike" viewBox="0 0 200 26" preserveAspectRatio="none"><path d="M2,15 C46,9 78,20 118,13 C150,8 172,18 198,11"/></svg>
     <span class="seal">✓</span>
