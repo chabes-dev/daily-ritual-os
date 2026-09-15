@@ -1,6 +1,6 @@
 "use strict";
 const KEY='os_v3';
-const APPVER='v12';
+const APPVER='v13';
 let STORE_OK=true;
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){STORE_OK=false;return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}}
@@ -18,7 +18,7 @@ const isParked=i=>(PARKED[i.mode]||[]).includes(i[GKEY[i.mode]]);
 const ZNOTE={
   p0:'Not chores. Not tasks. Playing with the kids, cooking something good, calling your parents — the things that make a week actually good, not just handled.',
   w1:'Put the music on. Set the timer. Nothing starts until this does.',
-  wj:'However it is actually going. No structure needed — just get it out before the operating starts.',
+  wj:'However it is actually going. No structure needed — just get it out before the operating starts. Once a week, give it a title — this week\'s focus — and it stays visible while you work.',
   w2:'Everything in your head, one line each. No order, no judgement.',
   w3:'Read, act, archive. Anything over 60 seconds becomes a task.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
@@ -54,9 +54,17 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
   ui:{mode:'work',workView:'today',personalView:'today',keys:false,open:{}},lastBackup:null};
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
-if(!['today','board','backlog','fire'].includes(S.ui.workView))S.ui.workView='today';
+if(!['today','board','backlog','fire','journal'].includes(S.ui.workView))S.ui.workView='today';
 if(!['today','board','backlog','fire','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
-S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};
+/* work and personal used to share one journal store keyed only by date — morning pages
+   (work, daily) and the personal journal were silently overwriting each other. Split into
+   per-mode stores; entries also gained an optional title (the week's focus), so migrate
+   old plain-string entries into {text,title} shape. Historical entries from before this
+   split can't be un-mixed — whichever mode was edited last on a given date is what survived. */
+S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};S.journal.work=S.journal.work||{};
+[S.journal.personal,S.journal.work].forEach(store=>{
+  Object.keys(store).forEach(d=>{if(typeof store[d]==='string')store[d]={text:store[d],title:''}});
+});
 S.north=S.north||'';
 S.extLink=S.extLink||null;
 S.cap=Object.assign({work:12,personal:8},S.cap||{});
@@ -711,10 +719,11 @@ function render(){
   const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
   const body=v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
-    :v==='board'?viewCols('board'):v==='fire'?viewFire():v==='journal'?viewJournal():v==='north'?viewNorth()
+    :v==='board'?viewCols('board'):v==='fire'?viewFire():v==='journal'?viewJournal(m):v==='north'?viewNorth()
     :(m==='personal'?viewWeekThis():viewToday());
   const tabs=[['today',m==='personal'?'This week':'Today',''],['board','Board',onBoard(m).length],['backlog','Backlog',inBacklog(m).length],['fire','Fire',quickPool(m).length]];
-  if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
+  if(m==='work')tabs.push(['journal','Journal','']);
+  else if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -769,6 +778,8 @@ function viewToday(){
       <span class="db-rt">${done.length>=steps.length?'Ritual done'
         :done.length?'Continue the ritual':'Begin the ritual'}<em>${done.length} of ${steps.length}${weekPending?' · new week':''}</em></span>
     </button>
+    ${(()=>{const it=currentIntention(m);
+      return it?`<div class="db-chip flat" style="border-color:var(--hot)">🧭 ${esc(it.title)}<em>this week's focus</em></div>`:'';})()}
     <button class="db-chip ${bud&&overBudget(m)?'over':''}" id="hoursbtn">
       ${bud?`${h}h free · ${bud.real}h real`:'set today’s free time'}
       <em>${bud?`${bud.deep?'1 deep':'no deep'} + ${bud.batch} batch`:'sizes the day'}</em></button>
@@ -1023,24 +1034,38 @@ function viewFire(){
   <div class="restgrid"><div class="restgroup">${pool.slice(1,8).map(mini).join('')}</div></div>`:''}`;
 }
 
-/* ---- journal (daily morning pages — triggered from the work ritual, which runs
-   daily; personal's own ritual runs weekly, so it's the wrong cadence to hang this off) ---- */
-function viewJournal(){
-  const d=today();
-  const entries=Object.entries(S.journal.personal).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
+/* ---- journal (work: daily morning pages, triggered from the work ritual which runs
+   daily · personal: free-form journaling, own tab). Each store is keyed by date to
+   {text,title} — title is an optional weekly focus, surfaced separately (see
+   currentIntention below) since it's set roughly once a week, not every entry. */
+function journalStore(m){return S.journal[m]=S.journal[m]||{}}
+/* the most recent entry (for this mode) that has a title, as long as it's no more than
+   a week old — a title set once dictates "this week's focus" until it's renewed or ages out. */
+function currentIntention(m){
+  const store=journalStore(m);
+  const dated=Object.entries(store).filter(([,e])=>e&&e.title).sort((a,b)=>a[0]<b[0]?1:-1);
+  if(!dated.length)return null;
+  const [d,e]=dated[0];
+  if(daysTo(d)<-7)return null;
+  return {date:d,title:e.title};
+}
+function viewJournal(m){
+  const d=today(),store=journalStore(m),todayEntry=store[d]||{text:'',title:''};
+  const entries=Object.entries(store).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
   return `
   <div class="planhead"><h2>Journal</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span></div>
   <div class="dsec" style="margin-bottom:34px">
     <div class="seg-label" style="margin:0 0 10px">Today</div>
+    <input class="field" id="jtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(todayEntry.title||'')}" style="font-size:20px;margin-bottom:16px" />
     <div class="zdump" style="border-bottom:3px solid var(--line)">
-      <textarea id="jtoday" rows="5" placeholder="However it's actually going. No structure needed.">${esc(S.journal.personal[d]||'')}</textarea>
+      <textarea id="jtoday" rows="5" placeholder="However it's actually going. No structure needed.">${esc(todayEntry.text||'')}</textarea>
     </div>
   </div>
   <div class="seg-label" style="margin:0 0 14px">Past entries</div>
-  ${entries.length?entries.map(([dt,txt])=>`
+  ${entries.length?entries.map(([dt,e])=>`
     <div class="restgroup" style="margin-bottom:26px;max-width:70ch">
-      <h4 style="color:var(--ink-3)"><span>${new Date(dt+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})}</span></h4>
-      <div style="font-family:var(--serif);font-size:19px;font-weight:300;line-height:1.55;white-space:pre-wrap">${esc(txt)}</div>
+      <h4 style="color:var(--ink-3)"><span>${new Date(dt+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})}</span>${e.title?` — <b style="color:var(--ink)">${esc(e.title)}</b>`:''}</h4>
+      <div style="font-family:var(--serif);font-size:19px;font-weight:300;line-height:1.55;white-space:pre-wrap">${esc(e.text||'')}</div>
     </div>`).join(''):`<div class="col-empty">Nothing yet — it fills in one morning at a time.</div>`}`;
 }
 
@@ -1194,9 +1219,10 @@ function paintZen(isStepChange){
     cta='Done dumping';
   }
   else if(kind==='journal'){
-    const d=today(),val=S.journal.personal[d]||'';
-    mid=`<div class="zdump"><textarea id="zjournal" rows="5" placeholder="However it's actually going. No structure needed.">${esc(val)}</textarea></div>
-      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Journal tab in Personal.</div>`;
+    const d=today(),store=journalStore(m),entry=store[d]||{text:'',title:''};
+    mid=`<input class="field" id="zjtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(entry.title||'')}" style="font-size:22px;margin-bottom:20px" />
+      <div class="zdump"><textarea id="zjournal" rows="5" placeholder="However it's actually going. No structure needed.">${esc(entry.text||'')}</textarea></div>
+      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Journal tab.</div>`;
     cta='Done writing';
   }
   else if(kind==='week'){
@@ -1405,7 +1431,11 @@ function paintZen(isStepChange){
   zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wkcap]').forEach(b2=>b2.onclick=()=>{S.cap[m]=+b2.dataset.wkcap;save();paintZen(false)});
   const zj=zmidEl.querySelector('#zjournal');
-  if(zj){autosize(zj);zj.addEventListener('input',()=>{autosize(zj);S.journal.personal[today()]=zj.value;save()})}
+  if(zj){autosize(zj);zj.addEventListener('input',()=>{autosize(zj);
+    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].text=zj.value;save()})}
+  const zjt=zmidEl.querySelector('#zjtitle');
+  if(zjt)zjt.addEventListener('input',()=>{
+    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].title=zjt.value;save()});
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{S.workWeekHours={weekIso:isoWeek(),hours:+b2.dataset.wh};save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
     if(b2.disabled)return;zenAssign(b2.dataset.zs,b2.dataset.zid)});
@@ -1656,7 +1686,11 @@ document.addEventListener('keydown',e=>{
 function wire(){
   const m=S.ui.mode;
   const jt=document.getElementById('jtoday');
-  if(jt){autosize(jt);jt.addEventListener('input',()=>{autosize(jt);S.journal.personal[today()]=jt.value;save()})}
+  if(jt){autosize(jt);jt.addEventListener('input',()=>{autosize(jt);
+    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].text=jt.value;save()})}
+  const jtl=document.getElementById('jtitle');
+  if(jtl)jtl.addEventListener('input',()=>{
+    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].title=jtl.value;save()});
   const nt=document.getElementById('northtext');
   if(nt){autosize(nt);nt.addEventListener('input',()=>{autosize(nt);S.north=nt.value;save()})}
   app.querySelectorAll('[data-fireskip]').forEach(b=>b.onclick=()=>{
