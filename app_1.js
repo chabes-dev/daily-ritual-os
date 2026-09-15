@@ -54,8 +54,8 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
   ui:{mode:'work',workView:'today',personalView:'today',keys:false,open:{}},lastBackup:null};
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
-if(!['today','board','backlog','fire','journal'].includes(S.ui.workView))S.ui.workView='today';
-if(!['today','board','backlog','fire','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
+if(!['today','backlog','journal'].includes(S.ui.workView))S.ui.workView='today';
+if(!['today','backlog','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
 /* work and personal used to share one journal store keyed only by date — morning pages
    (work, daily) and the personal journal were silently overwriting each other. Split into
    per-mode stores; entries also gained an optional title (the week's focus), so migrate
@@ -163,10 +163,9 @@ function budget(h){
   if(!deep&&batch===0&&realMin>=12)batch=1;   /* a short day still fits one small thing */
   return {realMin,real:Math.round(realMin/6)/10,deep,batch};
 }
-/* what today can actually hold. spare and buffer are always 2 each — spare is the
-   overflow, buffer is explicitly reserved for whatever shows up uninvited. Neither
-   tapers with the week; buffer especially should get *more* useful as batch shrinks,
-   not less. */
+/* what today can actually hold. spare and the AI-delegate slot ("buffer" internally) are
+   always 2 each and neither tapers with the week — a shrinking batch is exactly when
+   handing more off to AI matters most, not less. */
 function dayCaps(m){
   const b=budget(S.hours&&S.hours[m]);
   if(!b)return {deep:1,batch:3,next:2,buffer:BUFFER_SLOTS};
@@ -290,7 +289,7 @@ function assign(m,slot,id,quiet){
 }
 function noRoomSheet(m,slot){
   if(m==='personal'){
-    const caps=personalCaps(),label=slot==='deep'?'deep':slot==='batch'?'batch':slot==='buffer'?'buffer':'spare';
+    const caps=personalCaps(),label=slot==='deep'?'deep':slot==='batch'?'batch':slot==='buffer'?'AI delegation':'spare';
     const lim=slot==='deep'?caps.deep:slot==='batch'?caps.batch:slot==='buffer'?caps.buffer:caps.next;
     sheet(`<h3>This week's ${label} is full.</h3>
       <p>Your weekly cap is <b>${lim}</b>. Take something off first, or raise the cap if it's genuinely a bigger week.</p>
@@ -325,7 +324,7 @@ function planText(m){
   if(m==='personal')p.deep.forEach(id=>L.push('DEEP / '+byId(id).text));
   else if(p.deep)L.push('DEEP / '+byId(p.deep).text);
   p.batch.forEach(id=>L.push('BATCH / '+byId(id).text));
-  p.buffer.forEach(id=>L.push('BUFFER / '+byId(id).text));
+  p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
   p.next.forEach(id=>L.push('SPARE / '+byId(id).text));
   if(m==='work'){
     const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
@@ -465,6 +464,10 @@ function openExternalWrite(){
   sheetPrompt('Where do you write?','Paste the link to whatever you use — remembered from now on.','https://…',v=>{
     S.extLink=v;save();window.open(v,'_blank')});
 }
+function editExternalWrite(){
+  sheetPrompt('Change your journal link','Paste the new link — replaces the one you have saved.','https://…',v=>{
+    S.extLink=v;save();toast('link updated')},S.extLink||'');
+}
 
 /* ===== dialogs ===== */
 const mlayer=document.getElementById('mlayer');
@@ -480,11 +483,11 @@ function sheetConfirm(title,msg,label,onYes){
   sheet(`<h3>${esc(title)}</h3><p>${esc(msg)}</p><div class="sheet-acts">
     <button class="btn" id="no">Cancel</button><button class="btn btn-danger" id="yes">${esc(label)}</button></div>`,
     el=>{el.querySelector('#no').onclick=closeSheet;el.querySelector('#yes').onclick=()=>{closeSheet();onYes()}})}
-function sheetPrompt(title,note,ph,onOk){
+function sheetPrompt(title,note,ph,onOk,initial){
   sheet(`<h3>${esc(title)}</h3>${note?`<p>${esc(note)}</p>`:''}
-    <input class="field" id="f" placeholder="${esc(ph||'')}" />
-    <div class="sheet-acts"><button class="btn" id="no">Cancel</button><button class="btn btn-hot" id="yes">Add</button></div>`,
-    el=>{const f=el.querySelector('#f');f.focus();
+    <input class="field" id="f" placeholder="${esc(ph||'')}" value="${esc(initial||'')}" />
+    <div class="sheet-acts"><button class="btn" id="no">Cancel</button><button class="btn btn-hot" id="yes">${initial?'Save':'Add'}</button></div>`,
+    el=>{const f=el.querySelector('#f');f.focus();if(initial)f.setSelectionRange(f.value.length,f.value.length);
       const go=()=>{const v=f.value.trim();if(!v)return;closeSheet();onOk(v)};
       f.onkeydown=e=>{if(e.key==='Enter')go()};
       el.querySelector('#yes').onclick=go;el.querySelector('#no').onclick=closeSheet})}
@@ -639,7 +642,7 @@ function openDetail(id){
         <div class="chips">
           <button class="chip" data-slot="deep" style="color:var(--hot)"><b></b>Deep</button>
           <button class="chip" data-slot="batch" style="color:var(--hot)"><b></b>Batch</button>
-          <button class="chip" data-slot="buffer" style="color:var(--hot)"><b></b>Buffer</button>
+          <button class="chip" data-slot="buffer" style="color:var(--hot)"><b></b>Delegate to AI</button>
           <button class="chip" data-slot="next" style="color:var(--hot)"><b></b>Spare</button></div></div>`:''}
       <div class="sheet-acts" style="margin-top:30px">
         <button class="btn btn-danger" id="ddel">Delete</button>
@@ -719,10 +722,10 @@ function render(){
   const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
   const body=v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
-    :v==='board'?viewCols('board'):v==='fire'?viewFire():v==='journal'?viewJournal(m):v==='north'?viewNorth()
+    :v==='journal'?viewJournal(m):v==='north'?viewNorth()
     :(m==='personal'?viewWeekThis():viewToday());
-  const tabs=[['today',m==='personal'?'This week':'Today',''],['board','Board',onBoard(m).length],['backlog','Backlog',inBacklog(m).length],['fire','Fire',quickPool(m).length]];
-  if(m==='work')tabs.push(['journal','Journal','']);
+  const tabs=[['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
+  if(m==='work')tabs.push(['journal','Morning Pages','']);
   else if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
     <div class="top">
@@ -737,7 +740,7 @@ function render(){
     ${healed?`<div class="alarm">${healed} item${healed===1?'':'s'} were filed under a category that no longer exists. They're back in the sort queue.</div>`:''}
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
     <div class="nav">
-      ${tabs.map(([k,l,n])=>`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n ${k==='board'?'target':''}">${n}</span>`:''}</button>`).join('')}
+      ${tabs.map(([k,l,n])=>`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n">${n}</span>`:''}</button>`).join('')}
       <span class="spacer"></span>
       <button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
         title="How much you've said yes to this week. Click to change.">
@@ -764,11 +767,9 @@ function viewToday(){
   const pct=Math.round(done.length/steps.length*100),p=plan(m),caps=dayCaps(m);
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
-  const h=S.hours[m],bud=budget(h);
-  const doneToday=S.items.filter(i=>i.mode===m&&i.done&&i.doneAt&&
-    new Date(i.doneAt).toISOString().slice(0,10)===today()).length;
   const weekPending=!S.week[m];
   const streak=S.streak[m];
+  const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
 
   return `
   <div class="daybar">
@@ -780,22 +781,18 @@ function viewToday(){
     </button>
     ${(()=>{const it=currentIntention(m);
       return it?`<div class="db-chip flat" style="border-color:var(--hot)">🧭 ${esc(it.title)}<em>this week's focus</em></div>`:'';})()}
-    <button class="db-chip ${bud&&overBudget(m)?'over':''}" id="hoursbtn">
-      ${bud?`${h}h free · ${bud.real}h real`:'set today’s free time'}
-      <em>${bud?`${bud.deep?'1 deep':'no deep'} + ${bud.batch} batch`:'sizes the day'}</em></button>
-    <button class="db-chip capopen ${overCap(m)?'over':''}">${load_(m)} / ${capOf(m)} this week<em>board capacity</em></button>
-    ${doneToday?`<div class="db-chip flat">${doneToday} done today<em>nice</em></div>`:''}
-    ${(()=>{const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-      return pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E)">Personal: ${esc(pp.text)}
-        <em><button class="act" data-done="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:'';})()}
-    <button class="db-chip" id="extwrite" title="Opens your journaling tool in a new tab">Write about it now ↗</button>
+    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
+    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy today → paper</button>
     <button class="btn" id="resetday" title="Untick the ritual and clear today’s picks">↻</button>
   </div>
 
   <div class="planhead"><h2>Today</h2>
-    <span>${caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} buffer · 2 spare</span></div>
+    <span>${caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} to AI · 2 spare</span></div>
+
+  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.text)}
+    <em><button class="act" data-done="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
 
   <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
@@ -805,9 +802,11 @@ function viewToday(){
         <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
     </div>`}
 
-  <div class="slotlabel">Buffer — held for whatever shows up uninvited, ${p.buffer.length} of ${caps.buffer}</div>
+  ${fireCard(m)}
+
+  <div class="slotlabel">Delegate to AI — ${p.buffer.length} of ${caps.buffer}</div>
   <div class="slots b2" data-slotdrop="buffer">
-    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">held open</div>`).join('')}
+    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">open</div>`).join('')}
   </div>
 
   <div class="secondary">
@@ -847,7 +846,6 @@ function viewWeekThis(){
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep.map(byId).filter(Boolean);
   const weekPending=!S.week[m];
-  const doneThisWeek=S.items.filter(i=>i.mode===m&&i.done&&i.doneAt&&isoWeek(i.doneAt)===isoWeek()).length;
 
   return `
   <div class="daybar">
@@ -857,15 +855,13 @@ function viewWeekThis(){
       <span class="db-rt">${done.length>=steps.length?'Ritual done'
         :done.length?'Continue the ritual':'Begin the ritual'}<em>${done.length} of ${steps.length}${weekPending?' · new week':''}</em></span>
     </button>
-    <button class="db-chip" id="pcapsbtn">${caps.deep} deep · ${caps.batch} batch<em>weekly caps</em></button>
-    <button class="db-chip capopen ${overCap(m)?'over':''}">${load_(m)} / ${capOf(m)} this week<em>board capacity</em></button>
-    ${doneThisWeek?`<div class="db-chip flat">${doneThisWeek} done this week<em>nice</em></div>`:''}
     ${(()=>{const hp=S.personal.happyPick?byId(S.personal.happyPick):null;
       return hp?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(hp.text)}
         <em><button class="act" data-done="${hp.id}" style="padding:0;color:#B06000">✓ mark done</button></em></div>`:'';})()}
     ${(()=>{const ap=(S.personal.anchors||[]).find(a=>a.id===S.personal.anchorPick);
       return ap?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(ap.text)}</div>`:'';})()}
-    <button class="db-chip" id="extwrite" title="Opens your journaling tool in a new tab">Write about it now ↗</button>
+    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
+    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy this week → paper</button>
   </div>
@@ -882,7 +878,7 @@ function viewWeekThis(){
     </div>`;})()}
 
   <div class="planhead"><h2>This week</h2>
-    <span>${caps.deep} deep max · ${caps.batch} batch · ${caps.buffer} buffer · ${caps.next} spare</span></div>
+    <span>${caps.deep} deep max · ${caps.batch} batch · ${caps.buffer} to AI · ${caps.next} spare</span></div>
 
   <div class="slotlabel"><b>Deep</b> — up to ${caps.deep} this week</div>
   <div class="slots ${caps.deep>=2?'b2':'b1'}">
@@ -891,9 +887,11 @@ function viewWeekThis(){
       <div class="emptynote">Nothing chosen yet. Most weeks this stays empty — that's fine.</div></div>`:''}
   </div>
 
-  <div class="slotlabel">Buffer — held for whatever shows up uninvited, ${p.buffer.length} of ${caps.buffer}</div>
+  ${fireCard(m)}
+
+  <div class="slotlabel">Delegate to AI — ${p.buffer.length} of ${caps.buffer}</div>
   <div class="slots b2" data-slotdrop="buffer">
-    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">held open</div>`).join('')}
+    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">open</div>`).join('')}
   </div>
 
   <div class="secondary">
@@ -966,7 +964,7 @@ function mini(i){
     <span class="floatbar"><button class="act" data-done="${i.id}" title="Already done">✓ Done</button>
       <button class="act" data-todeep="${i.id}">Deep</button>
       <button class="act" data-tobatch="${i.id}">Batch</button>
-      <button class="act" data-tobuffer="${i.id}">Buffer</button>
+      <button class="act" data-tobuffer="${i.id}">AI</button>
       <button class="act" data-tonext="${i.id}">Spare</button>
       <button class="act" data-open2="${i.id}">Edit</button>
       <button class="act" data-later2="${i.id}">⌛ Later</button></span></div>`;
@@ -1005,16 +1003,14 @@ function viewCols(bucket){
     </div>`}).join('')}</div>`;
 }
 
-/* ---- fire (quick, sub-60s tasks — one at a time, no ceremony) ---- */
-function viewFire(){
-  const m=S.ui.mode,pool=quickPool(m);
-  if(!pool.length){
-    return `<div class="empty"><h3>Nothing quick queued.</h3>
-      <p>Tag something ⚡ Quick from its detail panel and it lands here — one at a time, done and gone, no sorting ceremony.</p></div>`;
-  }
+/* ---- fire (quick, sub-60s tasks — one at a time, no ceremony). Embedded inline in
+   Today/This week rather than its own tab — same board data, no reason to duplicate the nav. */
+function fireCard(m){
+  const pool=quickPool(m);
+  if(!pool.length)return '';
   const i=pool[0],g=groupOf(i);
   return `
-  <div class="planhead"><h2>Fire</h2><span>${pool.length} quick task${pool.length===1?'':'s'} queued</span></div>
+  <div class="slotlabel">Quick — ${pool.length} queued, one at a time</div>
   <div class="deep" data-id="${i.id}" style="${styleFor(i)}">
     <span class="wash"></span>
     <div class="deep-t">${esc(i.text)}</div>
@@ -1029,9 +1025,7 @@ function viewFire(){
       <button class="btn" data-fireskip="${i.id}">Skip for now</button>
       <button class="btn" data-open2="${i.id}">Edit</button>
     </div>
-  </div>
-  ${pool.length>1?`<div class="slotlabel">Queued after this — ${pool.length-1}</div>
-  <div class="restgrid"><div class="restgroup">${pool.slice(1,8).map(mini).join('')}</div></div>`:''}`;
+  </div>`;
 }
 
 /* ---- journal (work: daily morning pages, triggered from the work ritual which runs
@@ -1052,8 +1046,9 @@ function currentIntention(m){
 function viewJournal(m){
   const d=today(),store=journalStore(m),todayEntry=store[d]||{text:'',title:''};
   const entries=Object.entries(store).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
+  const label=m==='work'?'Morning Pages':'Journal';
   return `
-  <div class="planhead"><h2>Journal</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span></div>
+  <div class="planhead"><h2>${label}</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span></div>
   <div class="dsec" style="margin-bottom:34px">
     <div class="seg-label" style="margin:0 0 10px">Today</div>
     <input class="field" id="jtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(todayEntry.title||'')}" style="font-size:20px;margin-bottom:16px" />
@@ -1079,7 +1074,7 @@ function viewNorth(){
   <div class="db-chip flat" style="display:inline-flex">autosaves as you type</div>`;
 }
 function drawKeys(){
-  const rows=[['Anywhere',[['⇥ Tab','switch mode'],['1 / 2','work / personal'],['t','sort raw items'],['q','jump to Fire — quick tasks']]],
+  const rows=[['Anywhere',[['⇥ Tab','switch mode'],['1 / 2','work / personal'],['t','sort raw items']]],
     ['Sorting · step 1',[['1–6','choose the category'],['→','skip'],['esc','stop']]],
     ['Sorting · step 2',[['1','★ deep — this week'],['2','⚡ quick — this week'],['3','• normal — this week'],['4','⌛ later — backlog'],['←','back']]],
     ['Ritual',[['▶ Begin','full-screen, one step at a time'],['⏎ / space','next step'],['esc','leave, keeps your place']]],
@@ -1187,7 +1182,7 @@ function zPlanStrip(m,extra){
        <button class="zpdone" data-zdone="${it.id}" title="Already done">✓</button>
        <button class="zx" data-zdrop="${it.id}" title="Take it off">×</button></div>`:'';};
   const deepCells=m==='personal'?p.deep.map(id=>cell('Deep',id)):[cell('Deep',p.deep)];
-  const cells=[...deepCells,...p.batch.map(id=>cell('Batch',id)),...p.buffer.map(id=>cell('Buffer',id)),...p.next.map(id=>cell('Spare',id))].join('')+(extra||'');
+  const cells=[...deepCells,...p.batch.map(id=>cell('Batch',id)),...p.buffer.map(id=>cell('Delegate to AI',id)),...p.next.map(id=>cell('Spare',id))].join('')+(extra||'');
   return cells?`<div class="zplan">${cells}</div>`:'';
 }
 
@@ -1222,7 +1217,7 @@ function paintZen(isStepChange){
     const d=today(),store=journalStore(m),entry=store[d]||{text:'',title:''};
     mid=`<input class="field" id="zjtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(entry.title||'')}" style="font-size:22px;margin-bottom:20px" />
       <div class="zdump"><textarea id="zjournal" rows="5" placeholder="However it's actually going. No structure needed.">${esc(entry.text||'')}</textarea></div>
-      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Journal tab.</div>`;
+      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Morning Pages tab.</div>`;
     cta='Done writing';
   }
   else if(kind==='week'){
@@ -1289,8 +1284,8 @@ function paintZen(isStepChange){
     const caps=dayCaps(m);
     const full={deep:caps.deep===0||!!p.deep,batch:caps.batch===0||p.batch.length>=caps.batch,next:p.next.length>=caps.next,buffer:p.buffer.length>=caps.buffer};
     const deepWord=caps.deep?'1 deep':'0 deep';
-    dispName=`${st.name} — ${deepWord}, ${caps.batch} batch, ${caps.buffer} buffer, ${caps.next} spare`;
-    dispNote=`${caps.deep?'One deep thing.':'No deep block today.'} ${caps.batch} batch. ${caps.buffer} held back for whatever shows up uninvited. ${caps.next} spare.`;
+    dispName=`${st.name} — ${deepWord}, ${caps.batch} batch, ${caps.buffer} to AI, ${caps.next} spare`;
+    dispNote=`${caps.deep?'One deep thing.':'No deep block today.'} ${caps.batch} batch. ${caps.buffer} set aside to delegate to AI. ${caps.next} spare.`;
     mid=`${zPlanStrip(m)}
       ${b?`<div class="zkept ${overBudget(m)?'warn':''}">${b.real}h of real time · fits <b>${b.deep?'1 deep':'0 deep'}</b>${b.batch?` + ${b.batch} batch`:''} · picked ${(p.deep?1:0)+p.batch.length}${b.deep===0?' · a deep block needs 90 min you do not have':''}</div>`
         :`<div class="zkept">No time set — <button class="zlink" id="zsethours">say how much is free</button> and this will size itself.</div>`}
@@ -1300,7 +1295,7 @@ function paintZen(isStepChange){
           <span class="zb">
             <button class="zsel" data-zs="deep" data-zid="${i.id}" ${full.deep?'disabled':''}>Deep</button>
             <button class="zsel" data-zs="batch" data-zid="${i.id}" ${full.batch?'disabled':''}>Batch</button>
-            <button class="zsel" data-zs="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>Buffer</button>
+            <button class="zsel" data-zs="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>AI</button>
             <button class="zsel" data-zs="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>
             <button class="zsel icon" data-zsnooze="${i.id}" title="Snooze — push to a later date">⌛</button>
             <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
@@ -1315,7 +1310,7 @@ function paintZen(isStepChange){
         const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
         if(dx!==dy)return dx-dy;return (x.ord||0)-(y.ord||0)}).slice(0,16);
     const full={deep:p.deep.length>=caps.deep,batch:p.batch.length>=caps.batch,buffer:p.buffer.length>=caps.buffer,next:p.next.length>=caps.next};
-    dispName=`${st.name} — ${caps.deep} deep max, ${caps.batch} batch, ${caps.buffer} buffer, ${caps.next} spare`;
+    dispName=`${st.name} — ${caps.deep} deep max, ${caps.batch} batch, ${caps.buffer} to AI, ${caps.next} spare`;
     dispNote=`Plan the whole week here, not today. Most weeks need zero or one deep thing — batch is for the quick stuff: scheduling, checking, registering, printing.`;
     const picked=p.deep.length+p.batch.length+p.buffer.length+p.next.length;
     const chosen=[...p.deep,...p.batch,...p.buffer,...p.next].map(byId).filter(Boolean);
@@ -1335,7 +1330,7 @@ function paintZen(isStepChange){
           <span class="zb">
             <button class="zsel" data-zs="deep" data-zid="${i.id}" ${full.deep?'disabled':''}>Deep</button>
             <button class="zsel" data-zs="batch" data-zid="${i.id}" ${full.batch?'disabled':''}>Batch</button>
-            <button class="zsel" data-zs="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>Buffer</button>
+            <button class="zsel" data-zs="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>AI</button>
             <button class="zsel" data-zs="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>
             <button class="zsel icon" data-zsnooze="${i.id}" title="Snooze — push to a later date">⌛</button>
             <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
@@ -1436,6 +1431,12 @@ function paintZen(isStepChange){
   const zjt=zmidEl.querySelector('#zjtitle');
   if(zjt)zjt.addEventListener('input',()=>{
     const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].title=zjt.value;save()});
+  /* fade the ritual chrome while actually writing morning pages, so the page reads as
+     just you and the text — comes back the moment you step away, to keep moving. */
+  [zj,zjt].filter(Boolean).forEach(el=>{
+    el.addEventListener('focus',()=>document.getElementById('zen').classList.add('zwriting'));
+    el.addEventListener('blur',()=>document.getElementById('zen').classList.remove('zwriting'));
+  });
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{S.workWeekHours={weekIso:isoWeek(),hours:+b2.dataset.wh};save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
     if(b2.disabled)return;zenAssign(b2.dataset.zs,b2.dataset.zid)});
@@ -1679,7 +1680,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='1'){S.ui.mode='work';save();render()}
   if(e.key==='2'){S.ui.mode='personal';save();render()}
   if(e.key==='t'&&raw(S.ui.mode).length)openTriage();
-  if(e.key==='q'){if(S.ui.mode==='work')S.ui.workView='fire';else S.ui.personalView='fire';save();render()}
 });
 
 /* ===== wiring ===== */
@@ -1696,6 +1696,7 @@ function wire(){
   app.querySelectorAll('[data-fireskip]').forEach(b=>b.onclick=()=>{
     const it=byId(b.dataset.fireskip);if(!it)return;it.ord=maxOrd()+100;save();render()});
   const ew=document.getElementById('extwrite');if(ew)ew.onclick=openExternalWrite;
+  const ewe=document.getElementById('extwriteedit');if(ewe)ewe.onclick=editExternalWrite;
   const comp=document.getElementById('comp');
   if(comp){autosize(comp);comp.focus();comp.addEventListener('input',()=>autosize(comp));
     comp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){
@@ -1709,9 +1710,7 @@ function wire(){
   const go=document.getElementById('go');if(go)go.onclick=openTriage;
   const cd=document.getElementById('closeday');if(cd)cd.onclick=closeTheDay;
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
-  const hb=document.getElementById('hoursbtn');if(hb)hb.onclick=hoursSheet;
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
-  const pcb=document.getElementById('pcapsbtn');if(pcb)pcb.onclick=personalCapSheet;
   const rd=document.getElementById('resetday');
   if(rd)rd.onclick=()=>sheetConfirm('Start a fresh day?',
     'Unticks the ritual and clears today’s deep, batch and spare picks. Your tasks are untouched.','Reset',()=>{
