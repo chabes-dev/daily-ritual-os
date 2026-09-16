@@ -54,8 +54,10 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
   ui:{mode:'work',workView:'today',personalView:'today',keys:false,open:{}},lastBackup:null};
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
-if(!['today','backlog','journal'].includes(S.ui.workView))S.ui.workView='today';
-if(!['today','backlog','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
+if(!['home','today','backlog','journal'].includes(S.ui.workView))S.ui.workView='today';
+if(!['home','today','backlog','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
+/* one-time nudge onto the new home dashboard for people who already had a saved tab */
+if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='home';S.ui.sawHome=true}
 /* work and personal used to share one journal store keyed only by date — morning pages
    (work, daily) and the personal journal were silently overwriting each other. Split into
    per-mode stores; entries also gained an optional title (the week's focus), so migrate
@@ -721,10 +723,10 @@ function render(){
   document.body.dataset.mode=m;
   const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
-  const body=v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
+  const body=v==='home'?viewHome(m):v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
     :v==='journal'?viewJournal(m):v==='north'?viewNorth()
     :(m==='personal'?viewWeekThis():viewToday());
-  const tabs=[['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
+  const tabs=[['home','Home',''],['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
   if(m==='work')tabs.push(['journal','Morning Pages','']);
   else if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
@@ -759,6 +761,44 @@ function render(){
       <button class="btn" id="imp">↑ Import backup</button>
     </div></div>`;
   healed=0;wishMoved=0;drawKeys();wire();
+}
+
+/* ---- HOME ---- */
+function viewHome(m){
+  const steps=zSteps(m),done=(S.ritual[m]||[]).filter(id=>steps.some(x=>x.id===id));
+  const ritualDone=done.length>=steps.length;
+  const p=plan(m),caps=m==='personal'?personalCaps():dayCaps(m);
+  const deepId=m==='personal'?(p.deep&&p.deep[0]):p.deep;
+  const deepItem=deepId?byId(deepId):null;
+  const backlogN=inBacklog(m).length;
+  const jlabel=m==='work'?'Morning Pages':'Journal';
+  const jtoday=journalStore(m)[today()];
+  const it=currentIntention(m);
+  return `
+  <div class="home-grid">
+    <button class="hometile hometile-ritual" id="hometile-ritual">
+      <span class="ht-label">${m==='personal'?'Personal':'Work'} ritual</span>
+      <span class="ht-title">${ritualDone?'Ritual done':done.length?'Continue the ritual':'Begin the ritual'}</span>
+      <span class="ht-meta">${done.length} of ${steps.length} steps${it?` · this week: ${esc(it.title)}`:''}</span>
+    </button>
+    <div class="home-row">
+      <button class="hometile" data-hv="today">
+        <span class="ht-label">${m==='personal'?'This week':'Today'}</span>
+        <span class="ht-title">${deepItem?esc(deepItem.text):'Nothing chosen yet'}</span>
+        <span class="ht-meta">${m==='personal'?`${caps.deep} deep max`:caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} to AI</span>
+      </button>
+      <button class="hometile" data-hv="backlog">
+        <span class="ht-label">Backlog</span>
+        <span class="ht-title">${backlogN} waiting</span>
+        <span class="ht-meta">Later. Review once a week.</span>
+      </button>
+      <button class="hometile" data-hv="journal">
+        <span class="ht-label">${jlabel}</span>
+        <span class="ht-title">${jtoday&&jtoday.text?'Written today':'Nothing written yet'}</span>
+        <span class="ht-meta">${jtoday&&jtoday.title?esc(jtoday.title):"However it's actually going"}</span>
+      </button>
+    </div>
+  </div>`;
 }
 
 /* ---- TODAY ---- */
@@ -1711,6 +1751,9 @@ function wire(){
   const cd=document.getElementById('closeday');if(cd)cd.onclick=closeTheDay;
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
+  const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
+  app.querySelectorAll('[data-hv]').forEach(b=>b.onclick=()=>{
+    if(m==='work')S.ui.workView=b.dataset.hv;else S.ui.personalView=b.dataset.hv;save();render()});
   const rd=document.getElementById('resetday');
   if(rd)rd.onclick=()=>sheetConfirm('Start a fresh day?',
     'Unticks the ritual and clears today’s deep, batch and spare picks. Your tasks are untouched.','Reset',()=>{
