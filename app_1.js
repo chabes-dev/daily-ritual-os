@@ -803,26 +803,16 @@ function viewHome(m){
 
 /* ---- TODAY ---- */
 function viewToday(){
-  const m=S.ui.mode,steps=zSteps(m),done=(S.ritual[m]||[]).filter(id=>steps.some(x=>x.id===id));
-  const pct=Math.round(done.length/steps.length*100),p=plan(m),caps=dayCaps(m);
+  const m=S.ui.mode,p=plan(m),caps=dayCaps(m);
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
-  const weekPending=!S.week[m];
   const streak=S.streak[m];
   const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
 
   return `
   <div class="daybar">
-    <div class="db-date">${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</div>
-    <button class="db-ritual ${done.length>=steps.length?'complete':''}" id="beginritual">
-      <span class="db-ring" style="--pct:${pct}"><i></i></span>
-      <span class="db-rt">${done.length>=steps.length?'Ritual done'
-        :done.length?'Continue the ritual':'Begin the ritual'}<em>${done.length} of ${steps.length}${weekPending?' · new week':''}</em></span>
-    </button>
     ${(()=>{const it=currentIntention(m);
       return it?`<div class="db-chip flat" style="border-color:var(--hot)">🧭 ${esc(it.title)}<em>this week's focus</em></div>`:'';})()}
-    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
-    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy today → paper</button>
     <button class="btn" id="resetday" title="Untick the ritual and clear today’s picks">↻</button>
@@ -881,27 +871,17 @@ function viewToday(){
   </div>`;
 }
 function viewWeekThis(){
-  const m='personal',steps=zSteps(m),done=(S.ritual[m]||[]).filter(id=>steps.some(x=>x.id===id));
-  const pct=Math.round(done.length/steps.length*100),p=personalPlan(),caps=personalCaps();
+  const m='personal',p=personalPlan(),caps=personalCaps();
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep.map(byId).filter(Boolean);
-  const weekPending=!S.week[m];
 
   return `
   <div class="daybar">
-    <div class="db-date">Week of ${new Date(isoWeek()+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'long'})}</div>
-    <button class="db-ritual ${done.length>=steps.length?'complete':''}" id="beginritual">
-      <span class="db-ring" style="--pct:${pct}"><i></i></span>
-      <span class="db-rt">${done.length>=steps.length?'Ritual done'
-        :done.length?'Continue the ritual':'Begin the ritual'}<em>${done.length} of ${steps.length}${weekPending?' · new week':''}</em></span>
-    </button>
     ${(()=>{const hp=S.personal.happyPick?byId(S.personal.happyPick):null;
       return hp?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(hp.text)}
         <em><button class="act" data-done="${hp.id}" style="padding:0;color:#B06000">✓ mark done</button></em></div>`:'';})()}
     ${(()=>{const ap=(S.personal.anchors||[]).find(a=>a.id===S.personal.anchorPick);
       return ap?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(ap.text)}</div>`:'';})()}
-    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
-    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy this week → paper</button>
   </div>
@@ -1088,7 +1068,11 @@ function viewJournal(m){
   const entries=Object.entries(store).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
   const label=m==='work'?'Morning Pages':'Journal';
   return `
-  <div class="planhead"><h2>${label}</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span></div>
+  <div class="planhead"><h2>${label}</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span>
+    <div class="db-sp"></div>
+    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
+    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
+  </div>
   <div class="dsec" style="margin-bottom:34px">
     <div class="seg-label" style="margin:0 0 10px">Today</div>
     <input class="field" id="jtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(todayEntry.title||'')}" style="font-size:20px;margin-bottom:16px" />
