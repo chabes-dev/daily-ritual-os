@@ -1,6 +1,7 @@
 "use strict";
 const KEY='os_v3';
 const APPVER='v13';
+const SPARK_URL='https://spark-v2-chabes-devs-projects.vercel.app/';
 let STORE_OK=true;
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){STORE_OK=false;return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}}
@@ -18,13 +19,13 @@ const isParked=i=>(PARKED[i.mode]||[]).includes(i[GKEY[i.mode]]);
 const ZNOTE={
   p0:'Not chores. Not tasks. Playing with the kids, cooking something good, calling your parents — the things that make a week actually good, not just handled.',
   w1:'Put the music on. Set the timer. Nothing starts until this does.',
-  wj:'However it is actually going. No structure needed — just get it out before the operating starts. Once a week, give it a title — this week\'s focus — and it stays visible while you work.',
+  wj:'However it is actually going. No structure needed — just get it out before the operating starts. Write them in Spark, then come back here.',
   w2:'Everything in your head, one line each. No order, no judgement.',
   w3:'Read, act, archive. Anything over 60 seconds becomes a task.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left. Not the optimistic number.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
-  wad:'Yes or no — then straight into the dump.',
+  wad:'Yes or no. If there was an ad worth keeping, write it up in Spark — then straight into the dump.',
   w8:'Work is done. Before you close, point at one personal thing for today — so a week of work days does not quietly swallow it.',
   w7:'Copy it down. Then close this and go and do it.',
   p1:'Health, money, family, the future — one line each. Anything sitting in TickTick counts too.',
@@ -54,19 +55,16 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
   ui:{mode:'work',workView:'today',personalView:'today',keys:false,open:{}},lastBackup:null};
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
-if(!['home','today','backlog','journal'].includes(S.ui.workView))S.ui.workView='today';
+if(!['home','today','backlog'].includes(S.ui.workView))S.ui.workView='today';
 if(!['home','today','backlog','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
 /* one-time nudge onto the new home dashboard for people who already had a saved tab */
 if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='home';S.ui.sawHome=true}
-/* work and personal used to share one journal store keyed only by date — morning pages
-   (work, daily) and the personal journal were silently overwriting each other. Split into
-   per-mode stores; entries also gained an optional title (the week's focus), so migrate
-   old plain-string entries into {text,title} shape. Historical entries from before this
-   split can't be un-mixed — whichever mode was edited last on a given date is what survived. */
-S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};S.journal.work=S.journal.work||{};
-[S.journal.personal,S.journal.work].forEach(store=>{
-  Object.keys(store).forEach(d=>{if(typeof store[d]==='string')store[d]={text:store[d],title:''}});
-});
+/* Personal journal entries are {text,title}; very old ones were plain strings. Morning pages
+   (the old work journal) are written in Spark now, so their in-app history is dropped. */
+S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};
+delete S.journal.work;
+Object.keys(S.journal.personal).forEach(d=>{
+  const store=S.journal.personal;if(typeof store[d]==='string')store[d]={text:store[d],title:''}});
 S.north=S.north||'';
 S.extLink=S.extLink||null;
 S.cap=Object.assign({work:12,personal:8},S.cap||{});
@@ -727,8 +725,7 @@ function render(){
     :v==='journal'?viewJournal(m):v==='north'?viewNorth()
     :(m==='personal'?viewWeekThis():viewToday());
   const tabs=[['home','Home',''],['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
-  if(m==='work')tabs.push(['journal','Morning Pages','']);
-  else if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
+  if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -771,9 +768,8 @@ function viewHome(m){
   const deepId=m==='personal'?(p.deep&&p.deep[0]):p.deep;
   const deepItem=deepId?byId(deepId):null;
   const backlogN=inBacklog(m).length;
-  const jlabel=m==='work'?'Morning Pages':'Journal';
-  const jtoday=journalStore(m)[today()];
-  const it=currentIntention(m);
+  const jtoday=m==='personal'?journalStore(m)[today()]:null;
+  const it=m==='personal'?currentIntention(m):null;
   return `
   <div class="home-grid">
     <button class="hometile hometile-ritual" id="hometile-ritual">
@@ -792,11 +788,15 @@ function viewHome(m){
         <span class="ht-title">${backlogN} waiting</span>
         <span class="ht-meta">Later. Review once a week.</span>
       </button>
-      <button class="hometile" data-hv="journal">
-        <span class="ht-label">${jlabel}</span>
+      ${m==='work'?`<button class="hometile" id="hometile-spark">
+        <span class="ht-label">Morning Pages</span>
+        <span class="ht-title">Write in Spark ↗</span>
+        <span class="ht-meta">Opens in a new tab</span>
+      </button>`:`<button class="hometile" data-hv="journal">
+        <span class="ht-label">Journal</span>
         <span class="ht-title">${jtoday&&jtoday.text?'Written today':'Nothing written yet'}</span>
         <span class="ht-meta">${jtoday&&jtoday.title?esc(jtoday.title):"However it's actually going"}</span>
-      </button>
+      </button>`}
     </div>
   </div>`;
 }
@@ -811,8 +811,6 @@ function viewToday(){
 
   return `
   <div class="daybar">
-    ${(()=>{const it=currentIntention(m);
-      return it?`<div class="db-chip flat" style="border-color:var(--hot)">🧭 ${esc(it.title)}<em>this week's focus</em></div>`:'';})()}
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy today → paper</button>
     <button class="btn" id="resetday" title="Untick the ritual and clear today’s picks">↻</button>
@@ -1048,9 +1046,8 @@ function fireCard(m){
   </div>`;
 }
 
-/* ---- journal (work: daily morning pages, triggered from the work ritual which runs
-   daily · personal: free-form journaling, own tab). Each store is keyed by date to
-   {text,title} — title is an optional weekly focus, surfaced separately (see
+/* ---- journal (personal only — work morning pages are written in Spark). Keyed by date
+   to {text,title} — title is an optional weekly focus, surfaced separately (see
    currentIntention below) since it's set roughly once a week, not every entry. */
 function journalStore(m){return S.journal[m]=S.journal[m]||{}}
 /* the most recent entry (for this mode) that has a title, as long as it's no more than
@@ -1066,9 +1063,8 @@ function currentIntention(m){
 function viewJournal(m){
   const d=today(),store=journalStore(m),todayEntry=store[d]||{text:'',title:''};
   const entries=Object.entries(store).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
-  const label=m==='work'?'Morning Pages':'Journal';
   return `
-  <div class="planhead"><h2>${label}</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span>
+  <div class="planhead"><h2>Journal</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span>
     <div class="db-sp"></div>
     <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
     <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
@@ -1110,7 +1106,7 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',wj:'journal',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
+const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w3:'plain',w4:'sort',w5:'hours',w6:'pick',w8:'pnudge',w7:'paper',
              p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal only needs this once a week (its whole cadence is weekly). Work runs it
@@ -1237,11 +1233,9 @@ function paintZen(isStepChange){
       </div>`:''}`;
     cta='Done dumping';
   }
-  else if(kind==='journal'){
-    const d=today(),store=journalStore(m),entry=store[d]||{text:'',title:''};
-    mid=`<input class="field" id="zjtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(entry.title||'')}" style="font-size:22px;margin-bottom:20px" />
-      <div class="zdump"><textarea id="zjournal" rows="5" placeholder="However it's actually going. No structure needed.">${esc(entry.text||'')}</textarea></div>
-      <div class="zkept">Saved privately, dated ${d}. Browse past entries anytime from the Morning Pages tab.</div>`;
+  else if(kind==='spark'){
+    mid=`<div class="hrow"><button class="hbtn" id="zspark">Open Spark ↗</button></div>
+      <div class="zkept">Opens in a new tab. Come back here when you're done.</div>`;
     cta='Done writing';
   }
   else if(kind==='week'){
@@ -1408,7 +1402,8 @@ function paintZen(isStepChange){
     mid=`<div class="hrow">
         <button class="hbtn ${ans===true?'on':''}" id="adyes">Yes</button>
         <button class="hbtn ${ans===false?'on':''}" id="adno">No</button>
-      </div>`;
+      </div>
+      <div class="hrow"><button class="hbtn" id="adspark">Write about today's ad in Spark ↗</button></div>`;
     cta=ans===null?'Skip for now':'Next';
   }
   else{ mid=''; cta='Done'; }
@@ -1426,7 +1421,7 @@ function paintZen(isStepChange){
   document.getElementById('zhint').textContent=kind==='dump'?'⏎ keeps a line · then press Done dumping'
     :kind==='pick'||kind==='pickweek'?'tap Deep · Batch · Spare — or ⌛ backlog / ✓ already done'
     :kind==='pnudge'?'pick one thing, or skip — it is just for today'
-    :kind==='journal'?'write as much or as little as you want · then press Done writing'
+    :kind==='spark'?'write in Spark · then press Done writing'
     :'⏎ or space for the next step';
 
   const zb=document.getElementById('zback');if(zb)zb.onclick=zenBack;
@@ -1449,18 +1444,11 @@ function paintZen(isStepChange){
   if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:false};save();zenNext()};
   zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wkcap]').forEach(b2=>b2.onclick=()=>{S.cap[m]=+b2.dataset.wkcap;save();paintZen(false)});
-  const zj=zmidEl.querySelector('#zjournal');
-  if(zj){autosize(zj);zj.addEventListener('input',()=>{autosize(zj);
-    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].text=zj.value;save()})}
-  const zjt=zmidEl.querySelector('#zjtitle');
-  if(zjt)zjt.addEventListener('input',()=>{
-    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].title=zjt.value;save()});
-  /* fade the ritual chrome while actually writing morning pages, so the page reads as
-     just you and the text — comes back the moment you step away, to keep moving. */
-  [zj,zjt].filter(Boolean).forEach(el=>{
-    el.addEventListener('focus',()=>document.getElementById('zen').classList.add('zwriting'));
-    el.addEventListener('blur',()=>document.getElementById('zen').classList.remove('zwriting'));
-  });
+  const zsp=zmidEl.querySelector('#zspark');
+  if(zsp)zsp.onclick=()=>window.open(SPARK_URL,'_blank');
+  /* writing about the ad implies you had it — mark yes, but stay on the step */
+  const ads=zmidEl.querySelector('#adspark');
+  if(ads)ads.onclick=()=>{S.adCheck={date:today(),answer:true};save();window.open(SPARK_URL,'_blank');paintZen(false)};
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{S.workWeekHours={weekIso:isoWeek(),hours:+b2.dataset.wh};save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
     if(b2.disabled)return;zenAssign(b2.dataset.zs,b2.dataset.zid)});
@@ -1736,6 +1724,7 @@ function wire(){
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
   const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
+  const hts=document.getElementById('hometile-spark');if(hts)hts.onclick=()=>window.open(SPARK_URL,'_blank');
   app.querySelectorAll('[data-hv]').forEach(b=>b.onclick=()=>{
     if(m==='work')S.ui.workView=b.dataset.hv;else S.ui.personalView=b.dataset.hv;save();render()});
   const rd=document.getElementById('resetday');
