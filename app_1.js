@@ -2,6 +2,8 @@
 const KEY='os_v3';
 const APPVER='v13';
 const SPARK_URL='https://spark-v2-chabes-devs-projects.vercel.app/';
+/* phones/tablets: no hover, no drag-and-drop, no keyboard — copy and controls adapt */
+const TOUCH=matchMedia('(hover:none) and (pointer:coarse)').matches;
 let STORE_OK=true;
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){STORE_OK=false;return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}}
@@ -418,8 +420,11 @@ function finish(id,el){
     },160);
     return;
   }
-  i.done=true;i.doneAt=Date.now();clearFromPlan(i.mode,id);save();render();
-  toastUndo('done',()=>{i.done=false;delete i.doneAt;save();render()});
+  const slot=slotOf(i.mode,id);
+  i.done=true;i.doneAt=Date.now();
+  if(slot==='deep'&&i.mode==='work')markDeepHit(i.mode);
+  clearFromPlan(i.mode,id);save();render();
+  toastUndo('done',()=>{i.done=false;delete i.doneAt;if(slot==='deep'&&i.mode==='work')unmarkDeepHit(i.mode);if(slot)assign(i.mode,slot,id);else{save();render()}});
 }
 function exportBackup(silent){
   const payload=JSON.stringify(S,null,2);
@@ -647,6 +652,7 @@ function openDetail(id){
       <div class="sheet-acts" style="margin-top:30px">
         <button class="btn btn-danger" id="ddel">Delete</button>
         <span style="flex:1"></span>
+        <button class="btn" id="ddone">✓ Done</button>
         <button class="btn btn-hot" id="dclose">Save</button></div>`;
     const ta=box.querySelector('#dt');autosize(ta);
     ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v)i.text=v;save()};
@@ -672,6 +678,7 @@ function openDetail(id){
       i.steps.push({id:nid(),text:v,done:false});save();draw();
       const f=mlayer.querySelector('#snew');if(f)f.focus()}};
     box.querySelector('#dclose').onclick=()=>{closeSheet();render();toast('saved')};
+    box.querySelector('#ddone').onclick=e=>{closeSheet();finish(i.id,e.currentTarget)};
     box.querySelector('#ddel').onclick=()=>{sheetConfirm('Delete this?',i.text,'Delete',()=>{
       S.items=S.items.filter(x=>x.id!==id);clearFromPlan(i.mode,id);save();render()})};
   };
@@ -746,7 +753,7 @@ function render(){
         <span class="lbl">This week</span>
         <span class="capbar"><i style="width:${Math.min(100,Math.round(load_(m)/Math.max(1,capOf(m))*100))}%"></i></span>
         <span class="num">${load_(m)} / ${capOf(m)}</span></button>
-      ${nRaw?`<button class="sortbtn" id="go">Sort ${nRaw} raw · t</button>`:''}
+      ${nRaw?`<button class="sortbtn" id="go">Sort ${nRaw} raw${TOUCH?'':' · t'}</button>`:''}
     </div>
     ${body}
     <div class="dropbar" id="dropbar"><span>⌛ Drop here to send it to the backlog</span></div>
@@ -825,7 +832,7 @@ function viewToday(){
   <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
   ${dp?deepCard(dp):`<div class="deep empty" data-slotdrop="deep">
-      <div class="emptynote">${caps.deep?'Nothing chosen yet. Drag one up here.':'Your day is too short for a deep block.'}</div>
+      <div class="emptynote">${caps.deep?(TOUCH?'Nothing chosen yet. Tap a task below and choose Deep.':'Nothing chosen yet. Drag one up here.'):'Your day is too short for a deep block.'}</div>
       ${sug?`<div class="suggest"><span class="txt">Suggested: ${esc(sug.text)}</span>
         <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
     </div>`}
@@ -842,7 +849,7 @@ function viewToday(){
     <div class="slotlabel sub">Batch — ${p.batch.length} of ${caps.batch}</div>
     <div class="slots ${caps.batch>=3?'b3':caps.batch===2?'b2':'b1'}" data-slotdrop="batch">
       ${caps.batch===0?`<div class="slot empty">no room today</div>`
-        :Array.from({length:caps.batch}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">drop a batch task</div>`).join('')}
+        :Array.from({length:caps.batch}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">${TOUCH?'open':'drop a batch task'}</div>`).join('')}
     </div>
 
     <div class="slotlabel sub">Spare — ${p.next.length} of 2</div>
@@ -917,7 +924,7 @@ function viewWeekThis(){
     <div class="slotlabel sub">Batch — ${p.batch.length} of ${caps.batch}</div>
     <div class="slots ${caps.batch>=3?'b3':caps.batch===2?'b2':'b1'}" data-slotdrop="batch">
       ${caps.batch===0?`<div class="slot empty">no room this week</div>`
-        :Array.from({length:Math.min(caps.batch,6)}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">drop a batch task</div>`).join('')}
+        :Array.from({length:Math.min(caps.batch,6)}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">${TOUCH?'open':'drop a batch task'}</div>`).join('')}
     </div>
 
     <div class="slotlabel sub">Spare — ${p.next.length} of ${caps.next}</div>
@@ -1133,7 +1140,7 @@ function buildZenShell(){
     <div class="zbar">
       <div class="zdots" id="zdots"></div>
       <div class="zclock" id="zclock">00:00</div>
-      <button class="zexit" id="zexit">Esc</button>
+      <button class="zexit" id="zexit">${TOUCH?'Close':'Esc'}</button>
     </div>
     <div class="zbody">
       <div id="zcontent">
