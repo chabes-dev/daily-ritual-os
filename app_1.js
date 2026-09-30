@@ -1037,6 +1037,54 @@ function backlogOrder(){
   WORK_BACKLOG_ORDER.forEach(id=>{if(!o.includes(id))o.push(id)});
   return o;
 }
+/* Trello-style column drag: grab a header (long-press on touch), the column lifts and
+   follows the pointer while the others slide aside. Kept apart from card drag, which uses
+   native HTML5 drag on the cards themselves. */
+function colDrag(h){
+  const col=h.parentNode,wrap=col.parentNode;
+  let on=false,armed=null,sx=0,sy=0,ox=0,oy=0,px=0,py=0,ph=null,raf=0;
+  const others=()=>[...wrap.children].filter(e=>e!==col&&e!==ph);
+  const flip=mut=>{const els=others(),b4=new Map(els.map(e=>[e,e.getBoundingClientRect().left]));mut();
+    els.forEach(e=>{const dx=b4.get(e)-e.getBoundingClientRect().left;
+      if(dx)e.animate([{transform:`translateX(${dx}px)`},{transform:'none'}],{duration:220,easing:'cubic-bezier(.2,.8,.3,1)'})})};
+  const place=()=>{
+    /* layout positions (offsetLeft) not on-screen ones, so mid-slide columns don't make it jitter */
+    const x=px-wrap.getBoundingClientRect().left+wrap.scrollLeft;
+    const before=others().find(e=>x<e.offsetLeft+e.offsetWidth/2)||null;
+    if(before?ph.nextElementSibling!==before:ph!==wrap.lastElementChild)flip(()=>wrap.insertBefore(ph,before))};
+  const move=(x,y)=>{px=x;py=y;col.style.left=(x-ox)+'px';col.style.top=(y-oy)+'px';place()};
+  const tick=()=>{if(!on)return;const r=wrap.getBoundingClientRect(),E=70;
+    const d=px<Math.max(r.left,0)+E?-14:px>Math.min(r.right,innerWidth)-E?14:0;
+    if(d){const b=wrap.scrollLeft;wrap.scrollLeft+=d;if(wrap.scrollLeft!==b)place()}
+    raf=requestAnimationFrame(tick)};
+  const start=(x,y)=>{on=true;const r=col.getBoundingClientRect();ox=x-r.left;oy=y-r.top;
+    document.body.classList.add('coldrag');
+    ph=document.createElement('div');ph.className='col-ph';ph.style.height=r.height+'px';
+    wrap.insertBefore(ph,col);
+    Object.assign(col.style,{position:'fixed',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',zIndex:400,margin:0});
+    col.classList.add('col-lift');
+    if(navigator.vibrate)navigator.vibrate(10);
+    move(x,y);tick()};
+  const end=()=>{if(!on)return;on=false;cancelAnimationFrame(raf);
+    const r=ph.getBoundingClientRect();
+    col.classList.remove('col-lift');
+    col.animate([{left:col.style.left,top:col.style.top,transform:'rotate(2deg)'},{left:r.left+'px',top:r.top+'px',transform:'none'}],
+      {duration:180,easing:'ease-out',fill:'forwards'}).onfinish=()=>{
+      const o=[...wrap.children].filter(e=>e!==col).map(e=>e===ph?col.dataset.colid:e.dataset.colid).filter(Boolean);
+      document.body.classList.remove('coldrag');
+      S.ui.backlogOrder=o;save();render()}};
+  h.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();sx=e.clientX;sy=e.clientY;
+    const mm=v=>{if(!on&&Math.hypot(v.clientX-sx,v.clientY-sy)>4)start(sx,sy);if(on)move(v.clientX,v.clientY)};
+    const mu=()=>{removeEventListener('mousemove',mm);removeEventListener('mouseup',mu);end()};
+    addEventListener('mousemove',mm);addEventListener('mouseup',mu)});
+  h.addEventListener('touchstart',e=>{if(e.touches.length>1)return;const t=e.touches[0];sx=t.clientX;sy=t.clientY;
+    armed=setTimeout(()=>{armed=null;start(sx,sy)},350)},{passive:true});
+  h.addEventListener('touchmove',e=>{const t=e.touches[0];
+    if(on){e.preventDefault();move(t.clientX,t.clientY)}
+    else if(armed&&Math.hypot(t.clientX-sx,t.clientY-sy)>8){clearTimeout(armed);armed=null}},{passive:false});
+  const tend=()=>{if(armed){clearTimeout(armed);armed=null}end()};
+  h.addEventListener('touchend',tend);h.addEventListener('touchcancel',tend);
+}
 const backlogCol=i=>WORK_BACKLOG.find(c=>c.test(i)).id;
 /* dropping into (or adding to) a backlog column sets what that column means */
 function applyBacklogCol(i,col){
@@ -1082,15 +1130,14 @@ function viewWorkBacklog(items){
   const order=backlogOrder(),custom=order.join()!==WORK_BACKLOG_ORDER.join();
   return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.
     ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset column order</button>`:''}</div>
-  <div class="cols">${order.map((id,k)=>{
+  <div class="cols">${order.map(id=>{
     const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched';
     const list=items.filter(i=>backlogCol(i)===id)
       .sort(sched?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
-    return `<div class="col ${sched?'col-sched':'zone'}" ${sched?'':`data-bcol="${id}" data-bucket="backlog"`}>
+    return `<div class="col ${sched?'col-sched':'zone'}" data-colid="${id}" ${sched?'':`data-bcol="${id}" data-bucket="backlog"`}>
       <div class="col-head"><span class="dot" style="color:${c.color}"><b></b></span>
         <span class="col-name" style="color:${c.color}">${c.name}</span>
-        <span class="col-n">${list.length}</span>
-        <span class="colmv-w"><button class="colmv" data-colmv="${id}:-1" title="Move left" ${k===0?'disabled':''}>‹</button><button class="colmv" data-colmv="${id}:1" title="Move right" ${k===order.length-1?'disabled':''}>›</button></span></div>
+        <span class="col-n">${list.length}</span></div>
       ${list.map(i=>card(i,sched?schedLabel(i):null)).join('')}
       ${!list.length?`<div class="col-empty">${sched?'Nothing dated.':'Clear.'}</div>`:''}
       ${sched?'':S.ui.composer==='bcol:'+id
@@ -1838,9 +1885,7 @@ function wire(){
       if(bk==='bcol'){add(v,m,null,'backlog').forEach(x=>applyBacklogCol(x,gid));save()}
       else add(v,m,gid,bk);
       render();toast('added')}})}
-  app.querySelectorAll('[data-colmv]').forEach(b=>b.onclick=e=>{e.stopPropagation();
-    const [id,d]=b.dataset.colmv.split(':'),o=backlogOrder(),k=o.indexOf(id),j=k+ +d;
-    if(j<0||j>=o.length)return;[o[k],o[j]]=[o[j],o[k]];S.ui.backlogOrder=o;save();render()});
+  app.querySelectorAll('[data-colid]>.col-head').forEach(colDrag);
   const cr=document.getElementById('colreset');if(cr)cr.onclick=()=>{delete S.ui.backlogOrder;save();render()};
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
