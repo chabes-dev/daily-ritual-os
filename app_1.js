@@ -1007,7 +1007,7 @@ function mini(i){
 }
 
 /* ---- columns ---- */
-function card(i){
+function card(i,when){
   return `<div class="card ${i.fresh?'landing':''}" draggable="true" data-id="${i.id}" data-open="${i.id}" style="${styleFor(i)}">
     <span class="wash"></span>
     <svg class="strike" viewBox="0 0 200 26" preserveAspectRatio="none"><path d="M2,15 C46,9 78,20 118,13 C150,8 172,18 198,11"/></svg>
@@ -1015,7 +1015,14 @@ function card(i){
     ${!hasVerb(i.text)?'<span class="vdot" title="No verb yet"></span>':''}
     ${(Array.isArray(i.steps)&&i.steps.length)?`<span class="sprog"><i style="width:${Math.round(i.steps.filter(x=>x.done).length/i.steps.length*100)}%"></i></span>`:''}
     <div class="card-top"><button class="tick" data-done="${i.id}" title="Done"></button>
-      <div class="card-text">${esc(i.text)}</div></div></div>`;
+      <div class="card-text">${esc(i.text)}</div></div>
+    ${when?`<div class="card-sub"><span class="tag" style="color:${when.c==='late'?C.red:'var(--hot)'}">${when.t}</span></div>`:''}</div>`;
+}
+/* the date a backlog item is waiting on: its due date, or the day its snooze ends */
+const schedDate=i=>i.due||i.snoozeUntil||null;
+function schedLabel(i){
+  if(i.due)return dueLabel(i.due);
+  const l=dueLabel(i.snoozeUntil);return {t:'😴 back '+l.t,c:''};
 }
 function viewCols(bucket){
   const m=S.ui.mode,defs=GROUPS[m],key=GKEY[m];
@@ -1023,14 +1030,24 @@ function viewCols(bucket){
   const note=bucket==='board'
     ?'This week. Drag to re-file or re-order. Anything you won’t touch in the next few days belongs in Backlog.'
     :'Later. Nothing here appears on Today. Review it once a week and pull what’s ready into the Board.';
+  /* work backlog: anything with a date leaves its category column for Scheduled, soonest
+     first — dated items are the ones that hurt when forgotten */
+  const sched=bucket==='backlog'&&m==='work'
+    ?items.filter(i=>!i.project&&schedDate(i)).sort((a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0):[];
   return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">${note}</div>
-  <div class="cols">${defs.map(d=>{
-    const list=items.filter(i=>i[key]===d.id&&!i.project).sort(byOrd);
+  <div class="cols">${bucket==='backlog'&&m==='work'?`<div class="col col-sched">
+      <div class="col-head"><span class="dot" style="color:var(--hot)"><b></b></span>
+        <span class="col-name" style="color:var(--hot)">Scheduled</span>
+        <span class="col-n">${sched.length}</span></div>
+      ${sched.map(i=>card(i,schedLabel(i))).join('')}
+      ${!sched.length?'<div class="col-empty">Nothing dated.</div>':''}
+    </div>`:''}${defs.map(d=>{
+    const list=items.filter(i=>i[key]===d.id&&!i.project&&!sched.includes(i)).sort(byOrd);
     return `<div class="col zone" data-drop="${d.id}" data-bucket="${bucket}">
       <div class="col-head"><span class="dot" style="color:${d.color}"><b></b></span>
         <span class="col-name" style="color:${d.color}">${d.name}</span>
         <span class="col-n">${list.length}</span></div>
-      ${list.map(card).join('')}
+      ${list.map(i=>card(i)).join('')}
       ${!list.length?'<div class="col-empty">Clear.</div>':''}
       ${S.ui.composer===bucket+':'+d.id
         ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
