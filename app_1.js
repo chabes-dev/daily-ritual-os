@@ -2,6 +2,7 @@
 const KEY='os_v3';
 const APPVER='v13';
 const SPARK_URL='https://spark-v2-chabes-devs-projects.vercel.app/';
+const REEL_URL='https://reel-chabes-devs-projects.vercel.app/';
 /* phones/tablets: no hover, no drag-and-drop, no keyboard — copy and controls adapt */
 const TOUCH=matchMedia('(hover:none) and (pointer:coarse)').matches;
 let STORE_OK=true;
@@ -19,16 +20,17 @@ const GKEY={work:'lane',personal:'domain'};
 const PARKED={work:['hold','ideas'],personal:['wish']};
 const isParked=i=>(PARKED[i.mode]||[]).includes(i[GKEY[i.mode]]);
 const ZNOTE={
-  p0:'Not chores. Not tasks. Playing with the kids, cooking something good, calling your parents — the things that make a week actually good, not just handled.',
+  p0:'One thing. Not chores, not tasks — playing with the kids, cooking something good, calling your parents. The one thing that would make this week actually good, not just handled.',
   w1:'Put the music on. Set the timer. Nothing starts until this does.',
   wj:'However it is actually going. No structure needed. Write them in Spark, then come back here.',
   w2:'Clear the inbox first — read, act, archive; anything over 60 seconds becomes a task. Then everything in your head, one line each. No order, no judgement.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left today. Not the optimistic number.',
+  wpr:'It takes about five minutes. Work is planned — this keeps the rest of life from quietly piling up.',
   wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
-  wad:'Yes or no. If there was an ad worth keeping, write it up in Spark — then straight into the dump.',
+  wad:'Had one worth keeping? Yes opens Reel to save it. Otherwise, skip.',
   w8:'Work is done. Before you close, point at one personal thing for today — so a week of work days does not quietly swallow it.',
   w7:'Copy it down. Then close this and go and do it.',
   p1:'Health, money, family, the future — one line each. Anything sitting in TickTick counts too.',
@@ -42,6 +44,7 @@ const RITUALS={
     {id:'w2',name:'Clean inbox, dump everything'},
     {id:'w5',name:'How much time is actually free — today'},{id:'ww',name:'How much time is actually free — this week'},
     {id:'w4',name:'Sort the dump'},{id:'w6',name:'Pick today'},{id:'wpw',name:'Pick this week'},
+    {id:'wpr',name:'Did you do your personal ritual this week?'},
     {id:'w8',name:'One personal thing, before you close'},{id:'wj',name:'Morning pages'},
     {id:'w7',name:'Copy to paper and close this'}],
   personal:[{id:'p0',name:'What would make this week good for them?'},{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
@@ -61,7 +64,7 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
 if(!['home','today','backlog'].includes(S.ui.workView))S.ui.workView='today';
-if(!['home','today','backlog','journal','north'].includes(S.ui.personalView))S.ui.personalView='today';
+if(!['home','today','backlog','north'].includes(S.ui.personalView))S.ui.personalView='today';
 /* one-time nudge onto the new home dashboard for people who already had a saved tab */
 if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='home';S.ui.sawHome=true}
 /* Personal journal entries are {text,title}; very old ones were plain strings. Morning pages
@@ -103,9 +106,16 @@ if(S.plan.date!==today()){S.plan.date=today();S.plan.work=emptyPlan()}
    todayPick is the one personal thing surfaced by the work ritual's closing step, so it
    doesn't get forgotten during a week of work days — it clears every day like the rest
    of "today" does, independent of the weekly plan underneath it. */
-S.personal=S.personal||{deepCap:1,batchCap:5,weekIso:null,plan:{deep:[],batch:[],buffer:[],next:[]},todayPick:null,happyPick:null,anchors:[],anchorPick:null};
+S.personal=S.personal||{deepCap:1,batchCap:5,weekIso:null,plan:{deep:[],batch:[],buffer:[],next:[]},todayPick:null,happyPick:null,anchors:[]};
 S.personal.anchors=S.personal.anchors||[];
-if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null;S.personal.anchorPick=null}
+S.personal.anchorArchive=S.personal.anchorArchive||[];
+/* the weekly phrase used to allow five lines that never cleared; it's one line a week now,
+   so anything already there is archived once and the week starts clean */
+if(!S.personal.onePhrase){archiveAnchors(null);S.personal.onePhrase=true}
+rollPersonalWeek();
+/* the work ritual asks whether the personal ritual happened this week; skips are counted
+   (one per day) until it's done */
+S.pcheck=S.pcheck||{doneWeek:null,skips:[]};
 if(S.personal.todayPick&&S.personal.todayPick.date!==today())S.personal.todayPick=null;
 delete S.pick;
 let healed=0;
@@ -236,13 +246,28 @@ function styleFor(i){const t=cardTint(i);return `--cc:${cardColor(i)}`+(t?`;--ti
 /* Personal's weekly plan — deep is a capped array (1 or 2, set via personalCapSheet)
    instead of a single slot, since "1-2 deep things a week" is the whole point of the
    personal restructure. Batch/buffer/next work the same as they always have. */
+/* Monday starts a new personal week: the plan resets, and last week's phrase goes to the
+   archive (shown on North Star) so the ritual opens on a blank line. */
+function rollPersonalWeek(){
+  if(S.personal.weekIso===isoWeek())return;
+  archiveAnchors(S.personal.weekIso);
+  S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};
+  S.personal.happyPick=null;
+}
+function archiveAnchors(weekIso){
+  (S.personal.anchors||[]).forEach(a=>{if(a.text&&a.text.trim())S.personal.anchorArchive.unshift({weekIso,text:a.text.trim()})});
+  S.personal.anchors=[];
+}
+const weekPhrase=()=>{const a=(S.personal.anchors||[])[0];return a&&a.text?a.text.trim():''};
+function setWeekPhrase(v){v=(v||'').trim();S.personal.anchors=v?[{id:(S.personal.anchors[0]||{}).id||nid(),text:v}]:[];save()}
+const personalDoneThisWeek=()=>S.pcheck.doneWeek===isoWeek()
+  ||(S.ritual.personalWeekIso===isoWeek()&&(S.ritual.personal||[]).includes('p5'));
 function personalPlan(){
-  if(S.personal.weekIso!==isoWeek()){S.personal.weekIso=isoWeek();S.personal.plan={deep:[],batch:[],buffer:[],next:[]};S.personal.happyPick=null;S.personal.anchorPick=null}
+  rollPersonalWeek();
   const p=S.personal.plan;
   p.deep=(p.deep||[]).filter(byId);p.batch=(p.batch||[]).filter(byId);
   p.buffer=(p.buffer||[]).filter(byId);p.next=(p.next||[]).filter(byId);
   if(S.personal.happyPick&&!byId(S.personal.happyPick))S.personal.happyPick=null;  /* done/deleted */
-  if(S.personal.anchorPick&&!(S.personal.anchors||[]).some(a=>a.id===S.personal.anchorPick))S.personal.anchorPick=null;
   return p;
 }
 function personalCaps(){return {deep:S.personal.deepCap,batch:S.personal.batchCap,buffer:BUFFER_SLOTS,next:2}}
@@ -470,15 +495,6 @@ function importBackup(){
   f.click();
 }
 const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
-function openExternalWrite(){
-  if(S.extLink){window.open(S.extLink,'_blank');return}
-  sheetPrompt('Where do you write?','Paste the link to whatever you use — remembered from now on.','https://…',v=>{
-    S.extLink=v;save();window.open(v,'_blank')});
-}
-function editExternalWrite(){
-  sheetPrompt('Change your journal link','Paste the new link — replaces the one you have saved.','https://…',v=>{
-    S.extLink=v;save();toast('link updated')},S.extLink||'');
-}
 
 /* ===== dialogs ===== */
 const mlayer=document.getElementById('mlayer');
@@ -735,10 +751,10 @@ function render(){
   const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
   const body=v==='home'?viewHome(m):v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
-    :v==='journal'?viewJournal(m):v==='north'?viewNorth()
+    :v==='north'?viewNorth()
     :(m==='personal'?viewWeekThis():viewToday());
   const tabs=[['home','Home',''],['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
-  if(m==='personal')tabs.push(['journal','Journal',''],['north','North Star','']);
+  if(m==='personal')tabs.push(['spark','Journal ↗',''],['north','North Star','']);
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -752,7 +768,8 @@ function render(){
     ${healed?`<div class="alarm">${healed} item${healed===1?'':'s'} were filed under a category that no longer exists. They're back in the sort queue.</div>`:''}
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
     <div class="nav">
-      ${tabs.map(([k,l,n])=>`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n">${n}</span>`:''}</button>`).join('')}
+      ${tabs.map(([k,l,n])=>k==='spark'?`<button class="tab" id="navspark" title="Opens Spark in a new tab">${l}</button>`
+        :`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n">${n}</span>`:''}</button>`).join('')}
       <span class="spacer"></span>
       <button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
         title="How much you've said yes to this week. Click to change.">
@@ -781,14 +798,17 @@ function viewHome(m){
   const deepId=m==='personal'?(p.deep&&p.deep[0]):p.deep;
   const deepItem=deepId?byId(deepId):null;
   const backlogN=inBacklog(m).length;
-  const jtoday=m==='personal'?journalStore(m)[today()]:null;
-  const it=m==='personal'?currentIntention(m):null;
+  const phrase=m==='personal'?weekPhrase():'';
   return `
   <div class="home-grid">
+    ${m==='personal'?`<button class="hometile hometile-phrase" id="hometile-phrase">
+      <span class="ht-label">💛 What would make this week good</span>
+      <span class="ht-title">${phrase?esc(phrase):'Not set yet — tap to choose one thing'}</span>
+    </button>`:''}
     <button class="hometile hometile-ritual" id="hometile-ritual">
       <span class="ht-label">${m==='personal'?'Personal':'Work'} ritual</span>
       <span class="ht-title">${ritualDone?'Ritual done':done.length?'Continue the ritual':'Begin the ritual'}</span>
-      <span class="ht-meta">${done.length} of ${steps.length} steps${it?` · this week: ${esc(it.title)}`:''}</span>
+      <span class="ht-meta">${done.length} of ${steps.length} steps</span>
     </button>
     <div class="home-row">
       <button class="hometile" data-hv="today">
@@ -801,15 +821,11 @@ function viewHome(m){
         <span class="ht-title">${backlogN} waiting</span>
         <span class="ht-meta">Later. Review once a week.</span>
       </button>
-      ${m==='work'?`<button class="hometile" id="hometile-spark">
-        <span class="ht-label">Morning Pages</span>
+      <button class="hometile" id="hometile-spark">
+        <span class="ht-label">${m==='work'?'Morning Pages':'Journal'}</span>
         <span class="ht-title">Write in Spark ↗</span>
         <span class="ht-meta">Opens in a new tab</span>
-      </button>`:`<button class="hometile" data-hv="journal">
-        <span class="ht-label">Journal</span>
-        <span class="ht-title">${jtoday&&jtoday.text?'Written today':'Nothing written yet'}</span>
-        <span class="ht-meta">${jtoday&&jtoday.title?esc(jtoday.title):"However it's actually going"}</span>
-      </button>`}
+      </button>
     </div>
   </div>`;
 }
@@ -891,22 +907,11 @@ function viewWeekThis(){
     ${(()=>{const hp=S.personal.happyPick?byId(S.personal.happyPick):null;
       return hp?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(hp.text)}
         <em><button class="act" data-done="${hp.id}" style="padding:0;color:#B06000">✓ mark done</button></em></div>`:'';})()}
-    ${(()=>{const ap=(S.personal.anchors||[]).find(a=>a.id===S.personal.anchorPick);
-      return ap?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(ap.text)}</div>`:'';})()}
+    ${weekPhrase()?`<div class="db-chip flat" style="border-color:#F9AB00">💛 ${esc(weekPhrase())}<em>this week</em></div>`:''}
     <div class="db-sp"></div>
     <button class="btn btn-hot" id="closeday">Copy this week → paper</button>
   </div>
 
-  ${(()=>{const anchors=S.personal.anchors||[];if(!anchors.length)return '';
-    return `<div class="rest" style="padding-top:0;border-top:none;margin-top:0">
-      <h3>What a good week looks like</h3>
-      ${anchors.map(a=>`<div class="mini" style="cursor:default">
-        <span class="d" style="background:#F9AB00"></span>
-        <span class="t">${esc(a.text)}</span>
-        <span class="floatbar"><button class="act" data-anchorpick="${a.id}"
-          ${S.personal.anchorPick===a.id?'style="color:#B06000;background:#FEF7E0"':''}>${S.personal.anchorPick===a.id?'💛 today':'pick for today'}</button></span>
-      </div>`).join('')}
-    </div>`;})()}
 
   <div class="planhead"><h2>This week</h2>
     <span>${caps.deep} deep max · ${caps.batch} batch · ${caps.buffer} to AI · ${caps.next} spare</span></div>
@@ -1059,44 +1064,6 @@ function fireCard(m){
   </div>`;
 }
 
-/* ---- journal (personal only — work morning pages are written in Spark). Keyed by date
-   to {text,title} — title is an optional weekly focus, surfaced separately (see
-   currentIntention below) since it's set roughly once a week, not every entry. */
-function journalStore(m){return S.journal[m]=S.journal[m]||{}}
-/* the most recent entry (for this mode) that has a title, as long as it's no more than
-   a week old — a title set once dictates "this week's focus" until it's renewed or ages out. */
-function currentIntention(m){
-  const store=journalStore(m);
-  const dated=Object.entries(store).filter(([,e])=>e&&e.title).sort((a,b)=>a[0]<b[0]?1:-1);
-  if(!dated.length)return null;
-  const [d,e]=dated[0];
-  if(daysTo(d)<-7)return null;
-  return {date:d,title:e.title};
-}
-function viewJournal(m){
-  const d=today(),store=journalStore(m),todayEntry=store[d]||{text:'',title:''};
-  const entries=Object.entries(store).sort((a,b)=>a[0]<b[0]?1:-1).filter(([dt])=>dt!==d);
-  return `
-  <div class="planhead"><h2>Journal</h2><span>${entries.length} past entr${entries.length===1?'y':'ies'}</span>
-    <div class="db-sp"></div>
-    <button class="db-chip" id="extwrite" title="Opens your external journal app in a new tab">Open journal app ↗</button>
-    <button class="db-chip flat" id="extwriteedit" title="Change the link">✎</button>
-  </div>
-  <div class="dsec" style="margin-bottom:34px">
-    <div class="seg-label" style="margin:0 0 10px">Today</div>
-    <input class="field" id="jtitle" placeholder="This week's focus — optional, set it once a week" value="${esc(todayEntry.title||'')}" style="font-size:20px;margin-bottom:16px" />
-    <div class="zdump" style="border-bottom:3px solid var(--line)">
-      <textarea id="jtoday" rows="5" placeholder="However it's actually going. No structure needed.">${esc(todayEntry.text||'')}</textarea>
-    </div>
-  </div>
-  <div class="seg-label" style="margin:0 0 14px">Past entries</div>
-  ${entries.length?entries.map(([dt,e])=>`
-    <div class="restgroup" style="margin-bottom:26px;max-width:70ch">
-      <h4 style="color:var(--ink-3)"><span>${new Date(dt+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})}</span>${e.title?` — <b style="color:var(--ink)">${esc(e.title)}</b>`:''}</h4>
-      <div style="font-family:var(--serif);font-size:19px;font-weight:300;line-height:1.55;white-space:pre-wrap">${esc(e.text||'')}</div>
-    </div>`).join(''):`<div class="col-empty">Nothing yet — it fills in one morning at a time.</div>`}`;
-}
-
 /* ---- north star (goals / mission / how you're doing) ---- */
 function viewNorth(){
   return `
@@ -1104,7 +1071,13 @@ function viewNorth(){
   <div class="zdump" style="border-bottom:3px solid var(--line)">
     <textarea id="northtext" rows="12" placeholder="What are you actually building toward? Come back here whenever the tasks start feeling untethered from a reason.">${esc(S.north)}</textarea>
   </div>
-  <div class="db-chip flat" style="display:inline-flex">autosaves as you type</div>`;
+  <div class="db-chip flat" style="display:inline-flex">autosaves as you type</div>
+  ${S.personal.anchorArchive.length?`<div class="rest">
+    <h3>What made past weeks good</h3>
+    ${S.personal.anchorArchive.map(a=>`<div class="donerow"><span class="d" style="background:#F9AB00;opacity:1"></span>
+      <span class="t" style="text-decoration:none">${esc(a.text)}</span>
+      <span class="tag">${a.weekIso?'week of '+new Date(a.weekIso+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'}):'earlier'}</span></div>`).join('')}
+  </div>`:''}`;
 }
 function drawKeys(){
   const rows=[['Anywhere',[['⇥ Tab','switch mode'],['1 / 2','work / personal'],['t','sort raw items']]],
@@ -1119,7 +1092,7 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',wpw:'weekpick',w8:'pnudge',w7:'paper',
+const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',wpw:'weekpick',wpr:'pcheck',w8:'pnudge',w7:'paper',
              p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal gets a separate "Choose this week" step, once a week (its whole cadence is
@@ -1172,7 +1145,7 @@ function buildZenShell(){
       <div class="zacts" id="zacts"></div>
       <div class="zhint" id="zhint"></div>
     </div></div>`;
-  document.getElementById('zexit').onclick=endZen;
+  document.getElementById('zexit').onclick=exitZen;
 }
 function startZen(){
   ZEN=true;ZT0=Date.now();document.body.style.overflow='hidden';
@@ -1190,12 +1163,24 @@ function startZen(){
   paintZen(true);
 }
 function endZen(){ZEN=false;clearInterval(ZTICK);zlayer.innerHTML='';document.body.style.overflow='';render()}
+/* "No — do it now" on the work ritual's personal check: tick that step, run the personal
+   ritual, then come back to the work ritual where it left off */
+function detourToPersonal(){
+  if(!S.ritual.work.includes('wpr'))S.ritual.work=[...S.ritual.work,'wpr'];
+  S.ui.resumeWork=true;endZen();S.ui.mode='personal';save();render();startZen();
+}
+function resumeWorkIfDetoured(){
+  if(!S.ui.resumeWork)return false;
+  S.ui.resumeWork=false;S.ui.mode='work';save();render();return true;
+}
+function exitZen(){endZen();resumeWorkIfDetoured()}
 function zenNext(){
   const m=S.ui.mode,st=ZSTEPS[ZI];
   if(st&&st.id==='wk'){S.week.iso=isoWeek();S.week[m]=true}
   if(st&&!(S.ritual[m]||[]).includes(st.id))S.ritual[m]=[...(S.ritual[m]||[]),st.id];
   save();
-  if(ZI>=ZSTEPS.length-1){endZen();closeTheDay();return}
+  if(m==='personal'&&st&&st.id==='p5'){S.pcheck={doneWeek:isoWeek(),skips:[]};save()}
+  if(ZI>=ZSTEPS.length-1){endZen();closeTheDay();if(resumeWorkIfDetoured())startZen();return}
   ZI++;paintZen(true);
 }
 function zenBack(){if(ZI>0){ZI--;paintZen(true)}}
@@ -1222,6 +1207,18 @@ function zenDeleteItem(id){
   });
 }
 
+/* one pill per slot: filled dots = picked, empty = still open, red = over the limit */
+function zSlotMeter(m){
+  const p=plan(m),caps=m==='personal'?personalCaps():dayCaps(m),none=m==='personal'?'none this week':'none today';
+  const used={deep:m==='personal'?p.deep.length:(p.deep?1:0),batch:p.batch.length,buffer:p.buffer.length,next:p.next.length};
+  const name={deep:'Deep',batch:'Batch',buffer:'AI',next:'Spare'};
+  return `<div class="zmeter">${['deep','batch','buffer','next'].map(k=>{
+    const cap=caps[k],u=used[k],left=cap-u;
+    const dots=Array.from({length:Math.max(cap,u)},(_,x)=>`<i class="${x<u?'on':''}${x>=cap?' over':''}"></i>`).join('');
+    return `<div class="zm ${cap===0?'none':left<=0?'full':''}"><span class="zm-l">${name[k]}</span>
+      ${dots?`<span class="zm-d">${dots}</span>`:''}
+      <span class="zm-n">${cap===0?none:left>0?left+' left':left===0?'full':-left+' over'}</span></div>`}).join('')}</div>`;
+}
 function zPlanStrip(m,extra){
   const p=plan(m);
   const cell=(lbl,id)=>{const it=id&&byId(id);return it
@@ -1277,7 +1274,7 @@ function paintZen(isStepChange){
         if(dx!==dy)return dx-dy;return (x.created||0)-(y.created||0)});
     mid=`${m==='personal'?`<div class="seg-label" style="margin:0 0 10px">How many can you actually get through this week?</div>
       <div class="hrow">${capOpts.map(v=>`<button class="hbtn ${v===cap?'on':''}" data-wkcap="${v}">${v}</button>`).join('')}</div>`:''}
-      <div class="zkept ${now>cap?'warn':''}">${now} chosen for this week · your cap is ${cap}${now>cap?' · over':''}</div>
+      <div class="zkept ${now>cap?'warn':''}">${now} of ${cap} chosen for this week${now>cap?` · over by ${now-cap} — snooze ${now-cap===1?'one':now-cap}`:now===cap?' · full — snooze one to swap in another':` · ${cap-now} left`}</div>
       ${pool.length?`<div class="zpick">${pool.map(i=>{
         const on=i.bucket!=='backlog';
         const ready=i.snoozeUntil&&i.snoozeUntil<=today();
@@ -1289,7 +1286,7 @@ function paintZen(isStepChange){
           ${future?`<span class="zd dim">😴 until ${dueLabel(i.snoozeUntil).t}</span>`:''}
           ${!i.snoozeUntil?`<span class="zd dim">${age(i)}d</span>`:''}
           <span class="zb">
-            <button class="zsel ${on?'sel':''}" data-zw="board" data-zid="${i.id}">This week</button>
+            <button class="zsel ${on?'sel':''}" data-zw="board" data-zid="${i.id}" ${!on&&now>=cap?'disabled title="At your cap — snooze one first"':''}>This week</button>
             <button class="zsel ${!on?'sel':''}" data-zsnooze="${i.id}">${i.snoozeUntil?'Snoozed':'Snooze'}</button>
             <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
             <button class="zsel icon danger" data-zdel="${i.id}" title="Delete">×</button>
@@ -1336,12 +1333,11 @@ function paintZen(isStepChange){
             <button class="zsel" ${attr}="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>AI</button>
             <button class="zsel" ${attr}="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>`;
     const back=zBacklog(m);
-    const deepWord=caps.deep?'1 deep':'0 deep';
-    dispName=`${st.name} — ${deepWord}, ${caps.batch} batch, ${caps.buffer} to AI, ${caps.next} spare`;
-    dispNote=`${caps.deep?'One deep thing.':'No deep block today.'} ${caps.batch} batch. ${caps.buffer} set aside to delegate to AI. ${caps.next} spare.${back.length?' Light day? The backlog is below.':''}`;
-    mid=`${zPlanStrip(m)}
-      ${b?`<div class="zkept ${overBudget(m)?'warn':''}">${b.real}h of real time · fits <b>${b.deep?'1 deep':'0 deep'}</b>${b.batch?` + ${b.batch} batch`:''} · picked ${(p.deep?1:0)+p.batch.length}${b.deep===0?' · a deep block needs 90 min you do not have':''}</div>`
+    dispNote=`Fill the slots — the dots show what's still open.${back.length?' Light day? The backlog is at the bottom.':''}`;
+    mid=`${zSlotMeter(m)}
+      ${b?`<div class="zkept">${b.real}h of real time today${b.deep===0?' · too short for a deep block (needs 90 min)':''}</div>`
         :`<div class="zkept">No time set — <button class="zlink" id="zsethours">say how much is free</button> and this will size itself.</div>`}
+      ${zPlanStrip(m)}
       ${cands.length?`<div class="zpick">${cands.map(i=>`<div class="zrow" style="--cc:${cardColor(i)}">
           <span class="zt">${esc(i.text)}</span>
           ${i.due?`<span class="zd ${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
@@ -1363,10 +1359,11 @@ function paintZen(isStepChange){
         const px=inPlan(m,x.id)?0:1,py=inPlan(m,y.id)?0:1;if(px!==py)return px-py;
         const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
         if(dx!==dy)return dx-dy;return (x.ord||0)-(y.ord||0)});
-    mid=`<div class="zkept ${wnow>wcap?'warn':''}">This week: <b>${wnow}</b> of ${wcap}${wnow>wcap?' · over — send something to Later':''}</div>
+    mid=`<div class="zmeter"><div class="zm ${wnow>=wcap?'full':''}"><span class="zm-l">This week</span>
+        <span class="zm-n">${wnow} of ${wcap} · ${wnow>wcap?`${wnow-wcap} over — send something to Later`:wnow===wcap?'full':`${wcap-wnow} left`}</span></div></div>
       ${week.length?`<div class="zpick">${week.map(i=>`<div class="zrow" style="--cc:${cardColor(i)}">
           <span class="zt">${esc(i.text)}</span>
-          ${inPlan(m,i.id)?`<span class="zd ready">today</span>`:''}
+          ${inPlan(m,i.id)?`<span class="ztag today">today</span>`:`<span class="ztag week">this week</span>`}
           ${i.due?`<span class="zd ${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
           <span class="zb">
             <button class="zsel" data-zback="${i.id}">Later</button>
@@ -1397,7 +1394,8 @@ function paintZen(isStepChange){
     const picked=p.deep.length+p.batch.length+p.buffer.length+p.next.length;
     const chosen=[...p.deep,...p.batch,...p.buffer,...p.next].map(byId).filter(Boolean);
     mid=`${zPlanStrip('personal')}
-      <div class="zkept">picked ${picked} for the week · <button class="zlink" id="zpcaps">change weekly caps</button></div>
+      ${zSlotMeter('personal')}
+      <div class="zkept"><button class="zlink" id="zpcaps">change weekly caps</button></div>
       ${chosen.length?`<div class="zcarry-h" style="margin-top:10px">Which one would make you happiest to finish this week?</div>
         <div class="zpick">${chosen.map(i=>{const on=S.personal.happyPick===i.id;
           return `<div class="zrow" style="--cc:${cardColor(i)}">
@@ -1456,19 +1454,21 @@ function paintZen(isStepChange){
       ${anchors.map(a=>`<div class="stepline">
         <input class="sinput" data-aedit="${a.id}" value="${esc(a.text)}" />
         <button class="act del" data-adel="${a.id}">×</button></div>`).join('')}
-      ${anchors.length<5?`<input class="snew" id="anew" placeholder="Play with Léo, cook something good, call your parents — press ⏎" />`
-        :`<div class="zkept">Five is plenty — delete one above to add another.</div>`}
+      ${!anchors.length?`<input class="snew" id="anew" placeholder="Play with Léo on Saturday — press ⏎" />`:''}
     </div>`;
     cta=anchors.length?'That is the week':'Skip for now';
   }
+  else if(kind==='pcheck'){
+    const done=personalDoneThisWeek(),n=S.pcheck.skips.length;
+    mid=done?`<div class="hout"><b>✓ Done this week.</b> Nothing to do here.</div>`
+      :`<div class="hrow"><button class="hbtn on" id="pcno">No — do it now</button><button class="hbtn" id="pcyes">Yes, done</button></div>
+        ${n?`<div class="zkept warn">Skipped ${n} day${n===1?'':'s'} since your last personal ritual.</div>`:''}`;
+    cta=done?'Next':'Skip';
+  }
   else if(kind==='adcheck'){
     const ans=S.adCheck.date===today()?S.adCheck.answer:null;
-    mid=`<div class="hrow">
-        <button class="hbtn ${ans===true?'on':''}" id="adyes">Yes</button>
-        <button class="hbtn ${ans===false?'on':''}" id="adno">No</button>
-      </div>
-      <div class="hrow"><button class="hbtn" id="adspark">Write about today's ad in Spark ↗</button></div>`;
-    cta=ans===null?'Skip for now':'Next';
+    mid=`<div class="hrow"><button class="hbtn ${ans===true?'on':''}" id="adyes">Yes — save it in Reel ↗</button></div>`;
+    cta='Skip';
   }
   else{ mid=''; cta='Done'; }
 
@@ -1496,24 +1496,19 @@ function paintZen(isStepChange){
   });
   zmidEl.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{
     S.personal.anchors=(S.personal.anchors||[]).filter(x=>x.id!==b.dataset.adel);
-    if(S.personal.anchorPick===b.dataset.adel)S.personal.anchorPick=null;
     save();paintZen(false)});
   const anew=zmidEl.querySelector('#anew');
   if(anew)anew.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();
     const v=anew.value.trim();if(!v)return;
     S.personal.anchors=S.personal.anchors||[];
-    if(S.personal.anchors.length>=5)return;
+    if(S.personal.anchors.length>=1)return;
     S.personal.anchors.push({id:nid(),text:v});save();paintZen(false)}};
-  const ady=zmidEl.querySelector('#adyes'),adn=zmidEl.querySelector('#adno');
-  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();zenNext()};
-  if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:false};save();zenNext()};
-  zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
-  zmidEl.querySelectorAll('[data-wkcap]').forEach(b2=>b2.onclick=()=>{S.cap[m]=+b2.dataset.wkcap;save();paintZen(false)});
-  const zsp=zmidEl.querySelector('#zspark');
-  if(zsp)zsp.onclick=()=>window.open(SPARK_URL,'_blank');
-  /* writing about the ad implies you had it — mark yes, but stay on the step */
-  const ads=zmidEl.querySelector('#adspark');
-  if(ads)ads.onclick=()=>{S.adCheck={date:today(),answer:true};save();window.open(SPARK_URL,'_blank');paintZen(false)};
+  const ady=zmidEl.querySelector('#adyes');
+  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();window.open(REEL_URL,'_blank');zenNext()};
+  const pcy=zmidEl.querySelector('#pcyes');
+  if(pcy)pcy.onclick=()=>{S.pcheck={doneWeek:isoWeek(),skips:[]};save();zenNext()};
+  const pcn=zmidEl.querySelector('#pcno');
+  if(pcn)pcn.onclick=detourToPersonal;
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{const v=+b2.dataset.wh;
     S.workWeekHours={weekIso:isoWeek(),hours:v};S.cap[m]=weekCapFor(v);save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wkadj]').forEach(b2=>b2.onclick=()=>{
@@ -1554,6 +1549,8 @@ function paintZen(isStepChange){
 
   document.getElementById('zgo').onclick=()=>{
     if(kind==='sort'&&nRaw){openTriage();return}   /* stays inside the ritual */
+    if(kind==='adcheck')S.adCheck={date:today(),answer:false};
+    if(kind==='pcheck'&&!personalDoneThisWeek()&&!S.pcheck.skips.includes(today()))S.pcheck.skips.push(today());
     zenNext();
   };
   const zc=zmidEl.querySelector('#zcap');
@@ -1719,7 +1716,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkDay()
 
 document.addEventListener('keydown',e=>{
   if(ZEN&&!mlayer.innerHTML&&!layer.innerHTML){
-    if(e.key==='Escape'){endZen();return}
+    if(e.key==='Escape'){exitZen();return}
     const t=e.target;
     if(t.tagName==='TEXTAREA'||t.tagName==='INPUT')return;
     if(e.key==='Enter'||e.key===' '){e.preventDefault();document.getElementById('zgo').click();return}
@@ -1768,18 +1765,10 @@ document.addEventListener('keydown',e=>{
 /* ===== wiring ===== */
 function wire(){
   const m=S.ui.mode;
-  const jt=document.getElementById('jtoday');
-  if(jt){autosize(jt);jt.addEventListener('input',()=>{autosize(jt);
-    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].text=jt.value;save()})}
-  const jtl=document.getElementById('jtitle');
-  if(jtl)jtl.addEventListener('input',()=>{
-    const store=journalStore(m),d=today();store[d]=store[d]||{text:'',title:''};store[d].title=jtl.value;save()});
   const nt=document.getElementById('northtext');
   if(nt){autosize(nt);nt.addEventListener('input',()=>{autosize(nt);S.north=nt.value;save()})}
   app.querySelectorAll('[data-fireskip]').forEach(b=>b.onclick=()=>{
     const it=byId(b.dataset.fireskip);if(!it)return;it.ord=maxOrd()+100;save();render()});
-  const ew=document.getElementById('extwrite');if(ew)ew.onclick=openExternalWrite;
-  const ewe=document.getElementById('extwriteedit');if(ewe)ewe.onclick=editExternalWrite;
   const comp=document.getElementById('comp');
   if(comp){autosize(comp);comp.focus();comp.addEventListener('input',()=>autosize(comp));
     comp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){
@@ -1796,6 +1785,10 @@ function wire(){
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
   const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
   const hts=document.getElementById('hometile-spark');if(hts)hts.onclick=()=>window.open(SPARK_URL,'_blank');
+  const nsp=document.getElementById('navspark');if(nsp)nsp.onclick=()=>window.open(SPARK_URL,'_blank');
+  const htp=document.getElementById('hometile-phrase');
+  if(htp)htp.onclick=()=>sheetPrompt('What would make this week good?','One thing. Just the one.','Play with Léo on Saturday',
+    v=>{setWeekPhrase(v);render()},weekPhrase());
   app.querySelectorAll('[data-hv]').forEach(b=>b.onclick=()=>{
     if(m==='work')S.ui.workView=b.dataset.hv;else S.ui.personalView=b.dataset.hv;save();render()});
   const rd=document.getElementById('resetday');
@@ -1829,9 +1822,6 @@ function wire(){
     save();render();toast(i.bucket==='backlog'?'moved to backlog':'on the board')});
   app.querySelectorAll('[data-fq]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.fq);if(i){i.quick=!i.quick;if(i.quick)i.star=false;save();render()}});
-  app.querySelectorAll('[data-anchorpick]').forEach(b=>b.onclick=e=>{e.stopPropagation();
-    const id=b.dataset.anchorpick;
-    S.personal.anchorPick=S.personal.anchorPick===id?null:id;save();render()});
   app.querySelectorAll('[data-fs]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.fs);if(i){i.star=!i.star;if(i.star)i.quick=false;save();render()}});
   app.querySelectorAll('[data-date]').forEach(b=>b.onclick=e=>{e.stopPropagation();
