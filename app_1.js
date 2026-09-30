@@ -639,7 +639,7 @@ function openDetail(id){
   const draw=()=>{
     const i=byId(id);if(!i){closeSheet();return}
     if(!Array.isArray(i.steps))i.steps=[];
-    const g=GROUPS[i.mode],w=i.star?'star':i.quick?'quick':'plain';
+    const g=GROUPS[i.mode],w=i.ai?'ai':i.star?'star':i.quick?'quick':'plain';
     const box=mlayer.querySelector('#dtl');if(!box)return;
     box.innerHTML=`
       <textarea class="dtext" id="dt" rows="1">${esc(i.text)}</textarea>
@@ -650,7 +650,8 @@ function openDetail(id){
         <div class="chips">
           <button class="chip ${w==='star'?'on':''}" data-w="star" style="color:${C.purple}"><b></b>★ Deep work</button>
           <button class="chip ${w==='quick'?'on':''}" data-w="quick" style="color:${C.yellow}"><b></b>⚡ Under 60s</button>
-          <button class="chip ${w==='plain'?'on':''}" data-w="plain" style="color:${C.grey}"><b></b>Normal</button></div></div>
+          <button class="chip ${w==='plain'?'on':''}" data-w="plain" style="color:${C.grey}"><b></b>Normal</button>
+          <button class="chip ${w==='ai'?'on':''}" data-w="ai" style="color:#7C5CFC"><b></b>🤖 For AI</button></div></div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Where</div>
         <div class="chips">
           <button class="chip ${i.bucket!=='backlog'?'on':''}" data-b="board" style="color:var(--hot)"><b></b>This week</button>
@@ -681,7 +682,7 @@ function openDetail(id){
     ta.onblur=()=>{draw()};
     box.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{i[GKEY[i.mode]]=b.dataset.cat;save();draw()});
     box.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{const v=b.dataset.w;
-      i.star=v==='star';i.quick=v==='quick';save();draw()});
+      i.star=v==='star';i.quick=v==='quick';i.ai=v==='ai';save();draw()});
     box.querySelectorAll('[data-b]').forEach(b=>b.onclick=()=>{setBucket(i,b.dataset.b);
       if(i.bucket==='backlog')clearFromPlan(i.mode,i.id);else i.snoozeUntil=null;save();draw()});
     const dsn=box.querySelector('#dsnooze');if(dsn)dsn.onclick=()=>snoozeSheet(i.id,draw);
@@ -1018,6 +1019,29 @@ function card(i,when){
       <div class="card-text">${esc(i.text)}</div></div>
     ${when?`<div class="card-sub"><span class="tag" style="color:${when.c==='late'?C.red:'var(--hot)'}">${when.t}</span></div>`:''}</div>`;
 }
+/* The work backlog is sorted by what each item is waiting for, not by category (an
+   "Urgent" column makes no sense for things that are, by definition, later). Each item
+   lands in the first column it matches, in this order. Category stays as the card's
+   color bar and still drives the board once the item comes back. */
+const WORK_BACKLOG=[
+  {id:'sched',name:'Scheduled',color:'var(--hot)',test:i=>!!schedDate(i)},
+  {id:'hold',name:'On hold',color:C.grey,test:i=>i.lane==='hold'},
+  {id:'wish',name:'Wishes',color:C.cyan,test:i=>i.lane==='ideas'},
+  {id:'ai',name:'For AI',color:'#7C5CFC',test:i=>!!i.ai},
+  {id:'deep',name:'Deep backlog',color:C.purple,test:i=>!!i.star},
+  {id:'batch',name:'Batch backlog',color:C.yellow,test:()=>true}];
+const WORK_BACKLOG_ORDER=['sched','hold','deep','batch','ai','wish'];
+const backlogCol=i=>WORK_BACKLOG.find(c=>c.test(i)).id;
+/* dropping into (or adding to) a backlog column sets what that column means */
+function applyBacklogCol(i,col){
+  const lane=fallback=>{if(!i.lane||isParked(i))i.lane=fallback};
+  if(col==='hold')i.lane='hold';
+  else if(col==='wish')i.lane='ideas';
+  else if(col==='deep'){lane('important');i.star=true;i.quick=false;i.ai=false}
+  else if(col==='batch'){lane('batch');i.star=false;i.ai=false}
+  else if(col==='ai'){lane('batch');i.ai=true;i.star=false;i.quick=false}
+  i.sorted=true;setBucket(i,'backlog');
+}
 /* the date a backlog item is waiting on: its due date, or the day its snooze ends */
 const schedDate=i=>i.due||i.snoozeUntil||null;
 function schedLabel(i){
@@ -1030,19 +1054,10 @@ function viewCols(bucket){
   const note=bucket==='board'
     ?'This week. Drag to re-file or re-order. Anything you won’t touch in the next few days belongs in Backlog.'
     :'Later. Nothing here appears on Today. Review it once a week and pull what’s ready into the Board.';
-  /* work backlog: anything with a date leaves its category column for Scheduled, soonest
-     first — dated items are the ones that hurt when forgotten */
-  const sched=bucket==='backlog'&&m==='work'
-    ?items.filter(i=>!i.project&&schedDate(i)).sort((a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0):[];
+  if(bucket==='backlog'&&m==='work')return viewWorkBacklog(items);
   return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">${note}</div>
-  <div class="cols">${bucket==='backlog'&&m==='work'?`<div class="col col-sched">
-      <div class="col-head"><span class="dot" style="color:var(--hot)"><b></b></span>
-        <span class="col-name" style="color:var(--hot)">Scheduled</span>
-        <span class="col-n">${sched.length}</span></div>
-      ${sched.map(i=>card(i,schedLabel(i))).join('')}
-      ${!sched.length?'<div class="col-empty">Nothing dated.</div>':''}
-    </div>`:''}${defs.map(d=>{
-    const list=items.filter(i=>i[key]===d.id&&!i.project&&!sched.includes(i)).sort(byOrd);
+  <div class="cols">${defs.map(d=>{
+    const list=items.filter(i=>i[key]===d.id&&!i.project).sort(byOrd);
     return `<div class="col zone" data-drop="${d.id}" data-bucket="${bucket}">
       <div class="col-head"><span class="dot" style="color:${d.color}"><b></b></span>
         <span class="col-name" style="color:${d.color}">${d.name}</span>
@@ -1053,6 +1068,26 @@ function viewCols(bucket){
         ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
             <div class="hint">⏎ add · esc close</div></div>`
         :`<button class="addbtn" data-addto="${bucket}:${d.id}">＋ Add</button>`}
+    </div>`}).join('')}</div>`;
+}
+
+function viewWorkBacklog(items){
+  items=items.filter(i=>!i.project);
+  return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.</div>
+  <div class="cols">${WORK_BACKLOG_ORDER.map(id=>{
+    const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched';
+    const list=items.filter(i=>backlogCol(i)===id)
+      .sort(sched?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
+    return `<div class="col ${sched?'col-sched':'zone'}" ${sched?'':`data-bcol="${id}" data-bucket="backlog"`}>
+      <div class="col-head"><span class="dot" style="color:${c.color}"><b></b></span>
+        <span class="col-name" style="color:${c.color}">${c.name}</span>
+        <span class="col-n">${list.length}</span></div>
+      ${list.map(i=>card(i,sched?schedLabel(i):null)).join('')}
+      ${!list.length?`<div class="col-empty">${sched?'Nothing dated.':'Clear.'}</div>`:''}
+      ${sched?'':S.ui.composer==='bcol:'+id
+        ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
+            <div class="hint">⏎ add · esc close</div></div>`
+        :`<button class="addbtn" data-addto="bcol:${id}">＋ Add</button>`}
     </div>`}).join('')}</div>`;
 }
 
@@ -1790,7 +1825,10 @@ function wire(){
   if(comp){autosize(comp);comp.focus();comp.addEventListener('input',()=>autosize(comp));
     comp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){
       e.preventDefault();const v=comp.value.trim();if(!v)return;
-      const [bk,gid]=S.ui.composer.split(':');add(v,m,gid,bk);render();toast('added')}})}
+      const [bk,gid]=S.ui.composer.split(':');
+      if(bk==='bcol'){add(v,m,null,'backlog').forEach(x=>applyBacklogCol(x,gid));save()}
+      else add(v,m,gid,bk);
+      render();toast('added')}})}
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{S.ui.mode=b.dataset.mode;S.ui.composer=null;save();render()});
@@ -1838,9 +1876,9 @@ function wire(){
     if(i.bucket==='backlog')clearFromPlan(i.mode,i.id);
     save();render();toast(i.bucket==='backlog'?'moved to backlog':'on the board')});
   app.querySelectorAll('[data-fq]').forEach(b=>b.onclick=e=>{e.stopPropagation();
-    const i=byId(b.dataset.fq);if(i){i.quick=!i.quick;if(i.quick)i.star=false;save();render()}});
+    const i=byId(b.dataset.fq);if(i){i.quick=!i.quick;if(i.quick){i.star=false;i.ai=false}save();render()}});
   app.querySelectorAll('[data-fs]').forEach(b=>b.onclick=e=>{e.stopPropagation();
-    const i=byId(b.dataset.fs);if(i){i.star=!i.star;if(i.star)i.quick=false;save();render()}});
+    const i=byId(b.dataset.fs);if(i){i.star=!i.star;if(i.star){i.quick=false;i.ai=false}save();render()}});
   app.querySelectorAll('[data-date]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.date);if(i)openDate(i,null)});
   app.querySelectorAll('[data-del]').forEach(b=>b.onclick=e=>{e.stopPropagation();
@@ -1917,8 +1955,9 @@ function wire(){
       const kids=[...zone.children],phIdx=kids.indexOf(ph);
       const idx=(phIdx<0?kids.length:kids.slice(0,phIdx).filter(el=>(el.classList.contains('card')||el.classList.contains('mini'))&&el.dataset.id!==id).length);
       dropPh();
-      const to=zone.dataset.drop;
-      if(to){item[GKEY[item.mode]]=to;item.sorted=true;
+      const to=zone.dataset.drop,bcol=zone.dataset.bcol;
+      if(bcol){applyBacklogCol(item,bcol);clearFromPlan(item.mode,item.id)}
+      else if(to){item[GKEY[item.mode]]=to;item.sorted=true;
         if(zone.dataset.bucket)setBucket(item,zone.dataset.bucket);
         clearFromPlan(item.mode,item.id)}
       const ids=[...zone.querySelectorAll('.card,.mini')].map(el=>el.dataset.id).filter(x=>x!==id);
