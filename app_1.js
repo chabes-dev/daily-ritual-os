@@ -25,6 +25,7 @@ const ZNOTE={
   w2:'Clear the inbox first — read, act, archive; anything over 60 seconds becomes a task. Then everything in your head, one line each. No order, no judgement.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left today. Not the optimistic number.',
+  wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
   wad:'Yes or no. If there was an ad worth keeping, write it up in Spark — then straight into the dump.',
@@ -40,7 +41,7 @@ const RITUALS={
   work:[{id:'w1',name:'Music on, timer set'},{id:'wad',name:'Already had your ad breakfast?'},
     {id:'w2',name:'Clean inbox, dump everything'},
     {id:'w5',name:'How much time is actually free — today'},{id:'ww',name:'How much time is actually free — this week'},
-    {id:'w4',name:'Sort the dump'},{id:'w6',name:'Pick today and this week'},
+    {id:'w4',name:'Sort the dump'},{id:'w6',name:'Pick today'},{id:'wpw',name:'Pick this week'},
     {id:'w8',name:'One personal thing, before you close'},{id:'wj',name:'Morning pages'},
     {id:'w7',name:'Copy to paper and close this'}],
   personal:[{id:'p0',name:'What would make this week good for them?'},{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
@@ -1118,7 +1119,7 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',w8:'pnudge',w7:'paper',
+const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',wpw:'weekpick',w8:'pnudge',w7:'paper',
              p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal gets a separate "Choose this week" step, once a week (its whole cadence is
@@ -1136,6 +1137,21 @@ function zSteps(m){
 let ZEN=false,ZI=0,ZT0=0,ZTICK=null,ZJUST=[],ZSTEPS=[];
 const zlayer=(()=>{const d=document.createElement('div');document.body.appendChild(d);return d})();
 
+/* backlog, minus parked lanes: snoozes that have come due first, then by due date, then oldest */
+function zBacklog(m){
+  return inBacklog(m).filter(i=>!isParked(i)).sort((x,y)=>{
+    const rx=x.snoozeUntil&&x.snoozeUntil<=today()?0:1,ry=y.snoozeUntil&&y.snoozeUntil<=today()?0:1;
+    if(rx!==ry)return rx-ry;
+    const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
+    if(dx!==dy)return dx-dy;return (x.created||0)-(y.created||0)});
+}
+function zBacklogTags(i){
+  const ready=i.snoozeUntil&&i.snoozeUntil<=today(),future=i.snoozeUntil&&i.snoozeUntil>today();
+  return `${i.due?`<span class="zd ${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
+    ${ready?`<span class="zd ready">😴 ready to look at</span>`:''}
+    ${future?`<span class="zd dim">😴 until ${dueLabel(i.snoozeUntil).t}</span>`:''}
+    ${!i.snoozeUntil?`<span class="zd dim">${age(i)}d</span>`:''}`;
+}
 function carryOver(m){
   return onBoard(m).filter(i=>!isParked(i)&&age(i)>=1).sort((x,y)=>(y.created||0)-(x.created||0));
 }
@@ -1313,16 +1329,16 @@ function paintZen(isStepChange){
     const cands=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id))
       .sort((x,y)=>{const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
         if(dx!==dy)return dx-dy;if(!!y.star!==!!x.star)return y.star?1:-1;return (x.ord||0)-(y.ord||0)});
-    const caps=dayCaps(m),wcap=capOf(m),wnow=load_(m);
+    const caps=dayCaps(m);
     const full={deep:caps.deep===0||!!p.deep,batch:caps.batch===0||p.batch.length>=caps.batch,next:p.next.length>=caps.next,buffer:p.buffer.length>=caps.buffer};
-    const deepWord=caps.deep?'1 deep':'no deep';
-    /* the backlog sits under this week's list: on a light week, pull something back here */
-    const back=inBacklog(m).filter(i=>!isParked(i)).sort((x,y)=>{
-        const rx=x.snoozeUntil&&x.snoozeUntil<=today()?0:1,ry=y.snoozeUntil&&y.snoozeUntil<=today()?0:1;
-        if(rx!==ry)return rx-ry;
-        const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
-        if(dx!==dy)return dx-dy;return (x.created||0)-(y.created||0)});
-    dispNote=`Today holds ${deepWord}, ${caps.batch} batch, ${caps.buffer} to AI, ${caps.next} spare. Light week? Bring something back from the backlog below.`;
+    const slotBtns=(i,attr)=>`<button class="zsel" ${attr}="deep" data-zid="${i.id}" ${full.deep?'disabled':''}>Deep</button>
+            <button class="zsel" ${attr}="batch" data-zid="${i.id}" ${full.batch?'disabled':''}>Batch</button>
+            <button class="zsel" ${attr}="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>AI</button>
+            <button class="zsel" ${attr}="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>`;
+    const back=zBacklog(m);
+    const deepWord=caps.deep?'1 deep':'0 deep';
+    dispName=`${st.name} — ${deepWord}, ${caps.batch} batch, ${caps.buffer} to AI, ${caps.next} spare`;
+    dispNote=`${caps.deep?'One deep thing.':'No deep block today.'} ${caps.batch} batch. ${caps.buffer} set aside to delegate to AI. ${caps.next} spare.${back.length?' Light day? The backlog is below.':''}`;
     mid=`${zPlanStrip(m)}
       ${b?`<div class="zkept ${overBudget(m)?'warn':''}">${b.real}h of real time · fits <b>${b.deep?'1 deep':'0 deep'}</b>${b.batch?` + ${b.batch} batch`:''} · picked ${(p.deep?1:0)+p.batch.length}${b.deep===0?' · a deep block needs 90 min you do not have':''}</div>`
         :`<div class="zkept">No time set — <button class="zlink" id="zsethours">say how much is free</button> and this will size itself.</div>`}
@@ -1330,30 +1346,44 @@ function paintZen(isStepChange){
           <span class="zt">${esc(i.text)}</span>
           ${i.due?`<span class="zd ${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
           <span class="zb">
-            <button class="zsel" data-zs="deep" data-zid="${i.id}" ${full.deep?'disabled':''}>Deep</button>
-            <button class="zsel" data-zs="batch" data-zid="${i.id}" ${full.batch?'disabled':''}>Batch</button>
-            <button class="zsel" data-zs="buffer" data-zid="${i.id}" ${full.buffer?'disabled':''}>AI</button>
-            <button class="zsel" data-zs="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>
+            ${slotBtns(i,'data-zs')}
             <button class="zsel icon" data-zsnooze="${i.id}" title="Snooze — push to a later date">⌛</button>
             <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
           </span></div>`).join('')}</div>`
         :`<div class="zkept">Nothing on the board to pick from.</div>`}
-      <div class="zkept ${wnow>wcap?'warn':''}" style="margin-top:14px">This week: <b>${wnow}</b> of ${wcap}${wnow>wcap?' · over — snooze something with ⌛':''}</div>
-      ${back.length?`<div class="zcarry-h" style="margin-top:30px">In the backlog — bring anything back?</div>
-        <div class="zpick">${back.map(i=>{
-          const ready=i.snoozeUntil&&i.snoozeUntil<=today(),future=i.snoozeUntil&&i.snoozeUntil>today();
-          return `<div class="zrow off" style="--cc:${cardColor(i)}">
+      ${back.length?`<div class="zcarry-h" style="margin-top:30px">From the backlog — straight onto today</div>
+        <div class="zpick">${back.map(i=>`<div class="zrow off" style="--cc:${cardColor(i)}">
+          <span class="zt">${esc(i.text)}</span>${zBacklogTags(i)}
+          <span class="zb">${slotBtns(i,'data-zbs')}</span></div>`).join('')}</div>`:''}`;
+    cta=(p.deep||p.batch.length)?'That is today':'Skip for now';
+  }
+  else if(kind==='weekpick'){
+    const wcap=capOf(m),wnow=load_(m),back=zBacklog(m);
+    const week=onBoard(m).filter(i=>!isParked(i)).sort((x,y)=>{
+        const px=inPlan(m,x.id)?0:1,py=inPlan(m,y.id)?0:1;if(px!==py)return px-py;
+        const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;
+        if(dx!==dy)return dx-dy;return (x.ord||0)-(y.ord||0)});
+    mid=`<div class="zkept ${wnow>wcap?'warn':''}">This week: <b>${wnow}</b> of ${wcap}${wnow>wcap?' · over — send something to Later':''}</div>
+      ${week.length?`<div class="zpick">${week.map(i=>`<div class="zrow" style="--cc:${cardColor(i)}">
           <span class="zt">${esc(i.text)}</span>
+          ${inPlan(m,i.id)?`<span class="zd ready">today</span>`:''}
           ${i.due?`<span class="zd ${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
-          ${ready?`<span class="zd ready">😴 ready to look at</span>`:''}
-          ${future?`<span class="zd dim">😴 until ${dueLabel(i.snoozeUntil).t}</span>`:''}
-          ${!i.snoozeUntil?`<span class="zd dim">${age(i)}d</span>`:''}
+          <span class="zb">
+            <button class="zsel" data-zback="${i.id}">Later</button>
+            <button class="zsel icon" data-zsnooze="${i.id}" title="Snooze — back on a date you choose">⌛</button>
+            <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
+            <button class="zsel icon danger" data-zdel="${i.id}" title="Delete">×</button>
+          </span></div>`).join('')}</div>`
+        :`<div class="zkept">Nothing on this week's list yet.</div>`}
+      ${back.length?`<div class="zcarry-h" style="margin-top:30px">In the backlog — bring anything back?</div>
+        <div class="zpick">${back.map(i=>`<div class="zrow off" style="--cc:${cardColor(i)}">
+          <span class="zt">${esc(i.text)}</span>${zBacklogTags(i)}
           <span class="zb">
             <button class="zsel" data-zw="board" data-zid="${i.id}">This week</button>
             <button class="zsel icon" data-zdone="${i.id}" title="Already done">✓</button>
             <button class="zsel icon danger" data-zdel="${i.id}" title="Delete">×</button>
-          </span></div>`}).join('')}</div>`:''}`;
-    cta=(p.deep||p.batch.length)?'That is my plan':'Skip for now';
+          </span></div>`).join('')}</div>`:''}`;
+    cta='That is my week';
   }
   else if(kind==='pickweek'){
     const p=personalPlan(),caps=personalCaps();
@@ -1454,6 +1484,7 @@ function paintZen(isStepChange){
     <button class="zbtn" id="zgo">${cta}</button>`;
   document.getElementById('zhint').textContent=kind==='dump'?'⏎ keeps a line · then press Done dumping'
     :kind==='pick'||kind==='pickweek'?'tap Deep · Batch · Spare — or ⌛ backlog / ✓ already done'
+    :kind==='weekpick'?'Later sends it to the backlog · ⌛ snoozes it to a date'
     :kind==='pnudge'?'pick one thing, or skip — it is just for today'
     :kind==='spark'?'write in Spark · then press Done writing'
     :'⏎ or space for the next step';
@@ -1487,6 +1518,9 @@ function paintZen(isStepChange){
     S.workWeekHours={weekIso:isoWeek(),hours:v};S.cap[m]=weekCapFor(v);save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wkadj]').forEach(b2=>b2.onclick=()=>{
     S.cap[m]=Math.max(1,capOf(m)+ +b2.dataset.wkadj);save();paintZen(false)});
+  zmidEl.querySelectorAll('[data-zbs]').forEach(b2=>b2.onclick=()=>{
+    const it=byId(b2.dataset.zid);if(!it||b2.disabled)return;
+    setBucket(it,'board');it.snoozeUntil=null;assign(m,b2.dataset.zbs,it.id,true);save();paintZen(false)});
   zmidEl.querySelectorAll('[data-zs]').forEach(b2=>b2.onclick=()=>{
     if(b2.disabled)return;zenAssign(b2.dataset.zs,b2.dataset.zid)});
   const zsh=zmidEl.querySelector('#zsethours');
