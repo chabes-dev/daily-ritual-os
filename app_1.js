@@ -1031,6 +1031,12 @@ const WORK_BACKLOG=[
   {id:'deep',name:'Deep backlog',color:C.purple,test:i=>!!i.star},
   {id:'batch',name:'Batch backlog',color:C.yellow,test:()=>true}];
 const WORK_BACKLOG_ORDER=['sched','hold','deep','batch','ai','wish'];
+/* display order only — which column an item lands in never depends on this */
+function backlogOrder(){
+  const o=(S.ui.backlogOrder||WORK_BACKLOG_ORDER).filter(id=>WORK_BACKLOG.some(c=>c.id===id));
+  WORK_BACKLOG_ORDER.forEach(id=>{if(!o.includes(id))o.push(id)});
+  return o;
+}
 const backlogCol=i=>WORK_BACKLOG.find(c=>c.test(i)).id;
 /* dropping into (or adding to) a backlog column sets what that column means */
 function applyBacklogCol(i,col){
@@ -1073,15 +1079,18 @@ function viewCols(bucket){
 
 function viewWorkBacklog(items){
   items=items.filter(i=>!i.project);
-  return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.</div>
-  <div class="cols">${WORK_BACKLOG_ORDER.map(id=>{
+  const order=backlogOrder(),custom=order.join()!==WORK_BACKLOG_ORDER.join();
+  return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.
+    ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset column order</button>`:''}</div>
+  <div class="cols">${order.map((id,k)=>{
     const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched';
     const list=items.filter(i=>backlogCol(i)===id)
       .sort(sched?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
     return `<div class="col ${sched?'col-sched':'zone'}" ${sched?'':`data-bcol="${id}" data-bucket="backlog"`}>
       <div class="col-head"><span class="dot" style="color:${c.color}"><b></b></span>
         <span class="col-name" style="color:${c.color}">${c.name}</span>
-        <span class="col-n">${list.length}</span></div>
+        <span class="col-n">${list.length}</span>
+        <span class="colmv-w"><button class="colmv" data-colmv="${id}:-1" title="Move left" ${k===0?'disabled':''}>‹</button><button class="colmv" data-colmv="${id}:1" title="Move right" ${k===order.length-1?'disabled':''}>›</button></span></div>
       ${list.map(i=>card(i,sched?schedLabel(i):null)).join('')}
       ${!list.length?`<div class="col-empty">${sched?'Nothing dated.':'Clear.'}</div>`:''}
       ${sched?'':S.ui.composer==='bcol:'+id
@@ -1829,6 +1838,10 @@ function wire(){
       if(bk==='bcol'){add(v,m,null,'backlog').forEach(x=>applyBacklogCol(x,gid));save()}
       else add(v,m,gid,bk);
       render();toast('added')}})}
+  app.querySelectorAll('[data-colmv]').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const [id,d]=b.dataset.colmv.split(':'),o=backlogOrder(),k=o.indexOf(id),j=k+ +d;
+    if(j<0||j>=o.length)return;[o[k],o[j]]=[o[j],o[k]];S.ui.backlogOrder=o;save();render()});
+  const cr=document.getElementById('colreset');if(cr)cr.onclick=()=>{delete S.ui.backlogOrder;save();render()};
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{S.ui.mode=b.dataset.mode;S.ui.composer=null;save();render()});
