@@ -26,7 +26,7 @@ const ZNOTE={
   w2:'Clear the inbox first — read, act, archive; anything over 60 seconds becomes a task. Then everything in your head, one line each. No order, no judgement.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left today. Not the optimistic number.',
-  wpr:'It takes about five minutes. Work is planned — this keeps the rest of life from quietly piling up.',
+  wpr:'The weekly round in Town. Work is planned — this keeps the rest of life from quietly piling up.',
   wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
@@ -44,7 +44,7 @@ const RITUALS={
     {id:'w2',name:'Clean inbox, dump everything'},
     {id:'w5',name:'How much time is actually free — today'},{id:'ww',name:'How much time is actually free — this week'},
     {id:'w4',name:'Sort the dump'},{id:'w6',name:'Pick today'},{id:'wpw',name:'Pick this week'},
-    {id:'wpr',name:'Did you do your personal ritual this week?'},
+    {id:'wpr',name:'Did you do your weekly round this week?'},
     {id:'w8',name:'One personal thing, before you close'},{id:'wj',name:'Morning pages'},
     {id:'w7',name:'Copy to paper and close this'}],
   personal:[{id:'p0',name:'What would make this week good for them?'},{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
@@ -64,9 +64,10 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
 if(!['home','today','backlog'].includes(S.ui.workView))S.ui.workView='today';
-if(!['home','today','backlog','north'].includes(S.ui.personalView))S.ui.personalView='today';
+/* personal mode is Town now — the old personal board's views (home/today/backlog) map onto it */
+if(!['north','town'].includes(S.ui.personalView))S.ui.personalView='town';
 /* one-time nudge onto the new home dashboard for people who already had a saved tab */
-if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='home';S.ui.sawHome=true}
+if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='town';S.ui.sawHome=true}
 /* Personal journal entries are {text,title}; very old ones were plain strings. Morning pages
    (the old work journal) are written in Spark now, so their in-app history is dropped. */
 S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};
@@ -261,6 +262,7 @@ function archiveAnchors(weekIso){
 const weekPhrase=()=>{const a=(S.personal.anchors||[])[0];return a&&a.text?a.text.trim():''};
 function setWeekPhrase(v){v=(v||'').trim();S.personal.anchors=v?[{id:(S.personal.anchors[0]||{}).id||nid(),text:v}]:[];save()}
 const personalDoneThisWeek=()=>S.pcheck.doneWeek===isoWeek()
+  ||(S.town&&S.town.lastRound&&isoWeek(S.town.lastRound)===isoWeek())
   ||(S.ritual.personalWeekIso===isoWeek()&&(S.ritual.personal||[]).includes('p5'));
 function personalPlan(){
   rollPersonalWeek();
@@ -360,8 +362,8 @@ function planText(m){
   p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
   p.next.forEach(id=>L.push('SPARE / '+byId(id).text));
   if(m==='work'){
-    const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-    if(pp)L.push('PERSONAL / '+pp.text);
+    const pp=personalPick();
+    if(pp)L.push('PERSONAL / '+pp.title);
   }
   return L.join('\n');
 }
@@ -749,13 +751,16 @@ const app=document.getElementById('app'),layer=document.getElementById('layer'),
 function render(){
   const m=S.ui.mode,other=m==='work'?'personal':'work';
   document.body.dataset.mode=m;
-  const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
+  const P=m==='personal';
+  const nRaw=P?0:raw(m).length,otherN=other==='personal'?townHeld():mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
-  const body=v==='home'?viewHome(m):v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
-    :v==='north'?viewNorth()
-    :(m==='personal'?viewWeekThis():viewToday());
-  const tabs=[['home','Home',''],['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
-  if(m==='personal')tabs.push(['spark','Journal ↗',''],['north','North Star','']);
+  const body=P?(v==='north'?viewNorth():viewTown())
+    :v==='home'?viewHome(m):v==='backlog'?viewCols('backlog'):viewToday();
+  const tn=st=>S.town.items.filter(i=>i.state===st).length;
+  const tabs=P?[['town:home','Town hall',''],['town:week','This week',tn('week')],['town:ai','AI queue',tn('ai')],
+      ['town:waiting','Waiting',tn('waiting')],['town:map','Town map',''],['spark','Journal ↗',''],['north','North Star','']]
+    :[['home','Home',''],['today','Today',''],['backlog','Backlog',inBacklog(m).length]];
+  const tvOn=k=>P&&k.startsWith('town:')?v==='town'&&k.slice(5)===(S.ui.townView==='dept'?'map':S.ui.townView||'home'):v===k;
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -770,13 +775,13 @@ function render(){
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
     <div class="nav">
       ${tabs.map(([k,l,n])=>k==='spark'?`<button class="tab" id="navspark" title="Opens Spark in a new tab">${l}</button>`
-        :`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n">${n}</span>`:''}</button>`).join('')}
+        :`<button class="tab ${tvOn(k)?'on':''}" data-v="${k}">${l}${n!==''&&n!==0?`<span class="n">${n}</span>`:''}</button>`).join('')}
       <span class="spacer"></span>
-      <button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
+      ${P?'':`<button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
         title="How much you've said yes to this week. Click to change.">
         <span class="lbl">This week</span>
         <span class="capbar"><i style="width:${Math.min(100,Math.round(load_(m)/Math.max(1,capOf(m))*100))}%"></i></span>
-        <span class="num">${load_(m)} / ${capOf(m)}</span></button>
+        <span class="num">${load_(m)} / ${capOf(m)}</span></button>`}
       ${nRaw?`<button class="sortbtn" id="go">Sort ${nRaw} raw${TOUCH?'':' · t'}</button>`:''}
     </div>
     ${body}
@@ -837,7 +842,7 @@ function viewToday(){
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
   const streak=S.streak[m];
-  const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
+  const pp=personalPick();
 
   return `
   <div class="daybar">
@@ -849,8 +854,8 @@ function viewToday(){
   <div class="planhead"><h2>Today</h2>
     <span>${caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} to AI · 2 spare</span></div>
 
-  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.text)}
-    <em><button class="act" data-done="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
+  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
+    <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
 
   <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
@@ -1275,7 +1280,7 @@ function endZen(){ZEN=false;clearInterval(ZTICK);zlayer.innerHTML='';document.bo
    ritual, then come back to the work ritual where it left off */
 function detourToPersonal(){
   if(!S.ritual.work.includes('wpr'))S.ritual.work=[...S.ritual.work,'wpr'];
-  S.ui.resumeWork=true;endZen();S.ui.mode='personal';save();render();startZen();
+  S.ui.resumeWork=true;endZen();S.ui.mode='personal';S.ui.personalView='town';save();render();startRound();
 }
 function resumeWorkIfDetoured(){
   if(!S.ui.resumeWork)return false;
@@ -1527,31 +1532,29 @@ function paintZen(isStepChange){
     cta=picked?'That is my week':'Skip for now';
   }
   else if(kind==='pnudge'){
-    const p=personalPlan();
     /* Deep is excluded on purpose — it needs a real block, not a squeeze at the end of
        a work day. This step is for the thing genuinely small enough to still fit today. */
-    const chosen=[...p.batch,...p.buffer,...p.next].map(byId).filter(Boolean)
-      .sort((a,b)=>(!!b.quick)-(!!a.quick));
-    const pool=chosen.length?chosen:onBoard('personal').filter(i=>!isParked(i)&&!inPlan('personal',i.id))
-      .sort((a,b)=>(!!b.quick)-(!!a.quick));
-    const list=pool.slice(0,6);
-    const current=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-    mid=`${current?`<div class="zkept">Today's personal pick: <b>${esc(current.text)}</b></div>`:''}
-      ${p.deep.length?`<div class="zkept">Not offering this week's deep pick here — that needs its own block, not the end of a work day.</div>`:''}
-      ${list.length?`<div class="zpick">${list.map(i=>`<div class="zrow" style="--cc:${cardColor(i)}">
-          <span class="zt">${esc(i.text)}</span>
-          ${i.quick?`<span class="zd">⚡ quick</span>`:''}
+    const sz=i=>i.size||45;
+    const list=S.town.items.filter(i=>i.state==='week'&&i.size!==120)
+      .sort((a,b)=>(!!b.prio)-(!!a.prio)||sz(a)-sz(b)||tOrder(a,b)).slice(0,6);
+    const current=personalPick();
+    const deepN=S.town.items.filter(i=>i.state==='week'&&i.size===120).length;
+    mid=`${current?`<div class="zkept">Today's personal pick: <b>${esc(current.title)}</b></div>`:''}
+      ${deepN?`<div class="zkept">Not offering this week's longer deep task${deepN===1?'':'s'} here — that needs its own block, not the end of a work day.</div>`:''}
+      ${list.length?`<div class="zpick">${list.map(i=>{const s=TOWN_SIZES.find(x=>x.v===i.size);
+        return `<div class="zrow" style="--cc:${tColor(i)}">
+          <span class="zt">${esc(i.title)}</span>
+          ${s?`<span class="zd">${s.name}</span>`:''}
           <span class="zb"><button class="zsel ${current&&current.id===i.id?'sel':''}" data-ppick="${i.id}">Pick this</button></span>
-        </div>`).join('')}</div>`
-        :`<div class="zkept">Nothing small enough on the board yet — add something next time you dump.</div>`}`;
+        </div>`}).join('')}</div>`
+        :`<div class="zkept">Nothing on Town's this-week list yet — the weekly round fills it.</div>`}`;
     cta=current?'Keep this and close':'Skip for today';
   }
   else if(kind==='paper'){
     let ppCell='';
     if(m==='work'){
-      const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-      if(pp)ppCell=`<div class="zp" style="${styleFor(pp)}"><b>Personal</b><span>${esc(pp.text)}</span>
-        <button class="zpdone" data-zdone="${pp.id}" title="Already done">✓</button></div>`;
+      const pp=personalPick();
+      if(pp)ppCell=`<div class="zp" style="--cc:${tColor(pp)}"><b>Personal</b><span>${esc(pp.title)}</span></div>`;
     }
     mid=zPlanStrip(m,ppCell)||`<div class="zkept">Nothing picked yet.</div>`;
     cta='Copy to paper';
@@ -1823,6 +1826,14 @@ setInterval(checkDay,30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkDay()});
 
 document.addEventListener('keydown',e=>{
+  if(TZ&&!mlayer.innerHTML&&!dplayer.innerHTML){
+    if(e.key==='Escape'){tzPause();return}
+    const t=e.target;
+    if(t.tagName==='TEXTAREA'||t.tagName==='INPUT')return;
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();const g=document.getElementById('tzgo');if(g)g.click();return}
+    if(e.key==='ArrowLeft'){e.preventDefault();const b=document.getElementById('tzback');if(b)b.click();return}
+    return;
+  }
   if(ZEN&&!mlayer.innerHTML&&!layer.innerHTML){
     if(e.key==='Escape'){exitZen();return}
     const t=e.target;
@@ -1867,8 +1878,694 @@ document.addEventListener('keydown',e=>{
   if(t.tagName==='TEXTAREA'||t.tagName==='INPUT'||t.isContentEditable)return;
   if(e.key==='1'){S.ui.mode='work';save();render()}
   if(e.key==='2'){S.ui.mode='personal';save();render()}
-  if(e.key==='t'&&raw(S.ui.mode).length)openTriage();
+  if(e.key==='t'&&S.ui.mode==='work'&&raw('work').length)openTriage();
 });
+
+/* ===== town (personal · experiment) =====
+   Personal life as a small town with departments. Two hand-started rituals do the work —
+   the weekly round and today's move — and the tab itself is the records office. Town keeps
+   its own list (S.town.items), so the work and personal boards never see these items.
+   Rule: in Town you add and edit; verdicts (this week / AI / waiting / later / drop) only
+   happen in the weekly round. Done is not a verdict — finishing is allowed anywhere. */
+const TOWN_DEPTS=[   /* round order, riskiest first — Wishes always last */
+  {id:'health',name:'Health',color:'#1E8E3E'},{id:'treasury',name:'Treasury',color:'#1A73E8'},
+  {id:'house',name:'House',color:'#E37400'},{id:'dogs',name:'Dogs',color:'#8D6E63'},
+  {id:'kids',name:'Kids',color:'#D01884'},{id:'kitchen',name:'Kitchen',color:'#00897B'},
+  {id:'wardrobe',name:'Wardrobe & self',color:'#A142F4'},{id:'future',name:'Future',color:'#3949AB'},
+  {id:'wishes',name:'Wishes',color:'#12B5CB'}];
+const TOWN_STATES=[{id:'inbox',name:'Inbox'},{id:'week',name:'This week'},{id:'ai',name:'AI queue'},
+  {id:'waiting',name:'Waiting'},{id:'later',name:'Later'},{id:'done',name:'Done'},{id:'dropped',name:'Dropped'}];
+const TOWN_SIZES=[{v:10,name:'10 min'},{v:30,name:'30 min'},{v:60,name:'60+ min'},{v:120,name:'Longer deep task'}];
+/* time free today → the biggest size that fits. Deep tasks only show up for a real block. */
+const TOWN_TIMES=[{v:0,name:'0'},{v:15,name:'15 min',fit:10},{v:30,name:'30 min',fit:30},
+  {v:60,name:'60+ min',fit:60},{v:120,name:'2h+ block',fit:120}];
+const TOWN_QUIET_DAYS=21;
+const TOWN_IMPORT={health:'health',money:'treasury',wish:'wishes'};
+const TOWN_AI_TEMPLATE=`Task: {task}
+Department: {department}
+Notes: {notes}
+
+What I keep on file for this department:
+{reference}
+
+Please take care of this for me. Tell me what you did, what is still open, and anything you need from me.`;
+const TROUND=[{id:'phrase',name:'What would make this week good for them?'},{id:'dump',name:'Empty your head'},
+  {id:'sort',name:'Sort the dump'},{id:'rounds',name:'Rounds'},{id:'size',name:'Size this week’s picks'},
+  {id:'paper',name:'Copy to paper and close'}];
+const TMOVE=[{id:'spark',name:'Morning pages first'},{id:'time',name:'How much time do you have today?'},
+  {id:'pick',name:'Pick one'},{id:'do',name:'Do it'}];
+const TNOTE={
+  phrase:'One thing. Not chores — playing with the kids, a proper dinner, calling your parents. The thing that would make this week good, not just handled.',
+  dump:'Everything personal in your head, one line each. No departments yet, no sorting.',
+  sort:'One tap each — which department does it belong to?',
+  rounds:'One tap each: this week, hand it to AI, waiting on someone, later, done, or drop it.',
+  size:'How long will each one really take? Today’s move uses this to match what fits your time.',
+  paper:'Copy it down. Then close this and get on with the week.',
+  spark:'However it is actually going. Write in Spark, then come back here.',
+  time:'Be honest. Zero is a fine answer.'};
+
+function initTown(){
+  const t=S.town=Object.assign({items:[],depts:{},round:null,move:null,lastRound:null,
+    aiTemplate:TOWN_AI_TEMPLATE,imported:false},S.town||{});
+  if(!Array.isArray(t.items))t.items=[];
+  if(!t.depts||typeof t.depts!=='object')t.depts={};
+  TOWN_DEPTS.forEach(d=>{t.depts[d.id]=Object.assign({ref:'',lastVisit:null},t.depts[d.id]||{})});
+  t.items.forEach(i=>{
+    if(!TOWN_STATES.some(s=>s.id===i.state))i.state='inbox';
+    if(i.dept&&!tDept(i.dept))i.dept=null;       /* a department that was renamed away */
+  });
+  if(typeof t.aiTemplate!=='string')t.aiTemplate=TOWN_AI_TEMPLATE;
+  if(t.move&&t.move.date!==today())t.move=null;  /* today's move never carries into tomorrow */
+  if(t.round&&!TROUND[t.round.step])t.round=null;
+}
+
+const tDept=id=>TOWN_DEPTS.find(d=>d.id===id);
+const tById=id=>S.town.items.find(i=>i.id===id);
+const tOpen=i=>i.state!=='done'&&i.state!=='dropped';
+const tColor=i=>{const d=tDept(i.dept);return d?d.color:C.grey};
+const tMoveLive=()=>S.town.move&&S.town.move.date===today()?S.town.move:null;
+const tWeekEnd=()=>{const d=new Date(isoWeek()+'T12:00:00');d.setDate(d.getDate()+6);return d.toISOString().slice(0,10)};
+/* a waiting item whose check-back day has come (or gone) */
+const tLate=i=>i.state==='waiting'&&!!(i.wait&&i.wait.checkBack&&i.wait.checkBack<=today());
+const tShort=x=>new Date(typeof x==='string'?x+'T12:00:00':x).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+function tAgo(ts){const n=Math.round((new Date(today()+'T12:00:00')-new Date(new Date(ts).toISOString().slice(0,10)+'T12:00:00'))/864e5);
+  return n<=0?'today':n===1?'yesterday':n+' days ago'}
+/* priority first, then the nearest deadline, then oldest */
+function tOrder(a,b){
+  if(!!a.prio!==!!b.prio)return a.prio?-1:1;
+  const da=a.due||'9999',db=b.due||'9999';if(da!==db)return da<db?-1:1;
+  return (a.created||0)-(b.created||0)}
+const tWaitOrder=(a,b)=>((a.wait&&a.wait.checkBack)||'9999')<((b.wait&&b.wait.checkBack)||'9999')?-1:1;
+function tAdd(title,dept,state){
+  const i={id:nid(),title,dept:dept||null,state:state||'inbox',size:null,prio:false,due:null,notes:'',
+    created:Date.now(),movedAt:Date.now(),doneAt:null,wait:null,instr:null,suggest:null};
+  S.town.items.push(i);save();return i}
+function tSet(i,state){
+  i.state=state;i.movedAt=Date.now();i.doneAt=state==='done'||state==='dropped'?Date.now():null;save()}
+function tRefresh(){if(TZ)tzPaint(false);else render()}
+function tCopy(text,el){
+  const fallback=()=>{let t=el&&el.select?el:null,tmp=null;
+    if(!t){tmp=t=document.createElement('textarea');tmp.value=text;tmp.style.cssText='position:fixed;opacity:0';document.body.appendChild(tmp)}
+    t.focus();t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+    if(tmp)tmp.remove();toast(ok?'copied':'select it and copy')};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(()=>toast('copied')).catch(fallback);
+  else fallback();
+}
+function tInstr(i){
+  if(i.instr!=null)return i.instr;
+  const d=tDept(i.dept),ref=d?S.town.depts[d.id].ref.trim():'',notes=(i.notes||'').trim();
+  return S.town.aiTemplate.split('\n').filter(l=>notes||!l.includes('{notes}')).join('\n')
+    .replace(/\{task\}/g,i.title).replace(/\{department\}/g,d?d.name:'—')
+    .replace(/\{notes\}/g,notes).replace(/\{reference\}/g,ref||'(nothing on file yet)')
+    .replace(/\n{3,}/g,'\n\n').trim();
+}
+function tPulse(id){
+  const L=S.town.items.filter(i=>i.dept===id),open=L.filter(tOpen);
+  if(open.some(i=>tLate(i)||(i.due&&i.due<today())))return 'red';
+  if(!open.length)return 'calm';
+  const last=Math.max(...L.map(i=>i.movedAt||i.created||0));
+  return Date.now()-last>TOWN_QUIET_DAYS*864e5?'orange':'calm';
+}
+const TPULSE={calm:'moving',orange:'nothing moved in 3 weeks',red:'something overdue'};
+initTown();
+adoptPersonal();
+
+/* ---- town: sheets ---- */
+function tWaitSheet(i,who,after){
+  const iso=n=>{const x=new Date();x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
+  const quick=[['Tomorrow',1],['In 3 days',3],['Next week',7],['In 2 weeks',14]];
+  const w={who:(i.wait&&i.wait.who)||who||'',since:today(),checkBack:null};
+  const draw=()=>{
+    const custom=w.checkBack&&!quick.some(([,n])=>iso(n)===w.checkBack);
+    sheet(`<h3>Who has it now?</h3><p>${esc(i.title)}</p>
+      <input class="field" id="twho" placeholder="Clinic, bank, concierge…" value="${esc(w.who)}" />
+      <div class="seg-label" style="margin:0 0 10px">Check back</div>
+      <div class="dates">${quick.map(([l,n])=>`<button class="dbtn ${w.checkBack===iso(n)?'on':''}" data-tcb="${iso(n)}">${l}</button>`).join('')}
+        <button class="dbtn ${custom?'on':''}" id="tcbpick">${custom?tShort(w.checkBack):'Pick a date'}</button></div>
+      <div class="sheet-acts" style="margin-top:26px"><button class="btn" id="no">Cancel</button>
+        <button class="btn btn-hot" id="yes">Move to Waiting</button></div>`,
+    el=>{const f=el.querySelector('#twho');f.oninput=()=>{w.who=f.value};if(!w.who)f.focus();
+      el.querySelectorAll('[data-tcb]').forEach(b=>b.onclick=()=>{w.checkBack=b.dataset.tcb;draw()});
+      el.querySelector('#tcbpick').onclick=()=>openDate(w,draw,'checkBack');
+      el.querySelector('#no').onclick=closeSheet;
+      el.querySelector('#yes').onclick=()=>{w.who=w.who.trim();i.wait=w;tSet(i,'waiting');closeSheet();if(after)after()}});
+  };
+  draw();
+}
+/* the ball is back with you: close this one and capture the next step in the same department */
+function tLand(i,after){
+  sheet(`<h3>Landed. What’s the next step?</h3><p>${esc(i.title)} is back with you.</p>
+    <input class="field" id="tnext" placeholder="Book the follow-up appointment" />
+    <div class="sheet-acts"><button class="btn" id="tnone">No next step — it’s finished</button>
+      <span style="flex:1"></span><button class="btn btn-hot" id="tadd">Add next step</button></div>`,
+  el=>{const f=el.querySelector('#tnext');f.focus();
+    const fin=v=>{tSet(i,'done');const n=v?tAdd(v,i.dept,'inbox'):null;closeSheet();
+      toast(n?'next step is in the inbox':'landed');if(after)after(n)};
+    f.onkeydown=e=>{if(e.key==='Enter'&&f.value.trim())fin(f.value.trim())};
+    el.querySelector('#tadd').onclick=()=>{const v=f.value.trim();if(!v){f.focus();return}fin(v)};
+    el.querySelector('#tnone').onclick=()=>fin('')});
+}
+function tNudge(i){
+  const w=i.wait||{};
+  const msg=`Hi${w.who?' '+w.who:''} — just following up on "${i.title}"${w.since?`, which I sent on ${tShort(w.since)}`:''}. Could you let me know where it stands? Thank you!`;
+  sheet(`<h3>Nudge</h3><p>Copy it and send it however you usually reach them. Nothing here changes.</p>
+    <textarea class="tai" id="tnmsg" rows="4">${esc(msg)}</textarea>
+    <div class="sheet-acts" style="margin-top:20px"><button class="btn" id="tnpush">Push check-back</button>
+      <span style="flex:1"></span><button class="btn" id="no">Close</button><button class="btn btn-hot" id="tncp">Copy</button></div>`,
+  el=>{const ta=el.querySelector('#tnmsg');
+    el.querySelector('#tncp').onclick=()=>tCopy(ta.value,ta);
+    el.querySelector('#no').onclick=closeSheet;
+    el.querySelector('#tnpush').onclick=()=>{closeSheet();tPush(i)}});
+}
+function tPush(i,after){i.wait=i.wait||{who:'',since:today(),checkBack:null};openDate(i.wait,after||tRefresh,'checkBack')}
+function tTemplateSheet(){
+  sheet(`<h3>AI instruction template</h3>
+    <p>Used for every card in the AI queue unless you edit that card. Fill-ins: {task} {department} {notes} {reference}.</p>
+    <textarea class="tai" id="ttpltxt" rows="10">${esc(S.town.aiTemplate)}</textarea>
+    <div class="sheet-acts" style="margin-top:20px"><button class="btn" id="tdef">Back to the default</button>
+      <span style="flex:1"></span><button class="btn btn-hot" id="tok">Save</button></div>`,
+  el=>{const ta=el.querySelector('#ttpltxt');
+    el.querySelector('#tdef').onclick=()=>{ta.value=TOWN_AI_TEMPLATE};
+    el.querySelector('#tok').onclick=()=>{S.town.aiTemplate=ta.value;save();closeSheet();tRefresh()}},true);
+}
+function tItemSheet(id){
+  const draw=()=>{
+    const i=tById(id),box=mlayer.querySelector('#tdtl');if(!i||!box){closeSheet();return}
+    const st=TOWN_STATES.find(s=>s.id===i.state),open=tOpen(i),w=i.wait||{};
+    box.innerHTML=`
+      <textarea class="dtext" id="tti" rows="1">${esc(i.title)}</textarea>
+      <div class="zkept" style="margin:4px 0 0">${st.name}${open?' · verdicts happen in the weekly round':''}</div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Department</div>
+        <div class="chips">${TOWN_DEPTS.map(d=>`<button class="chip ${i.dept===d.id?'on':''}" data-tdp="${d.id}" style="color:${d.color}"><b></b>${d.name}</button>`).join('')}</div></div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Size</div>
+        <div class="chips">${TOWN_SIZES.map(s=>`<button class="chip ${i.size===s.v?'on':''}" data-tsz="${s.v}" style="color:var(--hot)"><b></b>${s.name}</button>`).join('')}
+          <button class="chip ${!i.size?'on':''}" data-tsz="" style="color:${C.grey}"><b></b>Not sized</button></div></div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Priority</div>
+        <div class="chips"><button class="chip ${i.prio?'on':''}" id="tprio" style="color:${C.purple}"><b></b>★ Priority</button></div></div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Deadline</div><div class="dates">${dateChips(i)}</div></div>
+      ${i.state==='waiting'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Waiting on</div>
+        <input class="sinput" id="twho2" placeholder="Who has it?" value="${esc(w.who||'')}" style="width:100%" />
+        <div class="zkept" style="margin:12px 0 10px">since ${w.since?tShort(w.since):'—'} · check back ${w.checkBack?dueLabel(w.checkBack).t:'— not set'}</div>
+        <button class="dbtn" id="tcb2">${w.checkBack?'Change check-back':'Set check-back'}</button></div>`:''}
+      ${i.state==='ai'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Instruction for the AI</div>
+        <textarea class="tai" id="tins2" rows="6">${esc(tInstr(i))}</textarea></div>`:''}
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Notes</div>
+        <textarea class="tai" id="tnotes" rows="3" placeholder="Anything worth remembering about this one">${esc(i.notes||'')}</textarea></div>
+      <div class="sheet-acts" style="margin-top:30px">
+        <button class="btn btn-danger" id="tdel">Delete</button><span style="flex:1"></span>
+        ${open?`<button class="btn" id="tdone">✓ Done</button>`:''}
+        <button class="btn btn-hot" id="tok">Save</button></div>`;
+    const ta=box.querySelector('#tti');autosize(ta);
+    ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v){i.title=v;save()}};
+    box.querySelectorAll('[data-tdp]').forEach(b=>b.onclick=()=>{i.dept=b.dataset.tdp;save();draw()});
+    box.querySelectorAll('[data-tsz]').forEach(b=>b.onclick=()=>{i.size=b.dataset.tsz?+b.dataset.tsz:null;save();draw()});
+    box.querySelector('#tprio').onclick=()=>{i.prio=!i.prio;save();draw()};
+    box.querySelectorAll('[data-dset]').forEach(b=>b.onclick=()=>{i.due=b.dataset.dset||null;save();draw()});
+    const dpk=box.querySelector('[data-dpick]');if(dpk)dpk.onclick=()=>openDate(i,draw);
+    const who=box.querySelector('#twho2');if(who)who.oninput=()=>{i.wait=i.wait||{since:today(),checkBack:null};i.wait.who=who.value;save()};
+    const cb=box.querySelector('#tcb2');if(cb)cb.onclick=()=>tPush(i,draw);
+    const ins=box.querySelector('#tins2');if(ins)ins.oninput=()=>{i.instr=ins.value;save()};
+    const nt=box.querySelector('#tnotes');nt.oninput=()=>{i.notes=nt.value;save()};
+    box.querySelector('#tok').onclick=()=>{closeSheet();tRefresh()};
+    const dn=box.querySelector('#tdone');
+    if(dn)dn.onclick=()=>{const was=i.state;tSet(i,'done');closeSheet();tRefresh();
+      toastUndo('done',()=>{tSet(i,was);tRefresh()})};
+    box.querySelector('#tdel').onclick=()=>sheetConfirm('Delete this?',i.title,'Delete',()=>{
+      S.town.items=S.town.items.filter(x=>x.id!==id);save();tRefresh()});
+  };
+  sheet('<div id="tdtl"></div>',()=>draw(),true);
+  const v=mlayer.querySelector('.veil');
+  if(v)v.onclick=e=>{if(e.target.classList.contains('veil')){closeSheet();tRefresh()}};
+}
+/* Town replaced the old personal board. Once, every open personal task is copied into
+   Town's inbox with a suggested department; the originals stay in storage untouched (just
+   no longer shown), so nothing is lost and a rollback still has them. Anything copied by the
+   earlier one-time import is recognised by its `from` id and not copied twice. */
+function adoptPersonal(){
+  if(S.town.adopted)return;
+  const have=new Set(S.town.items.map(i=>i.from).filter(Boolean));
+  S.items.filter(i=>i.mode==='personal'&&!i.done&&!have.has(i.id)).forEach(i=>{
+    const t=tAdd(i.text,null,'inbox');t.suggest=TOWN_IMPORT[i.domain]||null;t.from=i.id;if(i.due)t.due=i.due});
+  S.town.adopted=true;S.town.imported=true;save();
+}
+/* open Town items, for the "held in personal" ledger shown in work mode */
+const townHeld=()=>S.town.items.filter(i=>['inbox','week','ai','waiting'].includes(i.state)).length;
+/* the one personal thing the work ritual surfaced for today — a Town item now */
+function personalPick(){const p=S.personal.todayPick;if(!p||p.date!==today())return null;
+  const i=tById(p.id);return i&&tOpen(i)?i:null}
+
+/* ---- town: views ---- */
+function viewTown(){
+  const v=S.ui.townView||'home';
+  return `${v==='week'?tViewWeek():v==='ai'?tViewAI():v==='waiting'?tViewWaiting():v==='map'?tViewMap():v==='dept'?tViewDept(S.ui.townDept):tViewHome()}`;
+}
+function tViewHome(){
+  const T=S.town.items,n=st=>T.filter(i=>i.state===st).length;
+  const r=S.town.round,mv=tMoveLive(),late=T.filter(tLate).length;
+  const moved=T.filter(i=>i.from&&i.state==='inbox'&&!i.dept).length,ph=weekPhrase();
+  const where=r?(TROUND[r.step].id==='rounds'&&r.depts&&r.depts[r.di]?tDept(r.depts[r.di]).name+' · ':'')+'step '+(r.step+1)+' of '+TROUND.length:'';
+  const mvTime=mv&&mv.mins?TOWN_TIMES.find(x=>x.v===mv.mins):null;
+  return `<div class="home-grid">
+    <button class="hometile hometile-phrase" id="hometile-phrase">
+      <span class="ht-label">💛 What would make this week good</span>
+      <span class="ht-title">${ph?esc(ph):'Not set yet — tap to choose one thing'}</span></button>
+    <div class="town-acts">
+      <button class="hometile hometile-ritual" id="tround">
+        <span class="ht-label">Weekly round</span>
+        <span class="ht-title">${r?'Continue the round':'Start the round'}</span>
+        <span class="ht-meta">${r?where:S.town.lastRound?'last round '+tAgo(S.town.lastRound):'not run yet'}</span></button>
+      <button class="hometile hometile-ritual tmove" id="tmove">
+        <span class="ht-label">Today’s move</span>
+        <span class="ht-title">${mv?'Continue today’s move':'One thing, today'}</span>
+        <span class="ht-meta">${mvTime?mvTime.name+' today':n('week')+' on this week’s list'}</span></button>
+    </div>
+    <div class="zdump tcap"><textarea id="tcap" rows="1" placeholder="Something on your mind? It goes to the inbox — ⏎"></textarea></div>
+    ${moved?`<div class="zkept tmoved">${moved} task${moved===1?'':'s'} from the old personal board ${moved===1?'is':'are'} in the inbox — the weekly round sorts ${moved===1?'it':'them'}.</div>`:''}
+    <div class="town-row">
+      <button class="hometile" data-tv="week"><span class="ht-label">This week</span>
+        <span class="ht-title">${n('week')} on the list</span><span class="ht-meta">${n('inbox')} in the inbox</span></button>
+      <button class="hometile" data-tv="ai"><span class="ht-label">AI queue</span>
+        <span class="ht-title">${n('ai')} ready</span><span class="ht-meta">copy · send · mark sent</span></button>
+      <button class="hometile" data-tv="waiting"><span class="ht-label">Waiting</span>
+        <span class="ht-title">${n('waiting')} out</span><span class="ht-meta" ${late?'style="color:#C5221F"':''}>${late?late+' to check on':'nothing due back'}</span></button>
+      <button class="hometile" data-tv="map"><span class="ht-label">Town map</span>
+        <span class="ht-title">${TOWN_DEPTS.filter(d=>tPulse(d.id)==='red').length?'Something’s overdue':'All departments'}</span>
+        <span class="ht-meta">${TOWN_DEPTS.length} departments</span></button>
+    </div>
+  </div>`;
+}
+function tCard(i){
+  const d=tDept(i.dept),l=i.due?dueLabel(i.due):null,sub=d||i.prio||l;
+  return `<div class="card tcard" data-topen="${i.id}" style="--cc:${tColor(i)}">
+    <div class="card-top"><button class="tick" data-tdone="${i.id}" title="Done"></button>
+      <div class="card-text">${esc(i.title)}</div></div>
+    ${sub?`<div class="card-sub">${d?`<span class="tag" style="color:${d.color}">${esc(d.name)}</span>`:''}
+      ${i.prio?`<span class="tag pill" style="background:${C.purple}">★ priority</span>`:''}
+      ${l?`<span class="tag pill" style="background:${l.c==='late'?C.red:'var(--hot)'}">${l.t}</span>`:''}</div>`:''}</div>`;
+}
+function tViewWeek(){
+  const mv=tMoveLive(),t=mv&&mv.mins?TOWN_TIMES.find(x=>x.v===mv.mins):null,fit=t?t.fit:null;
+  const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
+  const cols=[{v:null,name:'Unsized'},...TOWN_SIZES].filter(c=>c.v!==null||week.some(i=>!i.size));
+  return `<div class="planhead"><h2>This week</h2>
+      <span>${week.length} on the list${t?` · today’s move: ${t.name} — what fits is lit`:''}</span></div>
+    ${!week.length?`<div class="empty"><h3>Nothing chosen yet.</h3><p>The weekly round fills this — start it from the Town hall.</p></div>`:''}
+    ${week.length?`<div class="cols tcols">${cols.map(c=>{
+      const list=week.filter(i=>(i.size||null)===c.v),cls=fit==null||c.v==null?'':c.v<=fit?'tfit':'tdim';
+      return `<div class="col ${cls}"><div class="col-head"><span class="col-name">${c.name}</span><span class="col-n">${list.length}</span></div>
+        ${list.map(tCard).join('')}${!list.length?'<div class="col-empty">Clear.</div>':''}</div>`}).join('')}</div>`:''}`;
+}
+function tViewAI(){
+  const list=S.town.items.filter(i=>i.state==='ai').sort(tOrder);
+  return `<div class="planhead"><h2>AI queue</h2><span>${list.length} ready</span></div>
+    <p class="tlede">Copying changes nothing. Once you have actually sent it, press <b>Sent → Waiting</b>.
+      <button class="zlink" id="ttpl" style="font-size:12px;margin-left:6px">edit the template</button></p>
+    <div class="tailist">${list.map(i=>{const d=tDept(i.dept);
+      return `<div class="taicard" style="--cc:${tColor(i)}">
+        <div class="taihead">${d?`<span class="dot" style="color:${d.color}"><b></b>${d.name}</span>`:''}
+          ${i.prio?`<span class="tag pill" style="background:${C.purple}">★ priority</span>`:''}</div>
+        <div class="taititle" data-topen="${i.id}">${esc(i.title)}</div>
+        <textarea class="tai" data-tinstr="${i.id}" rows="7">${esc(tInstr(i))}</textarea>
+        <div class="taiacts"><button class="btn btn-hot" data-tcopy="${i.id}">Copy</button>
+          <button class="btn" data-tsent="${i.id}">Sent → Waiting</button>
+          ${i.instr!=null?`<button class="zlink" data-treset="${i.id}" style="font-size:12px">back to the template</button>`:''}</div>
+      </div>`}).join('')||`<div class="empty"><h3>Queue’s clear.</h3><p>Things land here when the weekly round delegates them.</p></div>`}</div>`;
+}
+function tWaitRow(i){
+  const w=i.wait||{},late=tLate(i);
+  return `<div class="trow ${late?'late':''}">
+    <span class="tr-what" data-topen="${i.id}">${esc(i.title)}</span>
+    <span class="tr-who">${esc(w.who||'—')}</span>
+    <span class="tr-meta">since ${w.since?tShort(w.since):'—'}</span>
+    <span class="tr-meta tr-cb">${w.checkBack?(late?'⚠ ':'')+'check '+dueLabel(w.checkBack).t:'no check-back'}</span>
+    <span class="tr-acts"><button class="zsel" data-tland="${i.id}">Landed</button>
+      <button class="zsel" data-tnudge="${i.id}">Nudge</button>
+      <button class="zsel" data-tpush="${i.id}">Push</button></span></div>`;
+}
+function tViewWaiting(){
+  const all=S.town.items.filter(i=>i.state==='waiting');
+  const groups=[...TOWN_DEPTS,{id:null,name:'No department',color:C.grey}]
+    .map(d=>({d,list:all.filter(i=>(i.dept||null)===d.id).sort(tWaitOrder)})).filter(g=>g.list.length);
+  return `<div class="planhead"><h2>Waiting</h2><span>${all.length} out · ${all.filter(tLate).length} to check on</span></div>
+    ${groups.length?`<div class="trow trow-h"><span>What</span><span>Who has it</span><span>Since</span><span>Check back</span><span></span></div>`:''}
+    ${groups.map(g=>`<div class="restgroup tgroup"><h4 style="color:${g.d.color}"><b></b>${g.d.name}<span>${g.list.length}</span></h4>
+      ${g.list.map(tWaitRow).join('')}</div>`).join('')
+      ||`<div class="empty"><h3>Nothing out.</h3><p>When the round sends something to someone, it shows up here.</p></div>`}`;
+}
+function tViewMap(){
+  return `<div class="planhead"><h2>Town map</h2><span>in round order · tap a department</span></div>
+    <div class="tmap">${TOWN_DEPTS.map(d=>{
+      const L=S.town.items.filter(i=>i.dept===d.id),c=st=>L.filter(i=>i.state===st).length,p=tPulse(d.id),lv=S.town.depts[d.id].lastVisit;
+      return `<button class="ttile" data-tdept="${d.id}" style="--cc:${d.color}">
+        <span class="ttile-h"><span class="tpulse ${p}" title="${TPULSE[p]}"></span><span class="ttile-n">${d.name}</span></span>
+        <span class="ttile-c">${c('week')} this week · ${c('ai')} AI queue · ${c('waiting')} waiting · ${c('later')} later</span>
+        ${c('inbox')?`<span class="ttile-c" style="color:var(--ink-3)">${c('inbox')} in the inbox</span>`:''}
+        <span class="ttile-v">${p==='calm'?'':TPULSE[p]+' · '}${lv?'visited '+tAgo(lv):'not visited yet'}</span></button>`}).join('')}</div>`;
+}
+function tLine(i){
+  const l=i.due?dueLabel(i.due):null,s=TOWN_SIZES.find(x=>x.v===i.size);
+  return `<div class="zrow tline" data-topen="${i.id}" style="--cc:${tColor(i)}">
+    <span class="zt">${esc(i.title)}</span>
+    ${i.prio?`<span class="zd" style="color:${C.purple}">★ priority</span>`:''}
+    ${s?`<span class="zd">${s.name}</span>`:''}
+    ${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}</div>`;
+}
+function tViewDept(id){
+  const d=tDept(id);if(!d)return tViewMap();
+  const L=S.town.items.filter(i=>i.dept===id),p=tPulse(id),lv=S.town.depts[id].lastVisit;
+  const groups=['inbox','week','ai','waiting','later'].map(s=>({s:TOWN_STATES.find(x=>x.id===s),list:L.filter(i=>i.state===s).sort(s==='waiting'?tWaitOrder:tOrder)})).filter(g=>g.list.length);
+  const done=L.filter(i=>i.state==='done').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  return `<div style="margin-bottom:14px"><button class="zlink" data-tv="map" style="font-size:12px">← Town map</button></div>
+    <div class="planhead"><h2 style="color:${d.color}">${d.name}</h2>
+      <span><span class="tpulse ${p}" style="display:inline-block;vertical-align:-1px;margin-right:8px"></span>${TPULSE[p]} · ${lv?'visited '+tAgo(lv):'not visited yet'}</span></div>
+    <div class="tdeptpage">
+      <div>
+        <input class="snew" id="tdadd" placeholder="Add something for ${esc(d.name)} — ⏎ (it goes to the inbox)" style="margin:0 0 8px" />
+        ${groups.map(g=>`<div class="slotlabel">${g.s.name} — ${g.list.length}</div>
+          ${g.list.map(i=>g.s.id==='waiting'?tWaitRow(i):tLine(i)).join('')}`).join('')
+          ||`<div class="col-empty">Nothing open here.</div>`}
+      </div>
+      <div>
+        <div class="slotlabel" style="margin-top:0">Reference card</div>
+        <textarea class="tref" id="tref" placeholder="Standing facts — doctor names, renewal months, sizes, who to call">${esc(S.town.depts[id].ref)}</textarea>
+        <div class="zkept" style="margin:10px 0 0">No ID, card or account numbers here — it’s stored as plain text in this browser.</div>
+        <div class="slotlabel">Done log — ${done.length}</div>
+        ${done.map(i=>`<div class="donerow"><span class="d" style="background:${d.color}"></span>
+          <span class="t">${esc(i.title)}</span><span class="tag">${tShort(i.doneAt)}</span></div>`).join('')
+          ||`<div class="col-empty">Nothing finished yet.</div>`}
+      </div>
+    </div>`;
+}
+/* shared by the tab and the ritual overlay: open, done, waiting-row actions */
+function tWireCommon(root){
+  root.querySelectorAll('[data-topen]').forEach(el=>el.onclick=e=>{
+    if(e.target.closest('[data-tdone]'))return;tItemSheet(el.dataset.topen)});
+  root.querySelectorAll('[data-tdone]').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const i=tById(b.dataset.tdone);if(!i)return;const was=i.state;tSet(i,'done');tRefresh();
+    toastUndo('done',()=>{tSet(i,was);tRefresh()})});
+  root.querySelectorAll('[data-tland]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tland);
+    if(i)tLand(i,n=>{const r=S.town.round;
+      if(TZ==='round'&&n&&r&&r.lists&&r.depts&&r.lists[r.depts[r.di]]&&n.dept===r.depts[r.di]){r.lists[n.dept].push(n.id);save()}
+      tRefresh()})});
+  root.querySelectorAll('[data-tnudge]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tnudge);if(i)tNudge(i)});
+  root.querySelectorAll('[data-tpush]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tpush);if(i)tPush(i)});
+}
+function wireTown(){
+  if(S.ui.mode!=='personal'||S.ui.personalView==='north')return;
+  app.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{S.ui.townView=b.dataset.tv;save();render()});
+  app.querySelectorAll('[data-tdept]').forEach(b=>b.onclick=()=>{S.ui.townView='dept';S.ui.townDept=b.dataset.tdept;save();render()});
+  const tr=document.getElementById('tround');if(tr)tr.onclick=startRound;
+  const tm=document.getElementById('tmove');if(tm)tm.onclick=startMove;
+  const cap=document.getElementById('tcap');
+  if(cap){autosize(cap);cap.oninput=()=>autosize(cap);
+    cap.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();
+      const lines=cap.value.split('\n').map(x=>x.trim()).filter(Boolean);if(!lines.length)return;
+      lines.forEach(t=>tAdd(t,null,'inbox'));render();toast(lines.length===1?'in the inbox':lines.length+' in the inbox');
+      const c2=document.getElementById('tcap');if(c2)c2.focus()}}}
+  const da=document.getElementById('tdadd');
+  if(da)da.onkeydown=e=>{if(e.key==='Enter'){const v=da.value.trim();if(!v)return;
+    tAdd(v,S.ui.townDept,'inbox');render();toast('in the inbox');const d2=document.getElementById('tdadd');if(d2)d2.focus()}};
+  const rf=document.getElementById('tref');
+  if(rf){autosize(rf);rf.oninput=()=>{autosize(rf);S.town.depts[S.ui.townDept].ref=rf.value;save()}}
+  app.querySelectorAll('[data-tinstr]').forEach(ta=>ta.oninput=()=>{const i=tById(ta.dataset.tinstr);if(i){i.instr=ta.value;save()}});
+  app.querySelectorAll('[data-tcopy]').forEach(b=>b.onclick=()=>{
+    const ta=app.querySelector(`[data-tinstr="${b.dataset.tcopy}"]`);if(ta)tCopy(ta.value,ta)});
+  app.querySelectorAll('[data-tsent]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tsent);if(i)tWaitSheet(i,'AI concierge',render)});
+  app.querySelectorAll('[data-treset]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.treset);if(i){i.instr=null;save();render()}});
+  const tp=document.getElementById('ttpl');if(tp)tp.onclick=tTemplateSheet;
+  tWireCommon(app);
+}
+
+/* ---- town: the two rituals ----
+   Their own overlay and state machine (S.town.round / S.town.move), styled with the work
+   ritual's shell but sharing none of its state — so they can't disturb ZSTEPS / S.ritual.
+   Every tap saves; closing mid-way is a pause and reopening resumes on the same screen. */
+let TZ=null,TZT0=0,TZTICK=null,TZJUST=[],TZLATER=false;
+const tzlayer=(()=>{const d=document.createElement('div');document.body.appendChild(d);return d})();
+function tzOpen(kind){
+  TZ=kind;TZT0=Date.now();TZJUST=[];TZLATER=false;document.body.style.overflow='hidden';
+  tzlayer.innerHTML=`<div id="zen" class="tzen">
+    <div class="zbar"><div class="zdots" id="tzdots"></div><div class="zclock" id="tzclock">00:00</div>
+      <button class="zexit" id="tzexit">Pause</button></div>
+    <div class="zbody"><div id="tzcontent"><div class="zstep" id="tzstep"></div><div class="zname" id="tzname"></div>
+      <div class="znote" id="tznote"></div><div id="tzmid"></div></div>
+      <div class="zacts" id="tzacts"></div><div class="zhint" id="tzhint"></div></div></div>`;
+  document.getElementById('tzexit').onclick=tzPause;
+  TZTICK=setInterval(()=>{const el=document.getElementById('tzclock');
+    if(el){const s=Math.floor((Date.now()-TZT0)/1000);
+      el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},1000);
+  tzPaint(true);
+}
+function tzClose(){TZ=null;clearInterval(TZTICK);tzlayer.innerHTML='';document.body.style.overflow='';render()}
+function tzPause(){const k=TZ;tzClose();toast('paused — it picks up right here');if(k==='round')resumeWorkIfDetoured()}
+function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change)}
+function tzFrame(o,change){
+  document.getElementById('tzdots').innerHTML=o.dots.map(c=>`<i class="${c}"></i>`).join('');
+  document.getElementById('tzstep').textContent=o.step;
+  document.getElementById('tzname').textContent=o.name;
+  document.getElementById('tznote').textContent=o.note||'';
+  const mid=document.getElementById('tzmid');mid.innerHTML=o.mid;
+  document.getElementById('tzacts').innerHTML=`${o.back?`<button class="zbtn back" id="tzback" title="Previous step">←</button>`:''}
+    ${o.extra||''}<button class="zbtn" id="tzgo">${o.cta}</button>`;
+  document.getElementById('tzhint').textContent=o.hint||'⏎ or space for the next step · Pause keeps your place';
+  if(o.back)document.getElementById('tzback').onclick=o.back;
+  document.getElementById('tzgo').onclick=o.go;
+  if(change){const z=tzlayer.querySelector('#zen');if(z)z.scrollTop=0;
+    const c=document.getElementById('tzcontent');c.classList.remove('stepin');void c.offsetWidth;c.classList.add('stepin')}
+  tWireCommon(mid);
+  return mid;
+}
+const tzDots=(n,at)=>Array.from({length:n},(_,k)=>k<at?'on':k===at?'now':'');
+
+/* -- weekly round -- */
+function startRound(){if(!S.town.round){S.town.round={step:0,startedAt:Date.now()};save()}tzOpen('round')}
+/* a department gets a screen if it has something to decide or someone to chase */
+const tDeptBusy=id=>S.town.items.some(i=>i.dept===id&&(i.state==='inbox'||i.state==='week'||i.state==='waiting'));
+function tStartRounds(r,at){
+  r.depts=TOWN_DEPTS.filter(d=>tDeptBusy(d.id)).map(d=>d.id);r.lists={};
+  r.di=at==='last'?Math.max(0,r.depts.length-1):0;tEnterDept(r);
+}
+/* the department's list is frozen on entry so a verdict doesn't make a row vanish under
+   your finger — you see what you chose, and can change it until you move on */
+function tEnterDept(r){
+  const id=r.depts[r.di];if(!id)return;
+  r.lists=r.lists||{};
+  const fresh=S.town.items.filter(i=>i.dept===id&&(i.state==='inbox'||i.state==='week')).sort(tOrder).map(i=>i.id);
+  r.lists[id]=[...new Set([...(r.lists[id]||[]),...fresh])];
+  S.town.depts[id].lastVisit=Date.now();TZLATER=false;
+}
+function tzRoundNext(){
+  const r=S.town.round,st=TROUND[r.step];
+  if(st.id==='rounds'&&r.depts&&r.di<r.depts.length-1){r.di++;tEnterDept(r);save();tzPaint(true);return}
+  if(st.id==='paper'){S.town.round=null;S.town.lastRound=Date.now();S.pcheck={doneWeek:isoWeek(),skips:[]};save();tzClose();
+    toast('round closed — have a good week');if(resumeWorkIfDetoured())startZen();return}
+  r.step++;
+  if(TROUND[r.step].id==='rounds')tStartRounds(r,0);
+  save();tzPaint(true);
+}
+function tzRoundBack(){
+  const r=S.town.round,st=TROUND[r.step];
+  if(st.id==='rounds'&&r.di>0){r.di--;tEnterDept(r);save();tzPaint(true);return}
+  if(r.step===0)return;
+  r.step--;
+  if(TROUND[r.step].id==='rounds')tStartRounds(r,'last');
+  save();tzPaint(true);
+}
+const TVERDICTS=[['week','This week'],['ai','AI'],['waiting','Waiting'],['later','Later'],['done','Done'],['dropped','Drop']];
+function tVerdictRow(i){
+  const s=TOWN_SIZES.find(x=>x.v===i.size),l=i.due?dueLabel(i.due):null;
+  return `<div class="zrow tvrow ${i.state==='dropped'||i.state==='done'?'off':''}" style="--cc:${tColor(i)}">
+    <span class="zt" data-topen="${i.id}">${esc(i.title)}</span>
+    ${i.prio?`<span class="zd" style="color:${C.purple}">★</span>`:''}
+    ${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}
+    ${s?`<span class="zd dim">${s.name}</span>`:''}
+    ${i.state==='inbox'?`<span class="ztag week">new</span>`:''}
+    <span class="zb">${TVERDICTS.map(([v,lb])=>`<button class="zsel ${i.state===v?'sel':''} ${v==='dropped'?'danger':''}" data-tverd="${i.id}:${v}">${lb}</button>`).join('')}</span></div>`;
+}
+function tzRound(change){
+  const r=S.town.round;if(!r){tzClose();return}
+  const st=TROUND[r.step];
+  const o={dots:tzDots(TROUND.length,r.step),step:`Weekly round · step ${r.step+1} of ${TROUND.length}`,name:st.name,
+    note:TNOTE[st.id]||'',back:r.step>0||(st.id==='rounds'&&r.di>0)?tzRoundBack:null,go:tzRoundNext,cta:'Next'};
+  if(st.id==='phrase'){
+    const ph=weekPhrase();
+    o.mid=`<div class="zdump"><textarea id="tzphrase" rows="1" placeholder="Play with Léo on Saturday">${esc(ph)}</textarea></div>
+      <div class="zkept">Shown at the top of Personal home all week.</div>`;
+    o.cta=ph?'That is the week':'Skip for now';
+  }
+  else if(st.id==='dump'){
+    const n=S.town.items.filter(i=>i.state==='inbox'&&!i.dept).length;
+    o.mid=`<div class="zdump"><textarea id="tzcap" rows="1" placeholder="One line each. Press ⏎ after every one."></textarea></div>
+      <div class="zkept">${n?n+' in the inbox, waiting to be sorted':'Nothing in the inbox yet.'}</div>
+      ${TZJUST.length?`<div class="zcarry"><div class="zcarry-h">Just added — ${TZJUST.length}</div>
+        <div class="zcarry-l">${TZJUST.map(t=>`<span class="zci" style="--cc:var(--hot)">${esc(t)}</span>`).join('')}</div></div>`:''}`;
+    o.cta=TZJUST.length?'Done dumping':'Skip';
+    o.hint='⏎ keeps a line · then press '+o.cta;
+  }
+  else if(st.id==='sort'){
+    r.sortList=[...new Set([...(r.sortList||[]),...S.town.items.filter(i=>i.state==='inbox'&&!i.dept).map(i=>i.id)])].filter(id=>tById(id));
+    const list=r.sortList.map(tById),left=list.filter(i=>!i.dept).length;
+    o.mid=list.length?`<div class="zkept">${left?left+' to go':'All sorted.'}${list.some(i=>i.suggest&&!i.dept)?' · dashed = suggested from your old backlog':''}</div>
+      <div class="zpick">${list.map(i=>`<div class="zrow tsortrow" style="--cc:${tColor(i)}">
+        <span class="zt">${esc(i.title)}</span>
+        <span class="zb">${TOWN_DEPTS.map(d=>`<button class="zsel tdsel ${i.dept===d.id?'sel':''} ${!i.dept&&i.suggest===d.id?'sug':''}" data-tsort="${i.id}:${d.id}" style="--dc:${d.color}">${d.name}</button>`).join('')}
+          <button class="zsel icon danger" data-tdel="${i.id}" title="Delete">×</button></span></div>`).join('')}</div>`
+      :`<div class="zbig muted">0</div><div class="zkept">Nothing to sort.</div>`;
+    o.cta=left?'Leave the rest for now':'Next';
+    o.hint='one tap each · × deletes something that isn’t a task';
+  }
+  else if(st.id==='rounds'){
+    const id=r.depts&&r.depts[r.di];
+    if(!id){o.mid=`<div class="hout"><b>Every department is clear.</b> Nothing to decide, nobody to chase.</div>`}
+    else{
+      const d=tDept(id),list=(r.lists[id]||[]).map(tById).filter(Boolean);
+      const later=S.town.items.filter(i=>i.dept===id&&i.state==='later'&&!list.includes(i)).sort(tOrder);
+      const waiting=S.town.items.filter(i=>i.dept===id&&i.state==='waiting'&&!list.includes(i)).sort(tWaitOrder);
+      const next=r.depts[r.di+1];
+      o.name=d.name;
+      o.step=`Weekly round · step ${r.step+1} of ${TROUND.length} · department ${r.di+1} of ${r.depts.length}`;
+      o.mid=`${list.length?`<div class="zpick">${list.map(tVerdictRow).join('')}</div>`
+          :`<div class="zkept">Nothing to decide here — just the follow-ups below.</div>`}
+        <input class="snew" id="tzadd" placeholder="Anything else for ${esc(d.name)}? ⏎" style="margin:6px 0 4px" />
+        ${later.length?`<div style="margin-top:26px"><button class="zlink" id="tzlater">Later — ${later.length} · ${TZLATER?'hide':'show'}</button></div>
+          ${TZLATER?`<div class="zpick" style="margin-top:12px">${later.map(tVerdictRow).join('')}</div>`:''}`:''}
+        ${waiting.length?`<div class="zcarry-h" style="margin-top:30px">Waiting on others — ${waiting.length}</div>${waiting.map(tWaitRow).join('')}`:''}`;
+      o.cta=next?'Next: '+tDept(next).name:'Done with the rounds';
+      o.hint='tap a verdict · tap the title to edit details';
+    }
+  }
+  else if(st.id==='size'){
+    const week=S.town.items.filter(i=>i.state==='week').sort(tOrder),left=week.filter(i=>!i.size).length;
+    o.mid=week.length?`<div class="zkept">${left?left+' not sized yet':'All sized.'}</div>
+      <div class="zpick">${week.map(i=>`<div class="zrow" style="--cc:${tColor(i)}">
+        <span class="zt" data-topen="${i.id}">${esc(i.title)}</span>
+        <span class="zb">${TOWN_SIZES.map(s=>`<button class="zsel ${i.size===s.v?'sel':''}" data-tsize="${i.id}:${s.v}">${s.v===120?'Deep':s.name}</button>`).join('')}</span></div>`).join('')}</div>`
+      :`<div class="zkept">Nothing on this week’s list — that’s allowed.</div>`;
+    o.cta=left?'Leave the rest unsized':'Next';
+  }
+  else if(st.id==='paper'){
+    const txt=tPaperText();
+    o.mid=`<div class="paper" id="tzpaper">${esc(txt||'Nothing chosen this week.')}</div>`;
+    o.extra=txt?`<button class="zbtn tzcopy" id="tzcopy">Copy</button>`:'';
+    o.cta='Close the round';
+  }
+  const mid=tzFrame(o,change);
+  /* step-specific wiring */
+  const ph=mid.querySelector('#tzphrase');
+  if(ph){autosize(ph);if(change)ph.focus();
+    ph.oninput=()=>{autosize(ph);setWeekPhrase(ph.value);document.getElementById('tzgo').textContent=weekPhrase()?'That is the week':'Skip for now'};
+    ph.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();tzRoundNext()}}}
+  const cap=mid.querySelector('#tzcap');
+  if(cap){autosize(cap);cap.focus();cap.oninput=()=>autosize(cap);
+    cap.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();
+      const lines=cap.value.split('\n').map(x=>x.trim()).filter(Boolean);if(!lines.length)return;
+      lines.forEach(t=>{tAdd(t,null,'inbox');TZJUST.push(t)});tzPaint(false)}}}
+  mid.querySelectorAll('[data-tsort]').forEach(b=>b.onclick=()=>{const [id,d]=b.dataset.tsort.split(':'),i=tById(id);
+    if(i){i.dept=d;i.movedAt=Date.now();save();tzPaint(false)}});
+  mid.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tdel);if(!i)return;
+    S.town.items=S.town.items.filter(x=>x.id!==i.id);save();tzPaint(false);
+    toastUndo('deleted',()=>{S.town.items.push(i);save();if(TZ)tzPaint(false)})});
+  mid.querySelectorAll('[data-tverd]').forEach(b=>b.onclick=()=>{const [id,v]=b.dataset.tverd.split(':'),i=tById(id);
+    if(!i||i.state===v)return;
+    const keep=()=>{const L=r.lists&&r.lists[i.dept];if(L&&!L.includes(i.id)){L.push(i.id)}save();tzPaint(false)};
+    if(v==='waiting'){tWaitSheet(i,'',keep);return}
+    tSet(i,v);keep()});
+  const lt=mid.querySelector('#tzlater');if(lt)lt.onclick=()=>{TZLATER=!TZLATER;tzPaint(false)};
+  const ad=mid.querySelector('#tzadd');
+  if(ad)ad.onkeydown=e=>{if(e.key==='Enter'){const v=ad.value.trim(),id=r.depts[r.di];if(!v)return;
+    const n=tAdd(v,id,'inbox');r.lists[id].push(n.id);save();tzPaint(false);
+    const a2=document.getElementById('tzadd');if(a2)a2.focus()}};
+  mid.querySelectorAll('[data-tsize]').forEach(b=>b.onclick=()=>{const [id,v]=b.dataset.tsize.split(':'),i=tById(id);
+    if(i){i.size=+v;save();tzPaint(false)}});
+  const cp=document.getElementById('tzcopy');
+  if(cp)cp.onclick=()=>tCopy(tPaperText());
+}
+function tPaperText(){
+  const L=[],ph=weekPhrase();if(ph)L.push('THIS WEEK IS GOOD IF / '+ph,'');
+  const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
+  [...TOWN_SIZES,{v:null,name:'Unsized'}].forEach(s=>week.filter(i=>(i.size||null)===s.v).forEach(i=>
+    L.push(s.name.toUpperCase()+' / '+i.title+(i.dept?' ('+tDept(i.dept).name+')':'')+(i.prio?' ★':''))));
+  const w=S.town.items.filter(i=>i.state==='waiting').sort(tWaitOrder);
+  if(w.length){L.push('');w.forEach(i=>L.push('WAITING / '+i.title+(i.wait&&i.wait.who?' — '+i.wait.who:'')+(i.wait&&i.wait.checkBack?' · check '+tShort(i.wait.checkBack):'')))}
+  const ai=S.town.items.filter(i=>i.state==='ai').length;
+  if(ai)L.push('',ai+' in the AI queue');
+  return L.join('\n').trim();
+}
+
+/* -- today's move -- */
+function startMove(){if(!tMoveLive()){S.town.move={date:today(),step:0,mins:null,pick:null,did:0,justDone:null};save()}tzOpen('move')}
+function tMoveEnd(msg){S.town.move=null;save();tzClose();if(msg)toast(msg)}
+/* this week's items that fit the time — unsized ones are always offered, marked as such */
+function tFits(mins){
+  const t=TOWN_TIMES.find(x=>x.v===mins);if(!t||!t.fit)return {sized:[],unsized:[]};
+  const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
+  return {sized:week.filter(i=>i.size&&i.size<=t.fit),unsized:week.filter(i=>!i.size)};
+}
+function tzMove(change){
+  const mv=tMoveLive();if(!mv){tzClose();return}
+  const st=TMOVE[mv.step];
+  const o={dots:tzDots(TMOVE.length,mv.step),step:`Today’s move · step ${mv.step+1} of ${TMOVE.length}`,name:st.name,
+    note:TNOTE[st.id]||'',cta:'Next',
+    back:mv.step>0?()=>{mv.step--;mv.pick=null;mv.justDone=null;save();tzPaint(true)}:null,
+    go:()=>{mv.step++;save();tzPaint(true)}};
+  if(st.id==='spark'){
+    o.mid=`<div class="hrow"><button class="hbtn" id="tzspark">Open Spark ↗</button></div>
+      <div class="zkept">Opens in a new tab. Come back here when you’re done.</div>`;
+    o.cta='Skip';
+  }
+  else if(st.id==='time'){
+    o.mid=`<div class="hrow">${TOWN_TIMES.map(t=>`<button class="hbtn ${mv.mins===t.v?'on':''}" data-tmins="${t.v}">${t.name}</button>`).join('')}</div>
+      ${mv.mins===0?`<div class="hout"><b>Fine, see you tomorrow.</b></div>`:''}`;
+    if(mv.mins===0){o.cta='Close';o.go=()=>tMoveEnd()}
+    else{o.cta=mv.mins?'Next':'Skip — show me everything';if(!mv.mins)o.go=()=>{mv.mins=120;mv.step++;save();tzPaint(true)}}
+  }
+  else if(st.id==='pick'){
+    const t=TOWN_TIMES.find(x=>x.v===mv.mins)||TOWN_TIMES[4],f=tFits(t.v);
+    const end=tWeekEnd();
+    const chase=S.town.items.filter(i=>i.state==='waiting'&&((i.wait&&i.wait.checkBack&&i.wait.checkBack<=end)||i.prio)).sort(tWaitOrder);
+    const ai=S.town.items.filter(i=>i.state==='ai').length;
+    const row=i=>{const s=TOWN_SIZES.find(x=>x.v===i.size),l=i.due?dueLabel(i.due):null;
+      return `<div class="zrow" style="--cc:${tColor(i)}"><span class="zt">${esc(i.title)}</span>
+        ${i.prio?`<span class="zd" style="color:${C.purple}">★</span>`:''}${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}
+        <span class="zd dim">${s?s.name:'unsized'}</span>
+        <span class="zb"><button class="zsel" data-tdo="${i.id}">Do this</button></span></div>`};
+    o.name=`${t.name} — pick one`;
+    o.note=mv.did?`${mv.did} done today. Anything else that fits?`:'Priority and deadlines first.';
+    o.mid=`${f.sized.length?`<div class="zpick">${f.sized.map(row).join('')}</div>`:`<div class="zkept">Nothing on this week’s list fits ${t.name}.</div>`}
+      ${f.unsized.length?`<div class="zcarry-h" style="margin-top:26px">Not sized — your call</div><div class="zpick">${f.unsized.map(row).join('')}</div>`:''}
+      ${chase.length?`<div class="zcarry-h" style="margin-top:30px">Worth chasing this week — ${chase.length}</div>${chase.map(tWaitRow).join('')}`:''}
+      ${ai?`<div class="zkept" style="margin-top:26px">${ai} ready in AI queue · <button class="zlink" id="tzai">open it</button></div>`:''}`;
+    o.cta='That’s it for today';o.go=()=>tMoveEnd(mv.did?'nice — see you tomorrow':'see you tomorrow');
+    o.hint='Do this · then mark it done';
+  }
+  else if(st.id==='do'){
+    const i=mv.pick&&tById(mv.pick);
+    if(!i||!tOpen(i)){
+      o.name='Got time for another?';o.note=mv.justDone?`✓ ${mv.justDone}`:'';
+      o.mid=`<div class="hrow"><button class="hbtn on" id="tzmore">Yes, one more</button><button class="hbtn" id="tzenough">No, that’s it</button></div>`;
+      o.cta='No, that’s it';o.go=()=>tMoveEnd('nice — see you tomorrow');
+    }else{
+      const d=tDept(i.dept),s=TOWN_SIZES.find(x=>x.v===i.size);
+      o.name=i.title;o.note=[d&&d.name,s&&s.name].filter(Boolean).join(' · ');
+      o.mid=`${i.notes?`<div class="paper">${esc(i.notes)}</div>`:''}
+        <div class="hrow"><button class="hbtn on" id="tzdid">✓ Done</button><button class="hbtn" data-topen="${i.id}">Details</button></div>`;
+      o.cta='Not this one';o.go=()=>{mv.pick=null;mv.step=2;save();tzPaint(true)};
+    }
+    o.back=()=>{mv.pick=null;mv.justDone=null;mv.step=2;save();tzPaint(true)};
+  }
+  const mid=tzFrame(o,change);
+  const sp=mid.querySelector('#tzspark');
+  if(sp)sp.onclick=()=>{window.open(SPARK_URL,'_blank');mv.step++;save();tzPaint(true)};
+  mid.querySelectorAll('[data-tmins]').forEach(b=>b.onclick=()=>{mv.mins=+b.dataset.tmins;
+    if(mv.mins>0)mv.step++;save();tzPaint(mv.mins>0)});
+  mid.querySelectorAll('[data-tdo]').forEach(b=>b.onclick=()=>{mv.pick=b.dataset.tdo;mv.justDone=null;mv.step=3;save();tzPaint(true)});
+  const ai=mid.querySelector('#tzai');
+  if(ai)ai.onclick=()=>{S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='ai';save();tzPause()};
+  const did=mid.querySelector('#tzdid');
+  if(did)did.onclick=()=>{const i=tById(mv.pick);if(!i)return;tSet(i,'done');mv.did++;mv.justDone=i.title;mv.pick=null;save();tzPaint(true)};
+  const more=mid.querySelector('#tzmore');if(more)more.onclick=()=>{mv.justDone=null;mv.step=2;save();tzPaint(true)};
+  const en=mid.querySelector('#tzenough');if(en)en.onclick=()=>tMoveEnd('nice — see you tomorrow');
+}
 
 /* ===== wiring ===== */
 function wire(){
@@ -1890,8 +2587,13 @@ function wire(){
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{S.ui.mode=b.dataset.mode;S.ui.composer=null;save();render()});
-  app.querySelectorAll('.nav [data-v]').forEach(b=>b.onclick=()=>{S.ui.composer=null;
-    if(m==='work')S.ui.workView=b.dataset.v;else S.ui.personalView=b.dataset.v;save();render()});
+  app.querySelectorAll('.nav [data-v]').forEach(b=>b.onclick=()=>{S.ui.composer=null;const k=b.dataset.v;
+    if(m==='work')S.ui.workView=k;
+    else if(k.startsWith('town:')){S.ui.personalView='town';S.ui.townView=k.slice(5)}
+    else S.ui.personalView=k;
+    save();render()});
+  app.querySelectorAll('[data-tpdone]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tpdone);if(!i)return;
+    const was=i.state;tSet(i,'done');render();toastUndo('done',()=>{tSet(i,was);render()})});
   const go=document.getElementById('go');if(go)go.onclick=openTriage;
   const cd=document.getElementById('closeday');if(cd)cd.onclick=closeTheDay;
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
@@ -2030,5 +2732,6 @@ function wire(){
   document.getElementById('exp').onclick=()=>exportBackup(false);
   const db=document.getElementById('donebtn');if(db)db.onclick=doneSheet;
   document.getElementById('imp').onclick=importBackup;
+  wireTown();
 }
 render();
