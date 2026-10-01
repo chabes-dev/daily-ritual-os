@@ -26,7 +26,7 @@ const ZNOTE={
   w2:'Clear the inbox first — read, act, archive; anything over 60 seconds becomes a task. Then everything in your head, one line each. No order, no judgement.',
   w4:'Two keystrokes each. Where it lives, then this week or later.',
   w5:'Look at the calendar, then say what is genuinely left today. Not the optimistic number.',
-  wpr:'It takes about five minutes. Work is planned — this keeps the rest of life from quietly piling up.',
+  wpr:'The weekly round in Town. Work is planned — this keeps the rest of life from quietly piling up.',
   wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
@@ -44,7 +44,7 @@ const RITUALS={
     {id:'w2',name:'Clean inbox, dump everything'},
     {id:'w5',name:'How much time is actually free — today'},{id:'ww',name:'How much time is actually free — this week'},
     {id:'w4',name:'Sort the dump'},{id:'w6',name:'Pick today'},{id:'wpw',name:'Pick this week'},
-    {id:'wpr',name:'Did you do your personal ritual this week?'},
+    {id:'wpr',name:'Did you do your weekly round this week?'},
     {id:'w8',name:'One personal thing, before you close'},{id:'wj',name:'Morning pages'},
     {id:'w7',name:'Copy to paper and close this'}],
   personal:[{id:'p0',name:'What would make this week good for them?'},{id:'p1',name:'Dump everything personal'},{id:'p2',name:'Check the backlog and re-sort'},
@@ -64,9 +64,10 @@ let S=load()||{items:[],projects:[],ritual:{date:null,work:[],personal:[]},
 S.ui=Object.assign({mode:'work',workView:'today',personalView:'today',keys:false,open:{}},S.ui||{});
 S.ui.open=S.ui.open||{};S.projects=S.projects||[];
 if(!['home','today','backlog'].includes(S.ui.workView))S.ui.workView='today';
-if(!['home','today','backlog','north','town'].includes(S.ui.personalView))S.ui.personalView='today';
+/* personal mode is Town now — the old personal board's views (home/today/backlog) map onto it */
+if(!['north','town'].includes(S.ui.personalView))S.ui.personalView='town';
 /* one-time nudge onto the new home dashboard for people who already had a saved tab */
-if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='home';S.ui.sawHome=true}
+if(!S.ui.sawHome){S.ui.workView='home';S.ui.personalView='town';S.ui.sawHome=true}
 /* Personal journal entries are {text,title}; very old ones were plain strings. Morning pages
    (the old work journal) are written in Spark now, so their in-app history is dropped. */
 S.journal=S.journal||{personal:{}};S.journal.personal=S.journal.personal||{};
@@ -261,6 +262,7 @@ function archiveAnchors(weekIso){
 const weekPhrase=()=>{const a=(S.personal.anchors||[])[0];return a&&a.text?a.text.trim():''};
 function setWeekPhrase(v){v=(v||'').trim();S.personal.anchors=v?[{id:(S.personal.anchors[0]||{}).id||nid(),text:v}]:[];save()}
 const personalDoneThisWeek=()=>S.pcheck.doneWeek===isoWeek()
+  ||(S.town&&S.town.lastRound&&isoWeek(S.town.lastRound)===isoWeek())
   ||(S.ritual.personalWeekIso===isoWeek()&&(S.ritual.personal||[]).includes('p5'));
 function personalPlan(){
   rollPersonalWeek();
@@ -360,8 +362,8 @@ function planText(m){
   p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
   p.next.forEach(id=>L.push('SPARE / '+byId(id).text));
   if(m==='work'){
-    const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-    if(pp)L.push('PERSONAL / '+pp.text);
+    const pp=personalPick();
+    if(pp)L.push('PERSONAL / '+pp.title);
   }
   return L.join('\n');
 }
@@ -749,14 +751,16 @@ const app=document.getElementById('app'),layer=document.getElementById('layer'),
 function render(){
   const m=S.ui.mode,other=m==='work'?'personal':'work';
   document.body.dataset.mode=m;
-  const nRaw=raw(m).length,otherN=mine(other).length,bAge=backupAge();
+  const P=m==='personal';
+  const nRaw=P?0:raw(m).length,otherN=other==='personal'?townHeld():mine(other).length,bAge=backupAge();
   const v=m==='work'?S.ui.workView:S.ui.personalView;
-  const body=v==='home'?viewHome(m):v==='today'?(m==='personal'?viewWeekThis():viewToday()):v==='backlog'?viewCols('backlog')
-    :v==='north'?viewNorth()
-    :v==='town'&&m==='personal'?viewTown()
-    :(m==='personal'?viewWeekThis():viewToday());
-  const tabs=[['home','Home',''],['today',m==='personal'?'This week':'Today',''],['backlog','Backlog',inBacklog(m).length]];
-  if(m==='personal')tabs.push(['spark','Journal ↗',''],['north','North Star',''],['town','Town','']);
+  const body=P?(v==='north'?viewNorth():viewTown())
+    :v==='home'?viewHome(m):v==='backlog'?viewCols('backlog'):viewToday();
+  const tn=st=>S.town.items.filter(i=>i.state===st).length;
+  const tabs=P?[['town:home','Town hall',''],['town:week','This week',tn('week')],['town:ai','AI queue',tn('ai')],
+      ['town:waiting','Waiting',tn('waiting')],['town:map','Town map',''],['spark','Journal ↗',''],['north','North Star','']]
+    :[['home','Home',''],['today','Today',''],['backlog','Backlog',inBacklog(m).length]];
+  const tvOn=k=>P&&k.startsWith('town:')?v==='town'&&k.slice(5)===(S.ui.townView==='dept'?'map':S.ui.townView||'home'):v===k;
   app.innerHTML=`<div class="wrap">
     <div class="top">
       <div class="modes">
@@ -771,13 +775,13 @@ function render(){
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
     <div class="nav">
       ${tabs.map(([k,l,n])=>k==='spark'?`<button class="tab" id="navspark" title="Opens Spark in a new tab">${l}</button>`
-        :`<button class="tab ${v===k?'on':''}" data-v="${k}">${l}${n!==''?`<span class="n">${n}</span>`:''}</button>`).join('')}
+        :`<button class="tab ${tvOn(k)?'on':''}" data-v="${k}">${l}${n!==''&&n!==0?`<span class="n">${n}</span>`:''}</button>`).join('')}
       <span class="spacer"></span>
-      <button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
+      ${P?'':`<button class="cap capopen ${overCap(m)?'over':load_(m)===capOf(m)?'full':''}"
         title="How much you've said yes to this week. Click to change.">
         <span class="lbl">This week</span>
         <span class="capbar"><i style="width:${Math.min(100,Math.round(load_(m)/Math.max(1,capOf(m))*100))}%"></i></span>
-        <span class="num">${load_(m)} / ${capOf(m)}</span></button>
+        <span class="num">${load_(m)} / ${capOf(m)}</span></button>`}
       ${nRaw?`<button class="sortbtn" id="go">Sort ${nRaw} raw${TOUCH?'':' · t'}</button>`:''}
     </div>
     ${body}
@@ -838,7 +842,7 @@ function viewToday(){
   const rest=onBoard(m).filter(i=>!isParked(i)&&!inPlan(m,i.id)).sort(byOrd);
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
   const streak=S.streak[m];
-  const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
+  const pp=personalPick();
 
   return `
   <div class="daybar">
@@ -850,8 +854,8 @@ function viewToday(){
   <div class="planhead"><h2>Today</h2>
     <span>${caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} to AI · 2 spare</span></div>
 
-  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.text)}
-    <em><button class="act" data-done="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
+  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
+    <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
 
   <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
@@ -1276,7 +1280,7 @@ function endZen(){ZEN=false;clearInterval(ZTICK);zlayer.innerHTML='';document.bo
    ritual, then come back to the work ritual where it left off */
 function detourToPersonal(){
   if(!S.ritual.work.includes('wpr'))S.ritual.work=[...S.ritual.work,'wpr'];
-  S.ui.resumeWork=true;endZen();S.ui.mode='personal';save();render();startZen();
+  S.ui.resumeWork=true;endZen();S.ui.mode='personal';S.ui.personalView='town';save();render();startRound();
 }
 function resumeWorkIfDetoured(){
   if(!S.ui.resumeWork)return false;
@@ -1528,31 +1532,29 @@ function paintZen(isStepChange){
     cta=picked?'That is my week':'Skip for now';
   }
   else if(kind==='pnudge'){
-    const p=personalPlan();
     /* Deep is excluded on purpose — it needs a real block, not a squeeze at the end of
        a work day. This step is for the thing genuinely small enough to still fit today. */
-    const chosen=[...p.batch,...p.buffer,...p.next].map(byId).filter(Boolean)
-      .sort((a,b)=>(!!b.quick)-(!!a.quick));
-    const pool=chosen.length?chosen:onBoard('personal').filter(i=>!isParked(i)&&!inPlan('personal',i.id))
-      .sort((a,b)=>(!!b.quick)-(!!a.quick));
-    const list=pool.slice(0,6);
-    const current=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-    mid=`${current?`<div class="zkept">Today's personal pick: <b>${esc(current.text)}</b></div>`:''}
-      ${p.deep.length?`<div class="zkept">Not offering this week's deep pick here — that needs its own block, not the end of a work day.</div>`:''}
-      ${list.length?`<div class="zpick">${list.map(i=>`<div class="zrow" style="--cc:${cardColor(i)}">
-          <span class="zt">${esc(i.text)}</span>
-          ${i.quick?`<span class="zd">⚡ quick</span>`:''}
+    const sz=i=>i.size||45;
+    const list=S.town.items.filter(i=>i.state==='week'&&i.size!==120)
+      .sort((a,b)=>(!!b.prio)-(!!a.prio)||sz(a)-sz(b)||tOrder(a,b)).slice(0,6);
+    const current=personalPick();
+    const deepN=S.town.items.filter(i=>i.state==='week'&&i.size===120).length;
+    mid=`${current?`<div class="zkept">Today's personal pick: <b>${esc(current.title)}</b></div>`:''}
+      ${deepN?`<div class="zkept">Not offering this week's longer deep task${deepN===1?'':'s'} here — that needs its own block, not the end of a work day.</div>`:''}
+      ${list.length?`<div class="zpick">${list.map(i=>{const s=TOWN_SIZES.find(x=>x.v===i.size);
+        return `<div class="zrow" style="--cc:${tColor(i)}">
+          <span class="zt">${esc(i.title)}</span>
+          ${s?`<span class="zd">${s.name}</span>`:''}
           <span class="zb"><button class="zsel ${current&&current.id===i.id?'sel':''}" data-ppick="${i.id}">Pick this</button></span>
-        </div>`).join('')}</div>`
-        :`<div class="zkept">Nothing small enough on the board yet — add something next time you dump.</div>`}`;
+        </div>`}).join('')}</div>`
+        :`<div class="zkept">Nothing on Town's this-week list yet — the weekly round fills it.</div>`}`;
     cta=current?'Keep this and close':'Skip for today';
   }
   else if(kind==='paper'){
     let ppCell='';
     if(m==='work'){
-      const pp=S.personal.todayPick&&S.personal.todayPick.date===today()?byId(S.personal.todayPick.id):null;
-      if(pp)ppCell=`<div class="zp" style="${styleFor(pp)}"><b>Personal</b><span>${esc(pp.text)}</span>
-        <button class="zpdone" data-zdone="${pp.id}" title="Already done">✓</button></div>`;
+      const pp=personalPick();
+      if(pp)ppCell=`<div class="zp" style="--cc:${tColor(pp)}"><b>Personal</b><span>${esc(pp.title)}</span></div>`;
     }
     mid=zPlanStrip(m,ppCell)||`<div class="zkept">Nothing picked yet.</div>`;
     cta='Copy to paper';
@@ -1876,7 +1878,7 @@ document.addEventListener('keydown',e=>{
   if(t.tagName==='TEXTAREA'||t.tagName==='INPUT'||t.isContentEditable)return;
   if(e.key==='1'){S.ui.mode='work';save();render()}
   if(e.key==='2'){S.ui.mode='personal';save();render()}
-  if(e.key==='t'&&raw(S.ui.mode).length)openTriage();
+  if(e.key==='t'&&S.ui.mode==='work'&&raw('work').length)openTriage();
 });
 
 /* ===== town (personal · experiment) =====
@@ -1986,6 +1988,7 @@ function tPulse(id){
 }
 const TPULSE={calm:'moving',orange:'nothing moved in 3 weeks',red:'something overdue'};
 initTown();
+adoptPersonal();
 
 /* ---- town: sheets ---- */
 function tWaitSheet(i,who,after){
@@ -2094,26 +2097,38 @@ function tItemSheet(id){
   const v=mlayer.querySelector('.veil');
   if(v)v.onclick=e=>{if(e.target.classList.contains('veil')){closeSheet();tRefresh()}};
 }
-function tImport(){
-  const src=S.items.filter(i=>i.mode==='personal'&&!i.done&&i.bucket==='backlog');
-  src.forEach(i=>{const t=tAdd(i.text,null,'inbox');t.suggest=TOWN_IMPORT[i.domain]||null;t.from=i.id;if(i.due)t.due=i.due});
-  S.town.imported=true;save();render();toast(src.length+' brought into the inbox');
+/* Town replaced the old personal board. Once, every open personal task is copied into
+   Town's inbox with a suggested department; the originals stay in storage untouched (just
+   no longer shown), so nothing is lost and a rollback still has them. Anything copied by the
+   earlier one-time import is recognised by its `from` id and not copied twice. */
+function adoptPersonal(){
+  if(S.town.adopted)return;
+  const have=new Set(S.town.items.map(i=>i.from).filter(Boolean));
+  S.items.filter(i=>i.mode==='personal'&&!i.done&&!have.has(i.id)).forEach(i=>{
+    const t=tAdd(i.text,null,'inbox');t.suggest=TOWN_IMPORT[i.domain]||null;t.from=i.id;if(i.due)t.due=i.due});
+  S.town.adopted=true;S.town.imported=true;save();
 }
+/* open Town items, for the "held in personal" ledger shown in work mode */
+const townHeld=()=>S.town.items.filter(i=>['inbox','week','ai','waiting'].includes(i.state)).length;
+/* the one personal thing the work ritual surfaced for today — a Town item now */
+function personalPick(){const p=S.personal.todayPick;if(!p||p.date!==today())return null;
+  const i=tById(p.id);return i&&tOpen(i)?i:null}
 
 /* ---- town: views ---- */
 function viewTown(){
   const v=S.ui.townView||'home';
-  const tabs=[['home','Town hall'],['week','This week'],['ai','AI queue'],['waiting','Waiting'],['map','Town map']];
-  return `<div class="tsub">${tabs.map(([k,l])=>`<button class="dbtn ${v===k||(v==='dept'&&k==='map')?'on':''}" data-tv="${k}">${l}</button>`).join('')}</div>
-    ${v==='week'?tViewWeek():v==='ai'?tViewAI():v==='waiting'?tViewWaiting():v==='map'?tViewMap():v==='dept'?tViewDept(S.ui.townDept):tViewHome()}`;
+  return `${v==='week'?tViewWeek():v==='ai'?tViewAI():v==='waiting'?tViewWaiting():v==='map'?tViewMap():v==='dept'?tViewDept(S.ui.townDept):tViewHome()}`;
 }
 function tViewHome(){
   const T=S.town.items,n=st=>T.filter(i=>i.state===st).length;
   const r=S.town.round,mv=tMoveLive(),late=T.filter(tLate).length;
-  const imp=S.town.imported?[]:S.items.filter(i=>i.mode==='personal'&&!i.done&&i.bucket==='backlog');
+  const moved=T.filter(i=>i.from&&i.state==='inbox'&&!i.dept).length,ph=weekPhrase();
   const where=r?(TROUND[r.step].id==='rounds'&&r.depts&&r.depts[r.di]?tDept(r.depts[r.di]).name+' · ':'')+'step '+(r.step+1)+' of '+TROUND.length:'';
   const mvTime=mv&&mv.mins?TOWN_TIMES.find(x=>x.v===mv.mins):null;
   return `<div class="home-grid">
+    <button class="hometile hometile-phrase" id="hometile-phrase">
+      <span class="ht-label">💛 What would make this week good</span>
+      <span class="ht-title">${ph?esc(ph):'Not set yet — tap to choose one thing'}</span></button>
     <div class="town-acts">
       <button class="hometile hometile-ritual" id="tround">
         <span class="ht-label">Weekly round</span>
@@ -2125,11 +2140,7 @@ function tViewHome(){
         <span class="ht-meta">${mvTime?mvTime.name+' today':n('week')+' on this week’s list'}</span></button>
     </div>
     <div class="zdump tcap"><textarea id="tcap" rows="1" placeholder="Something on your mind? It goes to the inbox — ⏎"></textarea></div>
-    ${imp.length?`<div class="hometile hometile-phrase timport">
-      <span class="ht-label">One-time import</span>
-      <span class="ht-title">Bring your ${imp.length} personal backlog item${imp.length===1?'':'s'} into Town’s inbox</span>
-      <span class="ht-meta">Copies only — the originals stay where they are. <button class="btn btn-hot btn-sm" id="timport" style="margin-left:10px">Import</button></span>
-    </div>`:''}
+    ${moved?`<div class="zkept tmoved">${moved} task${moved===1?'':'s'} from the old personal board ${moved===1?'is':'are'} in the inbox — the weekly round sorts ${moved===1?'it':'them'}.</div>`:''}
     <div class="town-row">
       <button class="hometile" data-tv="week"><span class="ht-label">This week</span>
         <span class="ht-title">${n('week')} on the list</span><span class="ht-meta">${n('inbox')} in the inbox</span></button>
@@ -2260,12 +2271,11 @@ function tWireCommon(root){
   root.querySelectorAll('[data-tpush]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tpush);if(i)tPush(i)});
 }
 function wireTown(){
-  if(S.ui.mode!=='personal'||S.ui.personalView!=='town')return;
+  if(S.ui.mode!=='personal'||S.ui.personalView==='north')return;
   app.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{S.ui.townView=b.dataset.tv;save();render()});
   app.querySelectorAll('[data-tdept]').forEach(b=>b.onclick=()=>{S.ui.townView='dept';S.ui.townDept=b.dataset.tdept;save();render()});
   const tr=document.getElementById('tround');if(tr)tr.onclick=startRound;
   const tm=document.getElementById('tmove');if(tm)tm.onclick=startMove;
-  const ti=document.getElementById('timport');if(ti)ti.onclick=tImport;
   const cap=document.getElementById('tcap');
   if(cap){autosize(cap);cap.oninput=()=>autosize(cap);
     cap.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();
@@ -2307,7 +2317,7 @@ function tzOpen(kind){
   tzPaint(true);
 }
 function tzClose(){TZ=null;clearInterval(TZTICK);tzlayer.innerHTML='';document.body.style.overflow='';render()}
-function tzPause(){tzClose();toast('paused — it picks up right here')}
+function tzPause(){const k=TZ;tzClose();toast('paused — it picks up right here');if(k==='round')resumeWorkIfDetoured()}
 function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change)}
 function tzFrame(o,change){
   document.getElementById('tzdots').innerHTML=o.dots.map(c=>`<i class="${c}"></i>`).join('');
@@ -2347,7 +2357,8 @@ function tEnterDept(r){
 function tzRoundNext(){
   const r=S.town.round,st=TROUND[r.step];
   if(st.id==='rounds'&&r.depts&&r.di<r.depts.length-1){r.di++;tEnterDept(r);save();tzPaint(true);return}
-  if(st.id==='paper'){S.town.round=null;S.town.lastRound=Date.now();save();tzClose();toast('round closed — have a good week');return}
+  if(st.id==='paper'){S.town.round=null;S.town.lastRound=Date.now();S.pcheck={doneWeek:isoWeek(),skips:[]};save();tzClose();
+    toast('round closed — have a good week');if(resumeWorkIfDetoured())startZen();return}
   r.step++;
   if(TROUND[r.step].id==='rounds')tStartRounds(r,0);
   save();tzPaint(true);
@@ -2576,8 +2587,13 @@ function wire(){
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{S.ui.mode=b.dataset.mode;S.ui.composer=null;save();render()});
-  app.querySelectorAll('.nav [data-v]').forEach(b=>b.onclick=()=>{S.ui.composer=null;
-    if(m==='work')S.ui.workView=b.dataset.v;else S.ui.personalView=b.dataset.v;save();render()});
+  app.querySelectorAll('.nav [data-v]').forEach(b=>b.onclick=()=>{S.ui.composer=null;const k=b.dataset.v;
+    if(m==='work')S.ui.workView=k;
+    else if(k.startsWith('town:')){S.ui.personalView='town';S.ui.townView=k.slice(5)}
+    else S.ui.personalView=k;
+    save();render()});
+  app.querySelectorAll('[data-tpdone]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tpdone);if(!i)return;
+    const was=i.state;tSet(i,'done');render();toastUndo('done',()=>{tSet(i,was);render()})});
   const go=document.getElementById('go');if(go)go.onclick=openTriage;
   const cd=document.getElementById('closeday');if(cd)cd.onclick=closeTheDay;
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
