@@ -741,6 +741,41 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
   .tstakes-l{flex-basis:100%}
   .tplate{grid-template-columns:1fr}
 }
+/* Today: the plate on top, this week underneath, a glance at AI + Waiting */
+.tplatewrap{background:var(--hot-soft);border-radius:var(--r-lg);padding:24px;box-shadow:inset 0 0 0 2px var(--hot-line)}
+.tplatewrap .tmeter{margin-bottom:18px}
+.tplate-empty h3{font-family:var(--serif);font-size:26px;font-weight:400;margin-bottom:8px}
+.tplate-empty p{color:var(--ink-2);margin-bottom:16px}
+.tdonestrip{margin-top:18px;font-family:var(--mono);font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:#137333;display:flex;gap:8px 14px;flex-wrap:wrap}
+.tdonestrip span{text-decoration:line-through;color:var(--ink-3);text-transform:none;font-family:var(--serif);font-size:16px;letter-spacing:0}
+.tmini{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;transition:background .15s}
+.tmini:hover{background:var(--card);box-shadow:var(--shadow)}
+.tmini .d{width:9px;height:9px;border-radius:50%;flex:none}
+.tmini .t{flex:1;min-width:0;font-family:var(--serif);font-size:17px;font-weight:300;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tmini .tag{flex:none;white-space:nowrap}
+.tmini .tlink{flex:none}
+.tpeek{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:34px}
+.tpeekcard{background:var(--card);border-radius:var(--r-lg);padding:20px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:6px}
+.tpeekcard .zlink{align-self:flex-start;margin-top:8px;font-size:12px}
+.tpeek-h{display:flex;align-items:baseline;gap:10px;font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px}
+.tpeek-h b{font-size:18px;color:var(--ink)}
+.tpeek-h em{font-style:normal;color:#C5221F;font-size:12px;letter-spacing:.06em}
+.tpeek-r{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;cursor:pointer}
+.tpeek-r:hover{background:var(--g50)}
+.tpeek-r.late{background:#FCE8E6}
+.tpeek-r .d{width:8px;height:8px;border-radius:50%;flex:none}
+.tpeek-r .t{flex:1;min-width:0;font-family:var(--serif);font-size:16.5px;font-weight:300;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tpeek-r .tag{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpeek-e{font-size:15px;color:var(--ink-3);padding:4px 8px}
+.zsel.thome{border-color:#81C995;color:#0B7A55}
+.zsel.thome.sel,.zsel.thome:hover:not(:disabled){background:#0B7A55;border-color:#0B7A55;color:#fff}
+@media(max-width:760px){
+  .tplatewrap{padding:16px;margin:0 -4px}
+  .tmini{flex-wrap:wrap;row-gap:4px}
+  .tmini .t{white-space:normal;flex-basis:calc(100% - 20px)}
+  .tmini .tag:first-of-type{margin-left:19px}
+  .tpeek{grid-template-columns:1fr;gap:12px}
+}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
