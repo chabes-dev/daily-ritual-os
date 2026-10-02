@@ -810,6 +810,16 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
 .taidept-bar i{display:block;height:6px;background:var(--cc);transition:width .4s}
 .taidept-s{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
 @media(max-width:760px){.taidepts{grid-template-columns:1fr 1fr;gap:10px}.taidept{padding:12px}.taidept-c{font-size:19px}}
+/* sync */
+.syncpick{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 18px}
+.syncpick>div{background:var(--g50);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.syncpick b{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.syncpick span{font-size:15px;color:var(--ink)}
+.btn.sync-off{color:var(--ink-3)}
+.btn.sync-idle{color:#137333;border-color:#81C995}
+.btn.sync-offline{color:#9A6700;border-color:#F9AB00}
+.btn.sync-conflict{color:#C5221F;border-color:#F6AEA9}
+@media(max-width:760px){.syncpick{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>

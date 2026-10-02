@@ -6,8 +6,10 @@ const REEL_URL='https://reel-chabes-devs-projects.vercel.app/';
 /* phones/tablets: no hover, no drag-and-drop, no keyboard — copy and controls adapt */
 const TOUCH=matchMedia('(hover:none) and (pointer:coarse)').matches;
 let STORE_OK=true;
+let SY=null,LAST_INPUT=0;   /* sync state (see ===== sync =====); declared up here because save() runs during load */
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null}catch(e){STORE_OK=false;return null}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){STORE_OK=false}
+  if(SY&&Date.now()-LAST_INPUT<5000)syncDirty()}
 const C={blue:'#1A73E8',green:'#1E8E3E',yellow:'#FBBC04',red:'#EA4335',purple:'#A142F4',cyan:'#12B5CB',grey:'#5F6368'};
 const LANES=[{id:'urgent',name:'Urgent',color:C.red},{id:'batch',name:'Batch',color:C.yellow},
   {id:'important',name:'Important',color:C.purple},{id:'followup',name:'Follow Up',color:C.blue},
@@ -490,13 +492,207 @@ function importBackup(){
       const now=S.items.filter(i=>!i.done).length;
       sheetConfirm('Replace everything with this file?',
         `The file holds ${w} open work tasks and ${pn} open personal tasks. This replaces the ${now} you have now — export first if you're not sure.`,
-        'Replace',()=>{localStorage.setItem(KEY,JSON.stringify(d));location.reload()});
+        'Replace',()=>{localStorage.setItem(KEY,JSON.stringify(d));
+          if(SY){SY.dirty=true;SY.h=null;syncSave()}   /* an import is a deliberate edit: it becomes the synced copy */
+          location.reload()});
     };
     r.readAsText(file);
   };
   f.click();
 }
 const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
+
+/* ===== sync =====
+   Same data on every device. You pick a passphrase once per device; it never leaves the
+   device. From it the browser derives (PBKDF2) an AES key and an anonymous storage id, then
+   uploads only ciphertext to /api/sync. What syncs is everything except S.ui (which tab is
+   open on this device). The server only accepts a write if nobody else saved in between
+   (etag); when both devices changed, you choose which version to keep.
+   Local device state lives in its own key (os_sync): {id, k, etag, dirty, h, at}. */
+const SYNC_KEY='os_sync',SYNC_SALT='ritual-os/sync/v1',SYNC_ITER=310000;
+SY=(()=>{try{const v=JSON.parse(localStorage.getItem(SYNC_KEY));return v&&v.id&&v.k?v:null}catch(e){return null}})();
+let SYNC_STATUS=SY?'idle':'off',SYNC_PUSH_T=null,SYNC_BUSY=false,SYNC_N=0;
+/* only edits you make count — saves from timers and load-time housekeeping don't */
+['pointerdown','keydown','input','change'].forEach(t=>document.addEventListener(t,()=>{LAST_INPUT=Date.now()},true));
+function syncSave(){try{if(SY)localStorage.setItem(SYNC_KEY,JSON.stringify(SY));else localStorage.removeItem(SYNC_KEY)}catch(e){}}
+function syncReload(){location.reload()}
+const syncContent=s=>{const o=Object.assign({},s);delete o.ui;return o};
+function syncHash(str){let h=5381;for(let i=0;i<str.length;i++)h=(h*33^str.charCodeAt(i))>>>0;return h.toString(36)+':'+str.length}
+const syncDevice=()=>{const u=navigator.userAgent||'';return /iPhone/.test(u)?'iPhone':/iPad/.test(u)?'iPad':/Android/.test(u)?'Android':/Mac/.test(u)?'Mac':/Windows/.test(u)?'Windows':'another device'};
+function b64(buf){const a=new Uint8Array(buf);let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode.apply(null,a.subarray(i,i+0x8000));return btoa(s)}
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function syncDerive(pass){
+  const enc=new TextEncoder();
+  const base=await crypto.subtle.importKey('raw',enc.encode(pass.normalize('NFC')),'PBKDF2',false,['deriveBits']);
+  const bits=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(SYNC_SALT),iterations:SYNC_ITER,hash:'SHA-256'},base,512));
+  return {k:b64(bits.slice(0,32)),id:[...bits.slice(32)].map(b=>b.toString(16).padStart(2,'0')).join('')};
+}
+const syncKey=k=>crypto.subtle.importKey('raw',unb64(k),'AES-GCM',false,['encrypt','decrypt']);
+async function syncSeal(k,data){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await syncKey(k),new TextEncoder().encode(JSON.stringify(data)));
+  return {v:1,iv:b64(iv),ct:b64(ct),savedAt:Date.now(),device:syncDevice()};
+}
+async function syncOpen(k,doc){
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(doc.iv)},await syncKey(k),unb64(doc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+async function syncGet(id){
+  const r=await fetch('/api/sync?id='+id,{cache:'no-store'});
+  if(r.status===404)return null;
+  if(!r.ok)throw new Error('sync '+r.status);
+  return r.json();
+}
+async function syncPut(id,etag,doc){
+  const r=await fetch('/api/sync',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,etag:etag||null,doc})});
+  if(r.status===409){const j=await r.json();return {conflict:true,current:j.current}}
+  if(!r.ok)throw new Error('sync '+r.status);
+  return r.json();
+}
+/* ---- status, shown on the footer button ---- */
+function syncLabel(){
+  if(!SY)return '☁ Sync: off';
+  return SYNC_STATUS==='busy'?'☁ Syncing…':SYNC_STATUS==='pending'?'☁ Saving…':SYNC_STATUS==='offline'?'☁ Offline — will retry'
+    :SYNC_STATUS==='conflict'?'☁ Needs a choice':'☁ Synced';
+}
+function syncStatus(s){SYNC_STATUS=s;const b=document.getElementById('syncbtn');
+  if(b){b.textContent=syncLabel();b.className='btn sync-'+(SY?s:'off')}}
+/* called by save(): mark real edits and push a few seconds after the last one */
+function syncDirty(){
+  if(!SY)return;
+  const h=syncHash(JSON.stringify(syncContent(S)));
+  if(h===SY.h&&!SY.dirty)return;               /* only the open tab changed */
+  SY.dirty=true;SYNC_N++;syncSave();syncStatus('pending');
+  clearTimeout(SYNC_PUSH_T);SYNC_PUSH_T=setTimeout(()=>syncPush(),4000);
+}
+async function syncPush(force){
+  if(!SY||SYNC_BUSY)return;
+  if(!SY.dirty&&!force)return;
+  SYNC_BUSY=true;syncStatus('busy');
+  const n=SYNC_N,data=syncContent(S);
+  try{
+    const r=await syncPut(SY.id,force&&force.etag!==undefined?force.etag:SY.etag,await syncSeal(SY.k,data));
+    if(r.conflict){
+      SYNC_BUSY=false;
+      if(!r.current){SY.etag=null;syncSave();return syncPush(true)}   /* the stored copy vanished: recreate it */
+      return syncConflict(r.current);
+    }
+    SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();
+    if(SYNC_N===n)SY.dirty=false;
+    syncSave();SYNC_BUSY=false;syncStatus(SY.dirty?'pending':'idle');
+    if(SY.dirty)SYNC_PUSH_T=setTimeout(()=>syncPush(),1500);
+  }catch(e){SYNC_BUSY=false;syncStatus('offline')}
+}
+/* opening the app, or coming back to it: is there something newer from another device? */
+async function syncPull(){
+  if(!SY||SYNC_BUSY)return;
+  SYNC_BUSY=true;syncStatus('busy');
+  try{
+    const remote=await syncGet(SY.id);SYNC_BUSY=false;
+    if(!remote){SY.etag=null;syncSave();return syncPush(true)}
+    if(remote.etag===SY.etag){syncStatus(SY.dirty?'pending':'idle');if(SY.dirty)syncPush();return}
+    if(!SY.dirty)return syncApply(remote);
+    syncConflict(remote);
+  }catch(e){SYNC_BUSY=false;syncStatus('offline')}
+}
+/* take the synced copy: keep this device's open tab, reload so every migration runs on it */
+async function syncApply(remote,msg){
+  const data=await syncOpen(SY.k,remote);
+  let ui=null;try{ui=(JSON.parse(localStorage.getItem(KEY))||{}).ui||null}catch(e){}
+  if(ui)data.ui=ui;
+  localStorage.setItem(KEY,JSON.stringify(data));
+  SY.etag=remote.etag;SY.dirty=false;SY.at=Date.now();SY.h=syncHash(JSON.stringify(syncContent(data)));syncSave();
+  try{sessionStorage.setItem('os_synced',msg||'updated from your '+(remote.device||'other device'))}catch(e){}
+  syncReload();
+}
+const syncSummary=d=>{const t=(d.town&&d.town.items)||[],w=(d.items||[]).filter(i=>i.mode==='work'&&!i.done);
+  return `${w.length} open work task${w.length===1?'':'s'} · ${t.filter(i=>!['done','dropped'].includes(i.state)).length} open in Town`};
+const syncWhen=ts=>ts?new Date(ts).toLocaleString(undefined,{weekday:'short',hour:'2-digit',minute:'2-digit'}):'—';
+/* both devices changed since they last synced: you choose, nothing is merged silently */
+async function syncConflict(remote){
+  syncStatus('conflict');
+  let other=null;try{other=await syncOpen(SY.k,remote)}catch(e){}
+  sheet(`<h3>Both devices changed things</h3>
+    <p>This device and your ${esc(remote.device||'other device')} were both edited since they last synced. Pick the version to keep — the other one is replaced everywhere.</p>
+    <div class="syncpick"><div><b>This device</b><span>${esc(syncSummary(S))}</span></div>
+      <div><b>${esc(remote.device||'Other device')} · saved ${esc(syncWhen(remote.savedAt))}</b><span>${other?esc(syncSummary(other)):'(couldn’t read it)'}</span></div></div>
+    <p style="font-size:14px;color:var(--ink-3)">Not sure? Tap <b>↓ Export backup</b> first — that saves this device’s version as a file.</p>
+    <div class="sheet-acts"><button class="btn" id="sykeep">Keep this device’s</button><span style="flex:1"></span>
+      <button class="btn btn-hot" id="syuse" ${other?'':'disabled'}>Use the ${esc(remote.device||'other')}’s</button></div>`,
+  el=>{el.querySelector('#sykeep').onclick=()=>{closeSheet();syncPush({etag:remote.etag})};
+    el.querySelector('#syuse').onclick=()=>{closeSheet();syncApply(remote)}});
+}
+/* ---- the Sync sheet: turn it on, check it, turn it off ---- */
+function syncSheet(){
+  if(SY){
+    sheet(`<h3>☁ Sync is on</h3>
+      <p>${SYNC_STATUS==='offline'?'Can’t reach the sync service right now — your changes are safe here and will upload when you’re back online.'
+        :`Last synced ${esc(SY.at?syncWhen(SY.at):'—')}.`} Your data is encrypted on this device before it’s uploaded.</p>
+      <p style="font-size:14px;color:var(--ink-3)">To add another device, open the app there, tap ☁ Sync and type the same passphrase.</p>
+      <div class="sheet-acts"><button class="btn btn-danger" id="syoff">Turn off on this device</button><span style="flex:1"></span>
+        <button class="btn" id="synow">Sync now</button><button class="btn btn-hot" id="syok">Close</button></div>`,
+    el=>{el.querySelector('#syok').onclick=closeSheet;
+      el.querySelector('#synow').onclick=()=>{closeSheet();if(SY.dirty)syncPush();else syncPull()};
+      el.querySelector('#syoff').onclick=()=>sheetConfirm('Turn off sync on this device?',
+        'Your data stays on this device. Other devices keep syncing with each other. You can turn it back on with the same passphrase.','Turn off',
+        ()=>{SY=null;syncSave();syncStatus('off');toast('sync off on this device')})});
+    return;
+  }
+  sheet(`<h3>☁ Sync your devices</h3>
+    <p>Choose a passphrase and type the same one on each device. It never leaves your device — it encrypts your data before upload, so the stored copy is unreadable without it.</p>
+    <input class="field" id="syp1" type="password" autocomplete="new-password" placeholder="Passphrase — at least 10 characters" />
+    <input class="field" id="syp2" type="password" autocomplete="new-password" placeholder="Type it again" />
+    <p style="font-size:14px;color:var(--ink-3);margin-top:-8px">Write it down somewhere safe. If it’s lost, nobody can recover the synced copy — but each device keeps its own data.</p>
+    <div class="zkept" id="symsg" style="min-height:20px;margin:0 0 10px"></div>
+    <div class="sheet-acts"><button class="btn" id="syno">Cancel</button><button class="btn btn-hot" id="sygo">Turn on sync</button></div>`,
+  el=>{
+    const p1=el.querySelector('#syp1'),p2=el.querySelector('#syp2'),msg=el.querySelector('#symsg'),go=el.querySelector('#sygo');
+    p1.focus();
+    el.querySelector('#syno').onclick=closeSheet;
+    const run=async()=>{
+      const a=p1.value,b=p2.value;
+      if(a.length<10){msg.textContent='Use at least 10 characters.';return}
+      if(a!==b){msg.textContent='The two don’t match.';return}
+      go.disabled=true;msg.textContent='Setting up…';
+      try{
+        const {id,k}=await syncDerive(a);
+        const remote=await syncGet(id);
+        if(!remote){
+          sheet(`<h3>Start syncing from this device?</h3>
+            <p>Nothing is synced under this passphrase yet. If this is your first device, this device’s data becomes the synced copy.</p>
+            <p style="font-size:14px;color:var(--ink-3)">Already set up sync on another device? Then the passphrase was typed differently — go back and retype it.</p>
+            <div class="sheet-acts"><button class="btn" id="syback">Retype it</button><span style="flex:1"></span>
+              <button class="btn btn-hot" id="syfirst">Yes — this is my first device</button></div>`,
+          e2=>{e2.querySelector('#syback').onclick=()=>syncSheet();
+            e2.querySelector('#syfirst').onclick=()=>{closeSheet();SY={id,k,etag:null,dirty:true,h:null,at:null};syncSave();
+              syncPush(true).then(()=>{if(SY&&!SY.dirty)toast('☁ sync is on')})}});
+          return;
+        }
+        let other;try{other=await syncOpen(k,remote)}catch(e){msg.textContent='Couldn’t open the synced copy with that passphrase.';go.disabled=false;return}
+        const blank=!(S.items||[]).some(i=>!i.done)&&!((S.town&&S.town.items)||[]).length;
+        if(blank){SY={id,k,etag:null,dirty:false,h:null,at:null};syncSave();closeSheet();return syncApply(remote,'☁ sync is on — your data is here')}
+        sheet(`<h3>Which data should this device use?</h3>
+          <p>There’s already a synced copy, and this device has its own data too.</p>
+          <div class="syncpick"><div><b>Synced copy · ${esc(remote.device||'')} ${esc(syncWhen(remote.savedAt))}</b><span>${esc(syncSummary(other))}</span></div>
+            <div><b>This device</b><span>${esc(syncSummary(S))}</span></div></div>
+          <div class="sheet-acts"><button class="btn" id="syminel">Replace it with this device’s</button><span style="flex:1"></span>
+            <button class="btn btn-hot" id="syuse2">Use the synced copy</button></div>`,
+        e3=>{e3.querySelector('#syuse2').onclick=()=>{SY={id,k,etag:null,dirty:false,h:null,at:null};syncSave();closeSheet();syncApply(remote,'☁ sync is on — your data is here')};
+          e3.querySelector('#syminel').onclick=()=>{SY={id,k,etag:remote.etag,dirty:true,h:null,at:null};syncSave();closeSheet();
+            syncPush({etag:remote.etag}).then(()=>{if(SY&&!SY.dirty)toast('☁ sync is on')})}});
+      }catch(e){msg.textContent='Can’t reach the sync service — check the connection and try again.';go.disabled=false}
+    };
+    go.onclick=run;p2.onkeydown=e=>{if(e.key==='Enter')run()};
+  });
+}
+function syncStart(){
+  try{const m=sessionStorage.getItem('os_synced');if(m){sessionStorage.removeItem('os_synced');setTimeout(()=>toast(m),300)}}catch(e){}
+  if(SY)syncPull();
+  document.addEventListener('visibilitychange',()=>{if(!SY)return;
+    if(document.hidden){if(SY.dirty){clearTimeout(SYNC_PUSH_T);syncPush()}}else syncPull()});
+  window.addEventListener('online',()=>{if(SY){if(SY.dirty)syncPush();else syncPull()}});
+}
+
 
 /* ===== dialogs ===== */
 const mlayer=document.getElementById('mlayer');
@@ -808,6 +1004,7 @@ function render(){
       <button class="btn" id="donebtn">Done ${doneCount()>0?'· '+doneCount():''}</button>
       <button class="btn" id="exp">↓ Export backup</button>
       <button class="btn" id="imp">↑ Import backup</button>
+      <button class="btn sync-${SY?SYNC_STATUS:'off'}" id="syncbtn" title="Keep your data the same on every device">${syncLabel()}</button>
     </div></div>`;
   healed=0;wishMoved=0;drawKeys();wire();
 }
@@ -3019,6 +3216,8 @@ function wire(){
   document.getElementById('exp').onclick=()=>exportBackup(false);
   const db=document.getElementById('donebtn');if(db)db.onclick=doneSheet;
   document.getElementById('imp').onclick=importBackup;
+  document.getElementById('syncbtn').onclick=syncSheet;
   wireTown();
 }
 render();
+syncStart();
