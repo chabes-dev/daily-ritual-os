@@ -837,6 +837,21 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
   border-radius:10px;background:var(--card);color:var(--ink)}
 .tnum:focus{border-color:var(--hot)}
 @media(max-width:760px){.tcl{min-width:0;flex-basis:100%}.tcycs .slotlabel{flex-wrap:wrap}}
+/* grid columns never grow past the screen because of one long title or name */
+.tdeptpage>*,.town-acts>*,.tpeek>*,.tplate>*{min-width:0}
+/* waiting rows in narrow places — a department page, the round, a smaller window — stack
+   instead of squeezing the title into one letter per line */
+.tdeptpage .trow,.tzen .trow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+.tdeptpage .tr-what,.tzen .tr-what{flex:1 1 100%}
+.tdeptpage .tr-acts,.tzen .tr-acts{margin-left:auto}
+@media(max-width:1100px){
+  .trow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+  .tr-what{flex:1 1 100%}
+  .tr-acts{margin-left:auto}
+  .trow-h{display:none}
+}
+/* the tally marks in the header need room; on mid-size screens the number says it alone */
+@media(max-width:1000px){.ledger{min-width:0;text-align:right}.ledger i{display:none}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
