@@ -500,8 +500,22 @@ const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
 
 /* ===== dialogs ===== */
 const mlayer=document.getElementById('mlayer');
-function closeSheet(){mlayer.innerHTML=''}
+/* An item card can register what closing it means (refresh the page + flash the card), so
+   every way out — Close, Esc, a tap outside — lands on an up-to-date page. Edits save as
+   they happen; closing just shows it. A new sheet replaces any registered close. */
+let SHEET_CLOSE=null;
+function closeSheet(){mlayer.innerHTML='';const f=SHEET_CLOSE;SHEET_CLOSE=null;if(f)f()}
+/* the card you just edited glows once, and a toast says it's saved */
+function flashSaved(id){
+  requestAnimationFrame(()=>{
+    document.querySelectorAll(`[data-id="${id}"],[data-open="${id}"],[data-topen="${id}"]`).forEach(el=>{
+      const box=el.closest('.card,.slot,.deep,.mini,.tcard,.tmini,.zrow,.taiitem,.trow,.tpeek-r')||el;
+      box.classList.remove('tsaved');void box.offsetWidth;box.classList.add('tsaved')});
+  });
+  toast('✓ saved');
+}
 function sheet(html,setup,wide){
+  SHEET_CLOSE=null;
   mlayer.innerHTML=`<div class="veil in"><div class="sheet" ${wide?'style="max-width:680px"':''}>${html}</div></div>`;
   mlayer.querySelector('.veil').onclick=e=>{if(e.target.classList.contains('veil'))closeSheet()};
   if(setup)setup(mlayer.querySelector('.sheet'));
@@ -678,7 +692,8 @@ function openDetail(id){
         <button class="btn btn-danger" id="ddel">Delete</button>
         <span style="flex:1"></span>
         <button class="btn" id="ddone">✓ Done</button>
-        <button class="btn btn-hot" id="dclose">Save</button></div>`;
+        <button class="btn btn-hot" id="dclose">Close</button></div>
+      <div class="autosave">Changes save as you go</div>`;
     const ta=box.querySelector('#dt');autosize(ta);
     ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v)i.text=v;save()};
     ta.onblur=()=>{draw()};
@@ -702,14 +717,14 @@ function openDetail(id){
     if(sn)sn.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const v=sn.value.trim();if(!v)return;
       i.steps.push({id:nid(),text:v,done:false});save();draw();
       const f=mlayer.querySelector('#snew');if(f)f.focus()}};
-    box.querySelector('#dclose').onclick=()=>{closeSheet();render();toast('saved')};
-    box.querySelector('#ddone').onclick=e=>{closeSheet();finish(i.id,e.currentTarget)};
+    box.querySelector('#dclose').onclick=()=>closeSheet();
+    box.querySelector('#ddone').onclick=e=>{SHEET_CLOSE=null;closeSheet();finish(i.id,e.currentTarget)};
     box.querySelector('#ddel').onclick=()=>{sheetConfirm('Delete this?',i.text,'Delete',()=>{
       S.items=S.items.filter(x=>x.id!==id);clearFromPlan(i.mode,id);save();render()})};
   };
   sheet('<div id="dtl"></div>',()=>draw(),true);
-  const v=mlayer.querySelector('.veil');
-  if(v)v.onclick=e=>{if(e.target.classList.contains('veil')){closeSheet();render()}};
+  const snap=JSON.stringify(byId(id));
+  SHEET_CLOSE=()=>{render();const i=byId(id);if(i&&JSON.stringify(i)!==snap)flashSaved(id)};
 }
 
 /* ===== date picker ===== */
@@ -721,17 +736,18 @@ function openDate(item,after,field){field=field||'due';const cur=item[field];
 function drawDP(){
   const {y,m,item,field}=DPV,first=new Date(y,m,1),start=first.getDay(),dim=new Date(y,m+1,0).getDate(),prev=new Date(y,m,0).getDate();
   let cells='';
-  for(let k=start-1;k>=0;k--)cells+=`<div class="dp-d mute">${prev-k}</div>`;
+  for(let k=start-1;k>=0;k--)cells+=`<div class="dp-d mute ${start-1-k===0?'we':''}">${prev-k}</div>`;
   for(let d=1;d<=dim;d++){const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const cl=['dp-d'];if(iso===today())cl.push('today');if(item[field]===iso)cl.push('sel');
+    const cl=['dp-d'],wd=new Date(y,m,d).getDay();if(wd===0||wd===6)cl.push('we');
+    if(iso===today())cl.push('today');if(item[field]===iso)cl.push('sel');
     cells+=`<div class="${cl.join(' ')}" data-iso="${iso}">${d}</div>`}
   const tail=(7-((start+dim)%7))%7;
-  for(let d=1;d<=tail;d++)cells+=`<div class="dp-d mute">${d}</div>`;
+  for(let d=1;d<=tail;d++)cells+=`<div class="dp-d mute ${d===tail?'we':''}">${d}</div>`;
   dplayer.innerHTML=`<div class="veil in"><div class="sheet dp">
     <div class="dp-head"><button class="dp-nav" data-mv="-1">‹</button>
       <div class="dp-month">${first.toLocaleDateString(undefined,{month:'long',year:'numeric'})}</div>
       <button class="dp-nav" data-mv="1">›</button></div>
-    <div class="dp-grid">${['S','M','T','W','T','F','S'].map(w=>`<div class="dp-w">${w}</div>`).join('')}${cells}</div>
+    <div class="dp-grid">${['S','M','T','W','T','F','S'].map((w,k)=>`<div class="dp-w ${k===0||k===6?'we':''}">${w}</div>`).join('')}${cells}</div>
     <div class="dp-quick"><button class="dp-q" data-q="0">Today</button><button class="dp-q" data-q="1">Tomorrow</button>
       <button class="dp-q" data-q="w">This weekend</button><button class="dp-q" data-q="7">Next week</button>
       <button class="dp-q clear" data-q="x">No date</button></div></div></div>`;
@@ -2012,9 +2028,13 @@ const tShort=x=>new Date(typeof x==='string'?x+'T12:00:00':x).toLocaleDateString
 const tDay=x=>new Date(x+'T12:00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});
 function tAgo(ts){const n=Math.round((new Date(today()+'T12:00:00')-new Date(new Date(ts).toISOString().slice(0,10)+'T12:00:00'))/864e5);
   return n<=0?'today':n===1?'yesterday':n+' days ago'}
-/* what it costs if it slips first, then the nearest deadline, then oldest */
+/* time pressure from the deadline: overdue 3 · within 3 days 2 · within a week 1 · else 0 */
+const tTimeW=i=>{if(!i.due)return 0;const n=daysTo(i.due);return n<0?3:n<=3?2:n<=7?1:0};
+/* priority = risk if it slips + how close the deadline is; then the nearest deadline, then oldest.
+   So a "gets worse" due tomorrow outranks a "can't undo" with no date — and both beat "can wait". */
+const tPrio=i=>tStakeW(i)+tTimeW(i);
 function tOrder(a,b){
-  const s=tStakeW(b)-tStakeW(a);if(s)return s;
+  const s=tPrio(b)-tPrio(a);if(s)return s;
   const da=a.due||'9999',db=b.due||'9999';if(da!==db)return da<db?-1:1;
   return (a.created||0)-(b.created||0)}
 const tWaitOrder=(a,b)=>((a.wait&&a.wait.checkBack)||'9999')<((b.wait&&b.wait.checkBack)||'9999')?-1:1;
@@ -2023,6 +2043,9 @@ function tAdd(title,dept,state){
     created:Date.now(),movedAt:Date.now(),doneAt:null,wait:null,instr:null,suggest:null,back:null,today:null};
   S.town.items.push(i);save();return i}
 function tSet(i,state){
+  /* remember when things enter and leave the AI queue, so the queue can show its own progress */
+  if(i.state==='ai'&&state!=='ai')i.aiOut=Date.now();
+  if(state==='ai'&&i.state!=='ai'){i.aiIn=Date.now();i.aiOut=null}
   i.state=state;i.movedAt=Date.now();i.doneAt=state==='done'||state==='dropped'?Date.now():null;
   if(state!=='week'&&state!=='waiting')i.today=null;
   if(state!=='later')i.back=null;
@@ -2176,7 +2199,7 @@ function tTemplateSheet(){
 }
 const tStakeBtns=i=>`<span class="tstakes"><span class="tstakes-l">If it slips a week</span>${TOWN_STAKES.slice().reverse().map(s=>
   `<button class="tstake ${i.stakes===s.v?'on':''}" data-tstake="${i.id}:${s.v}" style="--sc:${s.color}" title="${s.hint}">${s.name}</button>`).join('')}</span>`;
-const tStakeHelp=()=>`<div class="tstakehelp">${TSTAKE_Q} <b>Yes, nothing changes</b> → can wait · <b>yes, but it costs more</b> → gets worse · <b>no, something is lost</b> → can’t undo.</div>`;
+const tStakeHelp=()=>`<div class="tstakehelp">${TSTAKE_Q} <b>Yes, nothing changes</b> → can wait · <b>yes, but it costs more</b> → gets worse · <b>no, something is lost</b> → can’t undo. <b>⏱ A deadline</b> adds urgency — the closer it gets, the higher it sorts.</div>`;
 function tItemSheet(id){
   const box=tSheetBox(true);
   const draw=()=>{
@@ -2206,7 +2229,8 @@ function tItemSheet(id){
       <div class="sheet-acts" style="margin-top:30px">
         <button class="btn btn-danger" id="tdel">Delete</button><span style="flex:1"></span>
         ${open?`<button class="btn" id="tdone">✓ Done</button>`:''}
-        <button class="btn btn-hot" id="tok">Save</button></div>`;
+        <button class="btn btn-hot" id="tok">Close</button></div>
+      <div class="autosave">Changes save as you go</div>`;
     const ta=box.querySelector('#tti');autosize(ta);
     ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v){i.title=v;save()}};
     box.querySelectorAll('[data-tdp]').forEach(b=>b.onclick=()=>{i.dept=b.dataset.tdp;save();draw()});
@@ -2220,16 +2244,16 @@ function tItemSheet(id){
     const cb=box.querySelector('#tcb2');if(cb)cb.onclick=()=>tPush(i,draw);
     const ins=box.querySelector('#tins2');if(ins)ins.oninput=()=>{i.instr=ins.value;save()};
     const nt=box.querySelector('#tnotes');nt.oninput=()=>{i.notes=nt.value;save()};
-    box.querySelector('#tok').onclick=()=>{closeSheet();tRefresh()};
+    box.querySelector('#tok').onclick=()=>closeSheet();
     const dn=box.querySelector('#tdone');
-    if(dn)dn.onclick=()=>{const was=i.state;tSet(i,'done');closeSheet();tRefresh();
+    if(dn)dn.onclick=()=>{const was=i.state;tSet(i,'done');SHEET_CLOSE=null;closeSheet();tRefresh();
       toastUndo('done',()=>{tSet(i,was);tRefresh()})};
     box.querySelector('#tdel').onclick=()=>sheetConfirm('Delete this?',i.title,'Delete',()=>{
       S.town.items=S.town.items.filter(x=>x.id!==id);save();tRefresh()});
   };
   draw();
-  const v=mlayer.querySelector('.veil');
-  if(v)v.onclick=e=>{if(e.target.classList.contains('veil')){closeSheet();tRefresh()}};
+  const snap=JSON.stringify(tById(id));
+  SHEET_CLOSE=()=>{tRefresh();const i=tById(id);if(i&&JSON.stringify(i)!==snap)flashSaved(id)};
 }
 /* Town replaced the old personal board. Once, every open personal task is copied into
    Town's inbox with a suggested department; the originals stay in storage untouched (just
@@ -2363,31 +2387,52 @@ function tViewToday(){
         <button class="zlink" data-tv="waiting">Open Waiting →</button></div>
     </div>`;
 }
-/* AI queue: a list on the left, the selected card's instruction on the right. On a phone
-   the instruction opens inline under the card you tap. */
+/* AI queue: a department overview on top (what's left, what you've sent this week, a bar that
+   fills as it empties); tap one to work through just that department. Below, the list on the left
+   and the selected card's instruction on the right — inline under the card on a phone. */
 function tViewAI(){
-  const list=S.town.items.filter(i=>i.state==='ai').sort(tOrder);
+  const all=S.town.items.filter(i=>i.state==='ai');
+  const wk=new Date(isoWeek()+'T00:00:00').getTime();
+  const sentWk=S.town.items.filter(i=>i.aiOut&&i.aiOut>=wk&&i.state!=='ai');
+  const depts=[...TOWN_DEPTS,{id:null,name:'No department',color:C.grey}].map(d=>({d,
+    left:all.filter(i=>(i.dept||null)===d.id).length,sent:sentWk.filter(i=>(i.dept||null)===d.id).length})).filter(x=>x.left||x.sent);
+  let f=S.ui.aiDept;if(f!==undefined&&f!=='all'&&!depts.some(x=>x.left&&String(x.d.id)===String(f)))f='all';f=f===undefined?'all':f;
+  const list=all.filter(i=>f==='all'||String(i.dept||null)===String(f)).sort(tOrder);
   const sel=list.find(i=>i.id===S.ui.aiSel)||list[0];
-  const detail=i=>{const d=tDept(i.dept),s=tStake(i);
+  const detail=i=>{const d=tDept(i.dept),s=tStake(i),l=i.due?dueLabel(i.due):null;
     return `<div class="taidetail" style="--cc:${tColor(i)}">
       <div class="taihead">${d?`<span class="dot" style="color:${d.color}"><b></b>${d.name}</span>`:''}
-        ${s&&s.v>1?`<span class="tag pill" style="background:${s.color}">${s.name}</span>`:''}</div>
+        ${s&&s.v>1?`<span class="tag pill" style="background:${s.color}">${s.name}</span>`:''}
+        ${l?`<span class="tag pill" style="background:${l.c==='late'?C.red:'var(--hot)'}">⏱ ${l.t}</span>`:''}</div>
       <div class="taititle" data-topen="${i.id}">${esc(i.title)}</div>
       <textarea class="tai" data-tinstr="${i.id}" rows="9">${esc(tInstr(i))}</textarea>
       <div class="taiacts"><button class="btn btn-hot" data-tcopy="${i.id}">Copy</button>
         <button class="btn" data-tsent="${i.id}">Sent → Waiting</button>
         ${i.instr!=null?`<button class="zlink" data-treset="${i.id}" style="font-size:12px">back to the template</button>`:''}</div></div>`};
-  return `${tBackLink()}<div class="planhead"><h2>AI queue</h2><span>${list.length} ready</span></div>
-    <p class="tlede">Copying changes nothing. Once you have actually sent it, press <b>Sent → Waiting</b>.
+  const tile=x=>{const tot=x.left+x.sent,pct=tot?Math.round(x.sent/tot*100):0,on=String(x.d.id)===String(f);
+    return `<button class="taidept ${on?'on':''} ${x.left?'':'clear'}" ${x.left?`data-taidept="${x.d.id}"`:'disabled'} style="--cc:${x.d.color}">
+      <span class="taidept-n">${x.d.name}</span>
+      <span class="taidept-c">${x.left?`<b>${x.left}</b> left`:'✓ clear'}</span>
+      <span class="taidept-bar"><i style="width:${pct}%"></i></span>
+      <span class="taidept-s">${x.sent?`${x.sent} sent this week`:'none sent yet'}</span></button>`};
+  return `${tBackLink()}<div class="planhead"><h2>AI queue</h2><span>${all.length} ready · ${sentWk.length} sent this week</span></div>
+    <p class="tlede">Pick a department and clear it. Riskiest and most time-sensitive first. Copying changes nothing — once you’ve actually sent it, press <b>Sent → Waiting</b>.
       <button class="zlink" id="ttpl" style="font-size:12px;margin-left:6px">edit the template</button></p>
-    ${list.length?`<div class="taiwrap">
-      <div class="tailist">${list.map(i=>{const d=tDept(i.dept),s=tStake(i),on=i===sel;
+    ${depts.length?`<div class="taidepts">
+      <button class="taidept tall ${f==='all'?'on':''}" data-taidept="all" style="--cc:var(--hot)">
+        <span class="taidept-n">All departments</span><span class="taidept-c"><b>${all.length}</b> left</span>
+        <span class="taidept-bar"><i style="width:${all.length+sentWk.length?Math.round(sentWk.length/(all.length+sentWk.length)*100):0}%"></i></span>
+        <span class="taidept-s">${sentWk.length} sent this week</span></button>
+      ${depts.map(tile).join('')}</div>`:''}
+    ${list.length?`<div class="slotlabel">${f==='all'?'Everything':esc((tDept(f)||{name:'No department'}).name)} — ${list.length}</div>
+      <div class="taiwrap">
+      <div class="tailist">${list.map(i=>{const d=tDept(i.dept),s=tStake(i),l=i.due?dueLabel(i.due):null,on=i===sel;
         return `<button class="taiitem ${on?'on':''}" data-taisel="${i.id}" style="--cc:${tColor(i)}">
           <span class="taiitem-t">${esc(i.title)}</span>
-          <span class="taiitem-m">${d?esc(d.name):'No department'}${s&&s.v>1?` · <b style="color:${s.color}">${s.name}</b>`:''}${i.instr!=null?' · edited':''}</span>
+          <span class="taiitem-m">${f==='all'?(d?esc(d.name):'No department'):''}${s&&s.v>1?`${f==='all'?' · ':''}<b style="color:${s.color}">${s.name}</b>`:''}${l?` · <b style="color:${l.c==='late'?C.red:'var(--hot)'}">⏱ ${l.t}</b>`:''}${i.instr!=null?' · edited':''}</span>
         </button>${on?`<div class="taiinline">${detail(i)}</div>`:''}`}).join('')}</div>
       <div class="taipane">${detail(sel)}</div></div>`
-    :`<div class="empty"><h3>Queue’s clear.</h3><p>Things land here when the weekly round delegates them.</p></div>`}`;
+    :`<div class="empty"><h3>Queue’s clear.</h3><p>${sentWk.length?`${sentWk.length} handed off this week. Nice.`:'Things land here when the weekly round delegates them.'}</p></div>`}`;
 }
 function tWaitRow(i){
   const w=i.wait||{},late=tLate(i),wife=i.state==='wife';
@@ -2500,6 +2545,8 @@ function wireTown(){
   const rf=document.getElementById('tref');
   if(rf){autosize(rf);rf.oninput=()=>{autosize(rf);S.town.depts[S.ui.townDept].ref=rf.value;save()}}
   app.querySelectorAll('[data-taisel]').forEach(b=>b.onclick=()=>{S.ui.aiSel=b.dataset.taisel;save();render()});
+  app.querySelectorAll('[data-taidept]').forEach(b=>b.onclick=()=>{const v=b.dataset.taidept;
+    S.ui.aiDept=v==='all'?'all':v==='null'?null:v;S.ui.aiSel=null;save();render()});
   app.querySelectorAll('[data-tinstr]').forEach(ta=>ta.oninput=()=>{const i=tById(ta.dataset.tinstr);if(i){i.instr=ta.value;save()}});
   app.querySelectorAll('[data-tcopy]').forEach(b=>b.onclick=()=>{
     const ta=b.closest('.taidetail').querySelector('[data-tinstr]');if(ta)tCopy(ta.value,ta)});
@@ -2599,7 +2646,7 @@ function tVerdictRow(i){
       ${tSizeLabel(i)?`<span class="zd dim">${tSizeLabel(i)}</span>`:''}
       ${i.state==='later'&&i.back?`<span class="zd dim">📅 ${tShort(i.back)}</span>`:''}
       ${i.state==='inbox'?`<span class="ztag week">new</span>`:''}</div>
-    ${closed?'':tStakeBtns(i)}
+    ${closed?'':`<div class="tvmeta">${tStakeBtns(i)}<button class="tstake tdue ${i.due?'on':''}" data-tdue="${i.id}" title="A deadline makes it time-sensitive — the closer it gets, the higher it sorts">⏱ ${i.due?dueLabel(i.due).t:'deadline?'}</button></div>`}
     <div class="tv-acts">${TVERDICTS.map(g=>`<span class="tvg tvg-${g.g}">${g.v.map(([v,lb])=>
       `<button class="zsel tv-${v} ${i.state===v?'sel':''}" data-tverd="${i.id}:${v}">${lb}${v==='later'&&i.state==='later'&&i.back?' · '+tShort(i.back):''}</button>`).join('')}</span>`).join('')}</div></div>`;
 }
@@ -2699,6 +2746,7 @@ function tzRound(change){
   mid.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tdel);if(!i)return;
     S.town.items=S.town.items.filter(x=>x.id!==i.id);save();tzPaint(false);
     toastUndo('deleted',()=>{S.town.items.push(i);save();if(TZ)tzPaint(false)})});
+  mid.querySelectorAll('[data-tdue]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tdue);if(i)openDate(i,()=>tzPaint(false))});
   mid.querySelectorAll('[data-tverd]').forEach(b=>b.onclick=()=>{const [id,v]=b.dataset.tverd.split(':'),i=tById(id);
     if(!i)return;
     const keep=()=>{const L=r.lists&&r.lists[i.dept];if(L&&!L.includes(i.id)){L.push(i.id)}save();tzPaint(false)};

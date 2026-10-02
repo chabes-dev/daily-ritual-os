@@ -776,6 +776,35 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
   .tmini .tag:first-of-type{margin-left:19px}
   .tpeek{grid-template-columns:1fr;gap:12px}
 }
+/* saved: the card you edited glows once */
+@keyframes tsaved{0%{box-shadow:0 0 0 0 rgba(30,142,62,.55)}40%{box-shadow:0 0 0 6px rgba(30,142,62,.35)}100%{box-shadow:0 0 0 0 rgba(30,142,62,0)}}
+.tsaved{animation:tsaved 1.1s ease-out}
+.autosave{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;margin-top:10px}
+/* calendar: weekends stand apart */
+.dp-w.we{color:var(--g300)}
+.dp-d.we{color:#A8ACB8;font-weight:400}
+.dp-d.we:hover{background:var(--g100);color:var(--ink-2)}
+.dp-d.we.mute{color:var(--ink-3)}
+.dp-d.we.sel{background:var(--hot);color:#fff}
+/* quick deadline in the round */
+.tvmeta{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
+.tstake.tdue{--sc:var(--hot)}
+.tstake.tdue.on{background:var(--hot-soft);color:var(--hot);border-color:var(--hot-line)}
+/* AI queue: department overview */
+.taidepts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin:0 0 26px}
+.taidept{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--card);border-radius:var(--r);padding:14px 16px;
+  box-shadow:var(--shadow);border-top:5px solid var(--cc);transition:box-shadow .15s,transform .15s}
+.taidept:hover:not(:disabled){box-shadow:var(--shadow-2);transform:translateY(-1px)}
+.taidept.on{box-shadow:0 0 0 2.5px var(--cc),var(--shadow-2)}
+.taidept.clear{opacity:.6;cursor:default}
+.taidept-n{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cc)}
+.taidept.tall .taidept-n{color:var(--ink-2)}
+.taidept-c{font-family:var(--serif);font-size:22px;font-weight:300}
+.taidept-c b{font-weight:500}
+.taidept-bar{height:6px;border-radius:3px;background:var(--g200);overflow:hidden}
+.taidept-bar i{display:block;height:6px;background:var(--cc);transition:width .4s}
+.taidept-s{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+@media(max-width:760px){.taidepts{grid-template-columns:1fr 1fr;gap:10px}.taidept{padding:12px}.taidept-c{font-size:19px}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
