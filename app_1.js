@@ -1620,6 +1620,11 @@ function paintZen(isStepChange){
   if(pcy)pcy.onclick=()=>{S.pcheck={doneWeek:isoWeek(),skips:[]};save();zenNext()};
   const pcn=zmidEl.querySelector('#pcno');
   if(pcn)pcn.onclick=detourToPersonal;
+  /* today's hours, the personal week cap, and Spark — these were lost in an earlier rewrite */
+  zmidEl.querySelectorAll('[data-h]').forEach(b2=>b2.onclick=()=>{S.hours[m]=+b2.dataset.h;S.hours.date=today();save();paintZen(false)});
+  zmidEl.querySelectorAll('[data-wkcap]').forEach(b2=>b2.onclick=()=>{S.cap[m]=+b2.dataset.wkcap;save();paintZen(false)});
+  const zsp=zmidEl.querySelector('#zspark');
+  if(zsp)zsp.onclick=()=>window.open(SPARK_URL,'_blank');
   zmidEl.querySelectorAll('[data-wh]').forEach(b2=>b2.onclick=()=>{const v=+b2.dataset.wh;
     S.workWeekHours={weekIso:isoWeek(),hours:v};S.cap[m]=weekCapFor(v);save();paintZen(false)});
   zmidEl.querySelectorAll('[data-wkadj]').forEach(b2=>b2.onclick=()=>{
@@ -1909,8 +1914,14 @@ const TOWN_SIZES=[{v:1,name:'60 sec',short:'⚡ 60 sec'},{v:10,name:'10 min'},{v
 /* time free today → the biggest size that fits. Deep tasks only show up for a real block. */
 const TOWN_TIMES=[{v:0,name:'0'},{v:15,name:'15 min',fit:10},{v:30,name:'30 min',fit:30},
   {v:60,name:'60+ min',fit:60},{v:120,name:'2h+ block',fit:120}];
-/* stakes = what happens if it slips. Unrated sorts between "hurts" and "fine". */
-const TOWN_STAKES=[{v:3,name:'Costly',color:'#D93025'},{v:2,name:'Hurts',color:'#F29900'},{v:1,name:'Fine',color:'#80868B'}];
+/* stakes — one question: "if this slips a week, can I still fix it later?"
+   yes, nothing changes → can wait · yes, but it costs more → gets worse · no → can't undo.
+   The line that matters is reversible vs not. Unrated sorts between "gets worse" and "can wait". */
+const TOWN_STAKES=[
+  {v:3,name:'Can’t undo',color:'#D93025',hint:'Miss it and something is lost for good — a fee or fine, a health window, a deadline, a promise'},
+  {v:2,name:'Gets worse',color:'#F29900',hint:'Still fixable later, but it will cost more — work, money, stress, or someone kept waiting'},
+  {v:1,name:'Can wait',color:'#80868B',hint:'Nothing changes if it waits a week'}];
+const TSTAKE_Q='If this slips a week, can you still fix it later?';
 const tStakeW=i=>({3:3,2:2,1:1}[i.stakes]||1.5);
 const TOWN_QUIET_DAYS=21;
 const TOWN_IMPORT={health:'health',money:'treasury',wish:'wishes'};
@@ -1931,7 +1942,7 @@ const TNOTE={
   phrase:'One thing. Not chores — playing with the kids, a proper dinner, calling your parents. The thing that would make this week good, not just handled.',
   dump:'Everything personal in your head, one line each. No departments yet, no sorting.',
   sort:'One tap each — which department does it belong to? Sorted ones drop to the bottom.',
-  rounds:'Rate what it costs if it slips, then decide: yours this week, handed off, not this week — or close it.',
+  rounds:'Rate each one, then decide: yours this week, handed off, not this week — or close it.',
   size:'How long will each one really take? Anything that takes 60 seconds — do it now and tick it.',
   paper:'Copy it down. Then close this and get on with the week.',
   spark:'However it is actually going. Write in Spark, then come back here.',
@@ -2157,8 +2168,9 @@ function tTemplateSheet(){
   box.querySelector('#tdef').onclick=()=>{ta.value=TOWN_AI_TEMPLATE};
   box.querySelector('#tok').onclick=()=>{S.town.aiTemplate=ta.value;save();closeSheet();tRefresh()};
 }
-const tStakeBtns=i=>`<span class="tstakes"><span class="tstakes-l">If it slips</span>${TOWN_STAKES.slice().reverse().map(s=>
-  `<button class="tstake ${i.stakes===s.v?'on':''}" data-tstake="${i.id}:${s.v}" style="--sc:${s.color}">${s.name}</button>`).join('')}</span>`;
+const tStakeBtns=i=>`<span class="tstakes"><span class="tstakes-l">If it slips a week</span>${TOWN_STAKES.slice().reverse().map(s=>
+  `<button class="tstake ${i.stakes===s.v?'on':''}" data-tstake="${i.id}:${s.v}" style="--sc:${s.color}" title="${s.hint}">${s.name}</button>`).join('')}</span>`;
+const tStakeHelp=()=>`<div class="tstakehelp">${TSTAKE_Q} <b>Yes, nothing changes</b> → can wait · <b>yes, but it costs more</b> → gets worse · <b>no, something is lost</b> → can’t undo.</div>`;
 function tItemSheet(id){
   const box=tSheetBox(true);
   const draw=()=>{
@@ -2169,7 +2181,7 @@ function tItemSheet(id){
       <div class="zkept" style="margin:4px 0 0">${st.name}${i.state==='later'&&i.back?' · back '+tDay(i.back):''}${tIsToday(i)?' · on today':''}${open?' · verdicts happen in the weekly round':''}</div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Department</div>
         <div class="chips">${TOWN_DEPTS.map(d=>`<button class="chip ${i.dept===d.id?'on':''}" data-tdp="${d.id}" style="color:${d.color}"><b></b>${d.name}</button>`).join('')}</div></div>
-      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">If it slips</div>${tStakeBtns(i)}</div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">If it slips a week</div>${tStakeBtns(i)}${tStakeHelp()}</div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Size</div>
         <div class="chips">${TOWN_SIZES.map(s=>`<button class="chip ${i.size===s.v?'on':''}" data-tsz="${s.v}" style="color:var(--hot)"><b></b>${s.short||s.name}</button>`).join('')}
           <button class="chip ${!i.size?'on':''}" data-tsz="" style="color:${C.grey}"><b></b>Not sized</button></div></div>
@@ -2378,7 +2390,7 @@ function tViewMap(){
         <span class="ttile-h"><span class="tpulse ${p}" title="${TPULSE[p]}"></span><span class="ttile-n">${d.name}</span></span>
         ${d.hint?`<span class="ttile-hint">${d.hint}</span>`:''}
         <span class="ttile-c">${c('week')} this week · ${c('ai')} AI · ${c('waiting')+c('wife')} waiting · ${c('later')} not this week</span>
-        ${costly?`<span class="ttile-c" style="color:#D93025;font-weight:700">${costly} costly if it slips</span>`:''}
+        ${costly?`<span class="ttile-c" style="color:#D93025;font-weight:700">${costly} can’t undo if it slips</span>`:''}
         ${c('inbox')?`<span class="ttile-c" style="color:var(--ink-3)">${c('inbox')} in the inbox</span>`:''}
         <span class="ttile-v">${p==='calm'?'':TPULSE[p]+' · '}${lv?'visited '+tAgo(lv):'not visited yet'}</span></button>`}).join('')}</div>`;
 }
@@ -2608,7 +2620,7 @@ function tzRound(change){
       o.step=`Weekly round · step ${r.step+1} of ${TROUND.length} · department ${r.di+1} of ${r.depts.length}`;
       o.note=(d.hint?d.hint+'. ':'')+TNOTE.rounds;
       o.mid=`${open.length?`<div class="tstakebar">${TOWN_STAKES.map(s=>`<span class="tsb" style="--sc:${s.color}"><b>${cnt(s.v)}</b> ${s.name.toLowerCase()}</span>`).join('')}
-          ${cnt(0)?`<span class="tsb" style="--sc:var(--g300)"><b>${cnt(0)}</b> not rated</span>`:''}</div>`:''}
+          ${cnt(0)?`<span class="tsb" style="--sc:var(--g300)"><b>${cnt(0)}</b> not rated</span>`:''}</div>${tStakeHelp()}`:''}
         ${list.length?`<div class="zpick">${list.map(tVerdictRow).join('')}</div>`
           :`<div class="zkept">Nothing to decide here — just the follow-ups below.</div>`}
         <input class="snew" id="tzadd" placeholder="Anything else for ${esc(d.name)}? ⏎" style="margin:6px 0 4px" />
