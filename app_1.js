@@ -757,7 +757,7 @@ function render(){
   const body=P?(v==='north'?viewNorth():viewTown())
     :v==='home'?viewHome(m):v==='backlog'?viewCols('backlog'):viewToday();
   const tn=st=>S.town.items.filter(i=>i.state===st).length;
-  const tabs=P?[['town:home','Town hall',''],['town:today','Today',S.town.items.filter(tIsToday).length],['town:week','This week',tn('week')],['town:ai','AI queue',tn('ai')],
+  const tabs=P?[['town:home','Town hall',''],['town:today','Today',S.town.items.filter(tIsToday).length],['town:ai','AI queue',tn('ai')],
       ['town:waiting','Waiting',tn('waiting')],['town:map','Town map',''],['spark','Journal ↗',''],['north','North Star','']]
     :[['home','Home',''],['today','Today',''],['backlog','Backlog',inBacklog(m).length]];
   const tvOn=k=>P&&k.startsWith('town:')?v==='town'&&k.slice(5)===(S.ui.townView==='dept'?'map':S.ui.townView||'home'):v===k;
@@ -1966,6 +1966,7 @@ function initTown(){
     delete t.depts[old];
   });
   if(TOWN_MERGED[S.ui.townDept])S.ui.townDept=TOWN_MERGED[S.ui.townDept];
+  if(S.ui.townView==='week')S.ui.townView='today';   /* This week lives inside Today now */
   TOWN_DEPTS.forEach(d=>{t.depts[d.id]=Object.assign({ref:'',lastVisit:null},t.depts[d.id]||{})});
   t.items.forEach(i=>{
     if(!TOWN_STATES.some(s=>s.id===i.state))i.state='inbox';
@@ -1991,6 +1992,11 @@ const tOpen=i=>i.state!=='done'&&i.state!=='dropped';
 const tColor=i=>{const d=tDept(i.dept);return d?d.color:C.grey};
 const tStake=i=>TOWN_STAKES.find(s=>s.v===i.stakes)||null;
 const tSize=i=>TOWN_SIZES.find(s=>s.v===i.size)||null;
+/* i.home = "after work, at home": not a size — it says where it happens, so it never counts
+   against today's minutes. An item is either sized or after-work, not both. */
+const TOWN_HOME={name:'After work, at home',short:'🏠 After work'};
+const tSizeLabel=i=>i.home?TOWN_HOME.short:tSize(i)?(tSize(i).short||tSize(i).name):'';
+const tDayItems=L=>L.filter(i=>!i.home),tHomeItems=L=>L.filter(i=>i.home);
 const tMoveLive=()=>S.town.move&&S.town.move.date===today()?S.town.move:null;
 const tDayMins=()=>S.town.day&&S.town.day.date===today()?S.town.day.mins:null;
 const tIsToday=i=>i.today===today()&&tOpen(i);
@@ -2183,8 +2189,9 @@ function tItemSheet(id){
         <div class="chips">${TOWN_DEPTS.map(d=>`<button class="chip ${i.dept===d.id?'on':''}" data-tdp="${d.id}" style="color:${d.color}"><b></b>${d.name}</button>`).join('')}</div></div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">If it slips a week</div>${tStakeBtns(i)}${tStakeHelp()}</div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Size</div>
-        <div class="chips">${TOWN_SIZES.map(s=>`<button class="chip ${i.size===s.v?'on':''}" data-tsz="${s.v}" style="color:var(--hot)"><b></b>${s.short||s.name}</button>`).join('')}
-          <button class="chip ${!i.size?'on':''}" data-tsz="" style="color:${C.grey}"><b></b>Not sized</button></div></div>
+        <div class="chips">${TOWN_SIZES.map(s=>`<button class="chip ${i.size===s.v&&!i.home?'on':''}" data-tsz="${s.v}" style="color:var(--hot)"><b></b>${s.short||s.name}</button>`).join('')}
+          <button class="chip ${i.home?'on':''}" data-tsz="home" style="color:#0B7A55"><b></b>${TOWN_HOME.short}</button>
+          <button class="chip ${!i.size&&!i.home?'on':''}" data-tsz="" style="color:${C.grey}"><b></b>Not sized</button></div></div>
       ${i.state==='week'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Today</div>
         <div class="chips"><button class="chip ${tIsToday(i)?'on':''}" data-ttoday="${i.id}" style="color:var(--hot)"><b></b>${tIsToday(i)?'On today':'Put it on today'}</button></div></div>`:''}
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Deadline</div><div class="dates">${dateChips(i)}</div></div>
@@ -2203,7 +2210,8 @@ function tItemSheet(id){
     const ta=box.querySelector('#tti');autosize(ta);
     ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v){i.title=v;save()}};
     box.querySelectorAll('[data-tdp]').forEach(b=>b.onclick=()=>{i.dept=b.dataset.tdp;save();draw()});
-    box.querySelectorAll('[data-tsz]').forEach(b=>b.onclick=()=>{i.size=b.dataset.tsz?+b.dataset.tsz:null;save();draw()});
+    box.querySelectorAll('[data-tsz]').forEach(b=>b.onclick=()=>{const v=b.dataset.tsz;
+      i.home=v==='home';i.size=v&&v!=='home'?+v:null;save();draw()});
     box.querySelectorAll('[data-tstake]').forEach(b=>b.onclick=()=>{const v=+b.dataset.tstake.split(':')[1];i.stakes=i.stakes===v?0:v;save();draw()});
     box.querySelectorAll('[data-ttoday]').forEach(b=>b.onclick=()=>{i.today=tIsToday(i)?null:today();save();draw()});
     box.querySelectorAll('[data-dset]').forEach(b=>b.onclick=()=>{i.due=b.dataset.dset||null;save();draw()});
@@ -2243,7 +2251,7 @@ function personalPick(){const p=S.personal.todayPick;if(!p||p.date!==today())ret
 /* ---- town: views ---- */
 function viewTown(){
   const v=S.ui.townView||'home';
-  return v==='today'?tViewToday():v==='week'?tViewWeek():v==='ai'?tViewAI():v==='waiting'?tViewWaiting()
+  return v==='today'||v==='week'?tViewToday():v==='ai'?tViewAI():v==='waiting'?tViewWaiting()
     :v==='map'?tViewMap():v==='dept'?tViewDept(S.ui.townDept):tViewHome();
 }
 function tViewHome(){
@@ -2270,9 +2278,8 @@ function tViewHome(){
     ${moved?`<div class="zkept tmoved">${moved} task${moved===1?'':'s'} from the old personal board ${moved===1?'is':'are'} in the inbox — the weekly round sorts ${moved===1?'it':'them'}.</div>`:''}
     <div class="town-row">
       <button class="hometile" data-tv="today"><span class="ht-label">Today</span>
-        <span class="ht-title">${todayN?todayN+' on today':'Not planned'}</span><span class="ht-meta">${T.filter(tDoneToday).length} done today</span></button>
-      <button class="hometile" data-tv="week"><span class="ht-label">This week</span>
-        <span class="ht-title">${n('week')} on the list</span><span class="ht-meta">${n('inbox')} in the inbox</span></button>
+        <span class="ht-title">${todayN?todayN+' on today':'Not planned'}</span>
+        <span class="ht-meta">${Math.max(0,n('week')-T.filter(i=>i.state==='week'&&tIsToday(i)).length)} more this week · ${T.filter(tDoneToday).length} done today</span></button>
       <button class="hometile" data-tv="ai"><span class="ht-label">AI queue</span>
         <span class="ht-title">${n('ai')} ready</span><span class="ht-meta">copy · send · mark sent</span></button>
       <button class="hometile" data-tv="waiting"><span class="ht-label">Waiting</span>
@@ -2292,45 +2299,69 @@ function tCard(i,where){
     <div class="card-sub">${d?`<span class="tag" style="color:${d.color}">${esc(d.name)}</span>`:''}
       ${s&&s.v>1?`<span class="tag pill" style="background:${s.color}">${s.name}</span>`:''}
       ${l?`<span class="tag pill" style="background:${l.c==='late'?C.red:'var(--hot)'}">${l.t}</span>`:''}
-      ${where==='today'&&tSize(i)?`<span class="tag">${tSize(i).short||tSize(i).name}</span>`:''}
+      ${where==='today'&&tSizeLabel(i)?`<span class="tag">${tSizeLabel(i)}</span>`:''}
       <span class="grow"></span>
       ${where==='today'?`<button class="tlink" data-ttoday="${i.id}">not today</button>`
         :where==='week'?`<button class="tlink ${on?'on':''}" data-ttoday="${i.id}">${on?'✓ today':'+ today'}</button>`:''}</div></div>`;
 }
 function tMeter(mins,L){
+  const home=tHomeItems(L).length;L=tDayItems(L);
   const used=tSizeSum(L),uns=L.filter(i=>!i.size).length,cap=mins||0;
   const pct=cap?Math.min(100,Math.round(used/cap*100)):0,over=cap&&used>cap;
-  return `<div class="tmeter ${over?'over':''}"><span class="tmeter-l">${cap?`${used} of ${TOWN_TIMES.find(x=>x.v===cap).name}`:`${used} min`} planned${uns?` · ${uns} unsized`:''}</span>
+  return `<div class="tmeter ${over?'over':''}"><span class="tmeter-l">${cap?`${used} of ${TOWN_TIMES.find(x=>x.v===cap).name}`:`${used} min`} planned${uns?` · ${uns} unsized`:''}${home?` · ${home} after work`:''}</span>
     ${cap?`<span class="tmeter-b"><i style="width:${pct}%"></i></span>`:''}${over?`<span class="tmeter-w">that’s more than today has</span>`:''}</div>`;
 }
+/* Today = the plate (highlighted, at the top) + the rest of this week underneath, grouped by
+   department like work's "Also on the board", + a glance at the AI queue and Waiting. */
 function tViewToday(){
   const mins=tDayMins(),L=S.town.items.filter(tIsToday).sort(tOrder),done=S.town.items.filter(tDoneToday);
+  const day=tDayItems(L),home=tHomeItems(L);
   const rest=S.town.items.filter(i=>i.state==='week'&&!tIsToday(i)).sort(tOrder);
+  const ai=S.town.items.filter(i=>i.state==='ai').sort(tOrder);
+  const wait=S.town.items.filter(i=>i.state==='waiting'||i.state==='wife').sort((a,b)=>(tLate(b)-tLate(a))||tWaitOrder(a,b));
+  const late=wait.filter(tLate).length;
+  const groups=[...TOWN_DEPTS,{id:null,name:'No department',color:C.grey}]
+    .map(d=>({d,list:rest.filter(i=>(i.dept||null)===d.id)})).filter(g=>g.list.length);
+  const mini=i=>{const k=tStake(i),l=i.due?dueLabel(i.due):null;
+    return `<div class="tmini" data-topen="${i.id}" title="${esc(i.title)}">
+      <span class="d" style="background:${k&&k.v>1?k.color:tColor(i)}"></span>
+      <span class="t">${esc(i.title)}</span>
+      ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
+      ${tSizeLabel(i)?`<span class="tag">${tSizeLabel(i)}</span>`:''}
+      <button class="tlink" data-ttoday="${i.id}">+ today</button></div>`};
   return `${tBackLink()}<div class="planhead"><h2>Today</h2><span>${tDay(today())}${mins?' · '+TOWN_TIMES.find(x=>x.v===mins).name+' free':''}</span></div>
-    ${L.length||mins?tMeter(mins,L):''}
-    ${L.length?`<div class="tplate">${L.map(i=>tCard(i,'today')).join('')}</div>`
-      :`<div class="empty"><h3>${done.length?'Nothing left on today.':'Today isn’t planned yet.'}</h3>
+    <div class="tplatewrap">
+      ${L.length||mins?tMeter(mins,L):''}
+      ${day.length?`<div class="tplate">${day.map(i=>tCard(i,'today')).join('')}</div>`:''}
+      ${home.length?`<div class="slotlabel" style="margin:${day.length?'26px':'0'} 0 12px">🏠 After work, at home — ${home.length}</div>
+        <div class="tplate">${home.map(i=>tCard(i,'today')).join('')}</div>`:''}
+      ${!L.length?`<div class="tplate-empty"><h3>${done.length?'Nothing left on today.':'Today isn’t planned yet.'}</h3>
         <p>${done.length?'Nice. Add another from this week below, or call it a day.':'Today’s move picks it in a minute — or add from this week below.'}</p>
-        ${done.length?'':`<button class="btn btn-hot" id="tmove2" style="margin-top:18px">Plan today</button>`}</div>`}
-    ${done.length?`<div class="slotlabel">Done today — ${done.length}</div>${done.map(i=>`<div class="donerow"><span class="d" style="background:${tColor(i)}"></span>
-      <span class="t">${esc(i.title)}</span></div>`).join('')}`:''}
-    ${rest.length?`<div class="slotlabel" style="margin-top:34px">Also this week — another day, or today if there’s room</div>
-      <div class="zpick">${rest.map(i=>{const s=tSize(i);return `<div class="zrow tline" style="--cc:${tColor(i)}">
-        <span class="zt" data-topen="${i.id}">${esc(i.title)}</span>${s?`<span class="zd">${s.short||s.name}</span>`:''}
-        <span class="zb"><button class="zsel" data-ttoday="${i.id}">+ today</button></span></div>`}).join('')}</div>`:''}`;
-}
-function tViewWeek(){
-  const mv=tMoveLive(),t=mv&&mv.mins?TOWN_TIMES.find(x=>x.v===mv.mins):null,fit=t?t.fit:null;
-  const week=S.town.items.filter(i=>i.state==='week').sort(tOrder),todayN=week.filter(tIsToday).length;
-  const cols=[{v:null,name:'Unsized'},...TOWN_SIZES].filter(c=>c.v!==null||week.some(i=>!i.size));
-  return `${tBackLink()}<div class="planhead"><h2>This week</h2>
-      <span>${week.length} on the list${todayN?` · ${todayN} on today`:''}${t?` · today’s move: ${t.name} — what fits is lit`:''}</span></div>
-    <p class="tlede">The menu for the week. Today’s move puts some of it on today’s plate — the rest waits for another day.</p>
-    ${!week.length?`<div class="empty"><h3>Nothing chosen yet.</h3><p>The weekly round fills this — start it from the Town hall.</p></div>`:''}
-    ${week.length?`<div class="cols tcols">${cols.map(c=>{
-      const list=week.filter(i=>(i.size||null)===c.v),cls=fit==null||c.v==null?'':c.v<=fit?'tfit':'tdim';
-      return `<div class="col ${cls}"><div class="col-head"><span class="col-name">${c.short||c.name}</span><span class="col-n">${list.length}</span></div>
-        ${list.map(i=>tCard(i,'week')).join('')}${!list.length?'<div class="col-empty">Clear.</div>':''}</div>`}).join('')}</div>`:''}`;
+        ${done.length?'':`<button class="btn btn-hot" id="tmove2">Plan today</button>`}</div>`:''}
+      ${done.length?`<div class="tdonestrip">✓ Done today: ${done.map(i=>`<span>${esc(i.title)}</span>`).join('')}</div>`:''}
+    </div>
+    <div class="rest">
+      <h3>Also this week — ${rest.length}</h3>
+      ${groups.length?`<div class="restgrid">${groups.map(g=>`<div class="restgroup">
+        <h4 style="color:${g.d.color}"><b></b>${g.d.name}<span>${g.list.length}</span></h4>
+        ${g.list.map(mini).join('')}</div>`).join('')}</div>`
+        :`<div class="col-empty">${S.town.items.some(i=>i.state==='week')?'Everything this week is on today.':'Nothing on this week’s list — the weekly round fills it.'}</div>`}
+    </div>
+    <div class="tpeek">
+      <div class="tpeekcard">
+        <div class="tpeek-h"><span>🤖 AI queue</span><b>${ai.length}</b></div>
+        ${ai.slice(0,3).map(i=>`<div class="tpeek-r" data-topen="${i.id}"><span class="d" style="background:${tColor(i)}"></span><span class="t">${esc(i.title)}</span></div>`).join('')
+          ||`<div class="tpeek-e">Nothing to hand off.</div>`}
+        ${ai.length>3?`<div class="tpeek-e">and ${ai.length-3} more</div>`:''}
+        <button class="zlink" data-tv="ai">Open the AI queue →</button></div>
+      <div class="tpeekcard">
+        <div class="tpeek-h"><span>👤 Waiting</span><b>${wait.length}</b>${late?`<em>${late} to check on</em>`:''}</div>
+        ${wait.slice(0,3).map(i=>`<div class="tpeek-r ${tLate(i)?'late':''}" data-topen="${i.id}"><span class="d" style="background:${tColor(i)}"></span>
+          <span class="t">${esc(i.title)}</span><span class="tag">${i.state==='wife'?'💛 wife':esc((i.wait&&i.wait.who)||'')}</span></div>`).join('')
+          ||`<div class="tpeek-e">Nobody has the ball.</div>`}
+        ${wait.length>3?`<div class="tpeek-e">and ${wait.length-3} more</div>`:''}
+        <button class="zlink" data-tv="waiting">Open Waiting →</button></div>
+    </div>`;
 }
 /* AI queue: a list on the left, the selected card's instruction on the right. On a phone
    the instruction opens inline under the card you tap. */
@@ -2399,7 +2430,7 @@ function tLine(i){
   return `<div class="zrow tline" data-topen="${i.id}" style="--cc:${tColor(i)}">
     <span class="zt">${esc(i.title)}</span>
     ${k&&k.v>1?`<span class="zd" style="color:${k.color}">${k.name}</span>`:''}
-    ${s?`<span class="zd">${s.short||s.name}</span>`:''}
+    ${tSizeLabel(i)?`<span class="zd">${tSizeLabel(i)}</span>`:''}
     ${i.state==='later'&&i.back?`<span class="zd dim">📅 ${tShort(i.back)}</span>`:''}
     ${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}</div>`;
 }
@@ -2565,7 +2596,7 @@ function tVerdictRow(i){
   return `<div class="zrow tvrow ${closed?'off':''}" style="--cc:${k?k.color:'var(--g300)'}">
     <div class="tv-top"><span class="zt" data-topen="${i.id}">${esc(i.title)}</span>
       ${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}
-      ${s?`<span class="zd dim">${s.short||s.name}</span>`:''}
+      ${tSizeLabel(i)?`<span class="zd dim">${tSizeLabel(i)}</span>`:''}
       ${i.state==='later'&&i.back?`<span class="zd dim">📅 ${tShort(i.back)}</span>`:''}
       ${i.state==='inbox'?`<span class="ztag week">new</span>`:''}</div>
     ${closed?'':tStakeBtns(i)}
@@ -2632,18 +2663,19 @@ function tzRound(change){
     }
   }
   else if(st.id==='size'){
-    const week=S.town.items.filter(i=>i.state==='week').sort(tOrder),left=week.filter(i=>!i.size).length;
+    const week=S.town.items.filter(i=>i.state==='week').sort(tOrder),left=week.filter(i=>!i.size&&!i.home).length;
     const now=S.town.items.filter(i=>i.state==='done'&&i.size===1&&i.doneAt>=(r.startedAt||0));
     o.mid=week.length||now.length?`<div class="zkept">${left?left+' not sized yet':'All sized.'}</div>
       <div class="zpick">${week.map(i=>`<div class="zrow tsortrow" style="--cc:${tColor(i)}">
         <div class="tv-top"><span class="zt" data-topen="${i.id}">${esc(i.title)}</span></div>
-        <div class="tdepts">${TOWN_SIZES.map(s=>`<button class="zsel ${i.size===s.v?'sel':''} ${s.v===1?'tquick':''}" data-tsize="${i.id}:${s.v}">${s.short||s.name}</button>`).join('')}
-          ${i.size===1?`<button class="zsel tdidit" data-tdidit="${i.id}">✓ Did it now</button>`:''}</div></div>`).join('')}</div>
+        <div class="tdepts">${TOWN_SIZES.map(s=>`<button class="zsel ${i.size===s.v&&!i.home?'sel':''} ${s.v===1?'tquick':''}" data-tsize="${i.id}:${s.v}">${s.short||s.name}</button>`).join('')}
+          <button class="zsel thome ${i.home?'sel':''}" data-thome="${i.id}" title="Time doesn’t matter — you’ll do it once work is done, at home or out of the office">${TOWN_HOME.short}</button>
+          ${i.size===1&&!i.home?`<button class="zsel tdidit" data-tdidit="${i.id}">✓ Did it now</button>`:''}</div></div>`).join('')}</div>
       ${now.length?`<div class="zcarry-h" style="margin-top:26px">Done on the spot — ${now.length}</div>
         <div class="zcarry-l">${now.map(i=>`<span class="zci" style="--cc:${tColor(i)}">✓ ${esc(i.title)}</span>`).join('')}</div>`:''}`
       :`<div class="zkept">Nothing on this week’s list — that’s allowed.</div>`;
     o.cta=left?'Leave the rest unsized':'Next';
-    o.hint='⚡ 60 sec means: do it now, then tick it';
+    o.hint='⚡ 60 sec means: do it now, then tick it · 🏠 after work means: not at the desk — once work is done';
   }
   else if(st.id==='paper'){
     const txt=tPaperText();
@@ -2681,7 +2713,9 @@ function tzRound(change){
     const n=tAdd(v,id,'inbox');r.lists[id].push(n.id);save();tzPaint(false);
     const a2=document.getElementById('tzadd');if(a2)a2.focus()}};
   mid.querySelectorAll('[data-tsize]').forEach(b=>b.onclick=()=>{const [id,v]=b.dataset.tsize.split(':'),i=tById(id);
-    if(i){i.size=+v;save();tzPaint(false)}});
+    if(i){i.size=+v;i.home=false;save();tzPaint(false)}});
+  mid.querySelectorAll('[data-thome]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.thome);
+    if(i){i.home=true;i.size=null;save();tzPaint(false)}});
   mid.querySelectorAll('[data-tdidit]').forEach(b=>b.onclick=()=>{const i=tById(b.dataset.tdidit);if(!i)return;
     tSet(i,'done');tzPaint(false);toastUndo('done — nice',()=>{tSet(i,'week');if(TZ)tzPaint(false)})});
   const cp=document.getElementById('tzcopy');
@@ -2690,8 +2724,9 @@ function tzRound(change){
 function tPaperText(){
   const L=[],ph=weekPhrase();if(ph)L.push('THIS WEEK IS GOOD IF / '+ph,'');
   const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
-  [...TOWN_SIZES,{v:null,name:'Unsized'}].forEach(s=>week.filter(i=>(i.size||null)===s.v).forEach(i=>
+  [...TOWN_SIZES,{v:null,name:'Unsized'}].forEach(s=>week.filter(i=>!i.home&&(i.size||null)===s.v).forEach(i=>
     L.push(s.name.toUpperCase()+' / '+i.title+(i.dept?' ('+tDept(i.dept).name+')':'')+(i.stakes===3?' !':''))));
+  week.filter(i=>i.home).forEach(i=>L.push('AFTER WORK / '+i.title+(i.dept?' ('+tDept(i.dept).name+')':'')+(i.stakes===3?' !':'')));
   const wife=S.town.items.filter(i=>i.state==='wife');
   if(wife.length){L.push('');wife.forEach(i=>L.push('WIFE HELP / '+i.title))}
   const w=S.town.items.filter(i=>i.state==='waiting').sort(tWaitOrder);
@@ -2709,9 +2744,9 @@ function tMoveEnd(msg,toToday){S.town.move=null;save();if(toToday){S.ui.personal
   tzClose();if(msg)toast(msg)}
 /* this week's items that fit the time — unsized ones are always offered, marked as such */
 function tFits(mins){
-  const t=TOWN_TIMES.find(x=>x.v===mins);if(!t||!t.fit)return {sized:[],unsized:[]};
+  const t=TOWN_TIMES.find(x=>x.v===mins);if(!t||!t.fit)return {sized:[],unsized:[],home:[]};
   const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
-  return {sized:week.filter(i=>i.size&&(i.size<=t.fit||tIsToday(i))),unsized:week.filter(i=>!i.size)};
+  return {sized:week.filter(i=>!i.home&&i.size&&(i.size<=t.fit||tIsToday(i))),unsized:week.filter(i=>!i.home&&!i.size),home:week.filter(i=>i.home)};
 }
 function tzMove(change){
   const mv=tMoveLive();if(!mv){tzClose();return}
@@ -2739,7 +2774,7 @@ function tzMove(change){
     const row=i=>{const s=tSize(i),l=i.due?dueLabel(i.due):null,k=tStake(i),on=tIsToday(i);
       return `<div class="zrow ${on?'tpicked':''}" style="--cc:${tColor(i)}"><span class="zt" data-topen="${i.id}">${esc(i.title)}</span>
         ${k&&k.v>1?`<span class="zd" style="color:${k.color}">${k.name}</span>`:''}${l?`<span class="zd ${l.c==='late'?'late':''}">${l.t}</span>`:''}
-        <span class="zd dim">${s?s.short||s.name:'unsized'}</span>
+        <span class="zd dim">${tSizeLabel(i)||'unsized'}</span>
         <span class="zb"><button class="zsel ${on?'sel':''}" data-ttoday="${i.id}">${on?'✓ Today':'+ Today'}</button></span></div>`};
     const crow=i=>{const w=i.wait||{},on=tIsToday(i);
       return `<div class="zrow ${on?'tpicked':''}" style="--cc:${tColor(i)}"><span class="zt" data-topen="${i.id}">Check on: ${esc(i.title)}</span>
@@ -2749,6 +2784,7 @@ function tzMove(change){
     o.mid=`${tMeter(mv.mins,onToday)}
       ${f.sized.length?`<div class="zpick">${f.sized.map(row).join('')}</div>`:`<div class="zkept">Nothing on this week’s list fits ${t.name}.</div>`}
       ${f.unsized.length?`<div class="zcarry-h" style="margin-top:26px">Not sized — your call</div><div class="zpick">${f.unsized.map(row).join('')}</div>`:''}
+      ${f.home.length?`<div class="zcarry-h" style="margin-top:26px">🏠 After work, at home — time doesn’t matter</div><div class="zpick">${f.home.map(row).join('')}</div>`:''}
       ${chase.length?`<div class="zcarry-h" style="margin-top:30px">Worth chasing this week — ${chase.length}</div><div class="zpick">${chase.map(crow).join('')}</div>`:''}
       ${ai?`<div class="zkept" style="margin-top:26px">${ai} ready in AI queue · <button class="zlink" id="tzai">open it</button></div>`:''}`;
     o.cta=onToday.length?'That’s my today':'Nothing today';
@@ -2757,8 +2793,8 @@ function tzMove(change){
   }
   else if(st.id==='plate'){
     const L=S.town.items.filter(tIsToday).sort(tOrder);
-    o.mid=`${tMeter(mv.mins,L)}<div class="zpick">${L.map(i=>{const s=tSize(i);return `<div class="zrow tpicked" style="--cc:${tColor(i)}">
-      <span class="zt">${esc(i.title)}</span>${s?`<span class="zd">${s.short||s.name}</span>`:''}</div>`}).join('')}</div>`;
+    o.mid=`${tMeter(mv.mins,L)}<div class="zpick">${L.map(i=>`<div class="zrow tpicked" style="--cc:${tColor(i)}">
+      <span class="zt">${esc(i.title)}</span>${tSizeLabel(i)?`<span class="zd">${tSizeLabel(i)}</span>`:''}</div>`).join('')}</div>`;
     o.cta='Close — go do it';o.go=()=>tMoveEnd('today is set — it’s in the Today tab',true);
   }
   const mid=tzFrame(o,change);
