@@ -550,7 +550,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click('.nav [data-v="goals"]');
     ok(P.g('S.ui.workView')==='goals'&&!!P.$('#gheading'),'the tab opens Goals');
     ok(P.$$('.gcol').length===3&&P.$$('.gcol .slotlabel').map(e=>e.textContent).join()==='Now — 0,3 months — 0,A year or more — 0','three horizons: Now, 3 months, a year or more');
-    ok(P.$('#gcheck').textContent.includes('Add a goal first'),'check-in asks for a goal first');
+    ok(P.$('#gcheck').textContent.includes('Step back')&&!P.$('#gquick'),'check-in is a ritual; no quick update until there are goals');
     P.type('#gheading','Become the undeniable creative lead for LATAM.');
     ok(P.g('S.goals.heading')==='Become the undeniable creative lead for LATAM.','heading autosaves');
     /* add goals: one, then a pasted list */
@@ -618,8 +618,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`gById('${soip}').state='active';save();render()`);
 
     /* goals check-in — whenever you want, no schedule */
-    ok(P.$('#gcheck .ht-label').textContent==='Goals check-in'&&P.$('#gcheck').textContent.includes('whenever you need it')&&!/due|week/i.test(P.$('#gcheck').textContent),'called Goals check-in, no schedule');
-    P.click('#gcheck');
+    ok(P.$('#gcheck .ht-label').textContent.startsWith('Goals check-in')&&P.$('#gcheck').textContent.includes('whenever you need it')&&!/due|week/i.test(P.$('#gcheck').textContent),'called Goals check-in, no schedule');
+    P.click('#gquick');
     ok(P.$$('#mlayer .gci').length===5,'check-in lists every active goal');
     P.click('#mlayer #gcok');
     ok(!!P.$('#mlayer .gci')&&P.g('S.goals.lastCheck')===null,'saving with nothing rated is refused');
@@ -633,7 +633,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.g(`gById('${soip}').next`)==='Share the first route with Rafa','next step edited in the check-in');
     ok(P.$$('.toast').some(t=>t.textContent.includes('1 stuck')),'a stuck goal gets a nudge');
     ok(P.$('#gcheck').textContent.includes('last one today')&&P.$('.nav [data-v="goals"]').textContent==='Goals','shows when the last one was; tab name stays plain');
-    P.click('#gcheck');P.click(`#mlayer [data-gcr="${eb}:moving"]`);P.click('#mlayer #gcok');
+    P.click('#gquick');P.click(`#mlayer [data-gcr="${eb}:moving"]`);P.click('#mlayer #gcok');
     ok(P.g(`gById('${eb}').trail.length`)===1&&P.g(`gById('${eb}').trail[0].route`)==='moving','checking in twice on one day keeps the latest, not both');
     ok(P.$(`[data-gopen="${eb}"] .gtrail i`),'card shows the trail');
     P.g(`S.goals.lastCheck=Date.now()-40*864e5;save();render()`);
@@ -721,6 +721,114 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(!A.err&&!B.err,'no errors in either: '+A.err+B.err);
   }
 
+
+  /* ===================================================================== */
+  section('21. step back — the goals check-in as a ritual');
+  {
+    const st={};let P=boot(NEW,st);
+    P.g(`S.ui.mode='work';S.ui.workView='goals';
+      S.goals.heading='Be the creative engine LATAM can’t do without.';
+      S.goals.rules=[{id:'r1',text:'Rafa is an ally. Never fight.'}];
+      const a=gAdd('File the EB1 application','now');a.next='Book the lawyer call';a.why='Freedom to choose.';
+      const b=gAdd('New portfolio online','now');
+      const c=gAdd('Pay conversation','q');
+      const [t1,t2,t3]=add('Collect awards\\nReply to Pedro\\nVery old thing','work');t1.goal=a.id;
+      [t1,t2,t3].forEach(i=>{i.done=true;i.doneAt=Date.now()-864e5});t3.doneAt=Date.now()-40*864e5;
+      save();render()`);
+    const ids=P.g(`JSON.stringify(S.goals.items.map(x=>x.id))`),[ga,gb,gc]=JSON.parse(ids);
+    const ritualBefore=P.g('JSON.stringify(S.ritual)');
+    ok(P.$('#gcheck .ht-label').textContent.includes('a ritual')&&!!P.$('#gquick'),'Goals tab: the check-in is a ritual, quick update still there');
+    P.click('#gcheck');
+    ok(P.g('TZ')==='step'&&P.$('#tzname').textContent==='How are you, honestly?','1 · arrive');
+    P.type('#gsfeel','A bit lost after the holiday');
+    P.click('#gsspark');ok(P.w.__opened.includes(P.g('SPARK_URL')),'Spark opens from the first step');
+    P.key('Enter',P.$('#gsfeel'));ok(P.g('S.goals.step.at')===0,'Enter inside the text box does not skip ahead');
+    P.key('Enter');ok(P.g('S.goals.step.at')===1,'Enter (outside a text box) moves on, like the other rituals');
+    ok(P.$('.gsheading').textContent.startsWith('Be the creative engine')&&P.$('.gsrule').textContent.includes('Rafa'),'2 · re-read: heading and ground rules');
+    P.click('#tzgo');
+    ok(P.$('.gsbig').textContent==='2'&&P.$('#tzmid').textContent.includes('1 moved a goal'),'3 · wins: finished since last time (first time: two weeks), how many moved a goal');
+    ok(P.$('#tzmid .zci').textContent.startsWith('◎ Collect awards')&&!P.$('#tzmid').textContent.includes('Very old thing'),'… linked ones first; older work not counted');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='File the EB1 application'&&P.$('#tzstep').textContent.includes('goal 1 of 3')&&P.$('#tznote').textContent.includes('Freedom to choose'),'4 · route: one goal at a time, with its why');
+    ok(P.$('#gsnext').value==='Book the lawyer call','… next step prefilled');
+    P.click('[data-gsr="stuck"]');P.type('#gsnote','Lawyer silent');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='New portfolio online','next goal');
+    P.click('[data-gsr="moving"]');
+    P.click('#tzback');
+    ok(P.$('#tzname').textContent==='File the EB1 application'&&P.$('[data-gsr="stuck"]').classList.contains('sel')&&P.$('#gsnote').value==='Lawyer silent','back keeps what you answered');
+    P.click('#tzgo');P.click('#tzgo');P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='One move','5 · one move (the unrated goal is fine to skip)');
+    ok(P.$('[data-gspick].sel').textContent.includes('File the EB1')&&P.$('#gsmove').value==='Book the lawyer call','… starts on the stuck goal, its next step ready');
+    P.type('#gsmove','Email the lawyer today');
+    P.click('#tzgo');
+    let tsk=JSON.parse(P.g(`JSON.stringify(S.items.filter(i=>i.text==='Email the lawyer today'))`));
+    ok(tsk.length===1&&tsk[0].goal===ga&&tsk[0].sorted===false&&!tsk[0].done,'the move becomes a task in Sort, linked to the goal');
+    P.click('#tzback');P.type('#gsmove','Email the lawyer this morning');P.click('#tzgo');
+    ok(P.g(`S.items.filter(i=>i.goal==='${ga}'&&!i.done).length`)===1&&P.g(`S.items.some(i=>i.text==='Email the lawyer this morning')`),'going back and changing it edits the same task — no duplicates');
+    ok(P.$('#tzname').textContent==='What will you do on purpose now?','6 · close');
+    /* pause, reload, resume */
+    P.click('#tzexit');ok(!P.g('TZ')&&P.g('S.goals.step.at')===5,'Pause keeps the place');
+    P.close();P=boot(NEW,st);
+    P.g(`S.ui.mode='work';S.ui.workView='goals';render()`);
+    ok(P.$('#gcheck').textContent.includes('Continue stepping back')&&P.$('#gcheck').textContent.includes('step 6 of 6'),'after a reload the tab offers to continue');
+    P.click('#gcheck');
+    ok(P.$('#tzname').textContent==='What will you do on purpose now?'&&P.g('S.goals.step.feel')==='A bit lost after the holiday','… resumes where it was, answers kept');
+    P.type('#gsclose','Lawyer email first thing, then the portfolio shortlist');
+    P.click('#tzgo');
+    ok(!P.g('TZ')&&P.g('S.goals.step')===null,'Close ends the ritual');
+    const A=JSON.parse(P.g(`JSON.stringify(gById('${ga}'))`)),B=JSON.parse(P.g(`JSON.stringify(gById('${gb}'))`)),Cc=JSON.parse(P.g(`JSON.stringify(gById('${gc}'))`));
+    ok(A.route==='stuck'&&A.trail.length===1&&A.trail[0].note==='Lawyer silent'&&A.trail[0].date===P.g('today()')&&A.next==='Email the lawyer this morning','stuck goal: route, dated note and the new next step saved');
+    ok(B.route==='moving'&&B.trail.length===1,'moving goal saved');
+    ok(Cc.route===null&&Cc.trail.length===0,'the unrated goal is left as it was');
+    ok(P.g('!!S.goals.lastCheck')&&P.g('S.goals.lastWord.close')==='Lawyer email first thing, then the portfolio shortlist'&&P.g('S.goals.lastWord.feel')==='A bit lost after the holiday','what you said is kept for next time');
+    ok(P.$$('.toast').some(t=>t.textContent.includes('2 goals checked')),'toast says how many were checked');
+    ok(P.$('#gcheck').textContent.includes('Step back again')&&P.$('#gcheck').textContent.includes('last one today'),'tab shows it was done today');
+    ok(P.g('JSON.stringify(S.ritual)')===ritualBefore&&!P.g('ZEN'),'the work ritual is untouched');
+    /* the next time: last words shown on re-read; wins counted since the last check-in */
+    P.g(`const [n]=add('Shortlist done','work');n.done=true;n.doneAt=Date.now()+1000;save()`);
+    P.click('#gcheck');P.click('#tzgo');
+    ok(P.$('.gslast').textContent.includes('Lawyer email first thing')&&P.$('#tzmid').textContent.includes('A bit lost'),'next time, re-read shows what you said last time');
+    P.click('#tzgo');ok(P.$('.gsbig').textContent==='1'&&P.$('#tzmid').textContent.includes('since '),'wins count from the last check-in');
+    P.key('Escape');ok(!P.g('TZ')&&!!P.g('S.goals.step'),'Escape pauses');
+    /* a goal deleted while paused; then every goal let go */
+    P.g(`S.goals.step.at=3;S.goals.step.gi=2;S.goals.items=S.goals.items.filter(x=>x.id!=='${gc}');save();render()`);
+    P.click('#gcheck');ok(P.$('#tzname').textContent==='New portfolio online','a goal deleted while paused: lands on the last one still there');
+    P.g(`tzClose();S.goals.items.forEach(x=>x.state='dropped');save();render()`);
+    P.click('#gcheck');P.g('S.goals.step.at=3;save();tzPaint(true)');
+    ok(P.$('#tzmid').textContent.includes('No goals yet'),'no active goals: the route step says so');
+    P.click('#tzgo');ok(P.$('#tzmid').textContent.includes('nothing to move'),'… and so does the move step');
+    P.click('#tzgo');P.click('#tzgo');ok(!P.g('TZ')&&P.g('S.goals.step')===null,'… and it still closes cleanly');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+
+    /* empty heading: write it during the ritual; phone; every control responds */
+    P=boot(NEW,{},{touch:true});
+    P.g(`S.ui.mode='work';S.ui.workView='goals';gAdd('One goal','now');save();render()`);
+    P.click('#gcheck');P.click('#tzgo');
+    ok(!!P.$('#gshead'),'no heading yet → re-read lets you write it');
+    P.type('#gshead','Where it is all going');ok(P.g('S.goals.heading')==='Where it is all going','… saved to the Goals tab');
+    const dead=[];
+    for(let k=0;k<6;k++){
+      const open=`if(TZ)tzClose();S.goals.step={at:${k},gi:0,startedAt:Date.now(),feel:'',ans:{},pick:S.goals.items[0].id,move:'x',close:'',taskId:null};save();tzOpen('step')`;
+      P.g(open);const n=P.$$('#tzmid button').length;
+      for(let j=0;j<n;j++){P.g(open);const b=P.$$('#tzmid button')[j];
+        const before=P.g('JSON.stringify(S)')+P.w.__opened.length,html=P.$('body').innerHTML;P.click(b);
+        if(P.g('JSON.stringify(S)')+P.w.__opened.length===before&&P.$('body').innerHTML===html)dead.push('step '+(k+1)+': '+b.textContent.trim().slice(0,30))}}
+    P.g('if(TZ)tzClose()');
+    ok(dead.length===0,'no dead buttons in the ritual: '+dead.join(' | '));
+    /* the move starts on a stuck goal even when it is not the first one */
+    {const Q=boot(NEW,{});Q.g(`S.ui.mode='work';S.ui.workView='goals';gAdd('Fine one','now');const s=gAdd('Stuck one','q');s.next='Unblock it';save();render()`);
+      Q.click('#gcheck');Q.click('#tzgo');Q.click('#tzgo');Q.click('#tzgo');
+      Q.click('[data-gsr="moving"]');Q.click('#tzgo');Q.click('[data-gsr="stuck"]');Q.click('#tzgo');
+      ok(Q.$('[data-gspick].sel').textContent.includes('Stuck one')&&Q.$('#gsmove').value==='Unblock it','the move starts on the stuck goal, wherever it is');
+      Q.click('[data-gspick]:not(.sel)');ok(Q.$('[data-gspick].sel').textContent.includes('Fine one'),'… and you can pick another');
+      Q.g('tzClose()');Q.close()}
+    /* damaged step state from another device is dropped, not fatal */
+    P.g(`S.goals.step={at:'x'};save()`);P.close();
+    P=boot(NEW,P.store);ok(P.g('S.goals.step')===null&&P.errors.length===0,'damaged ritual state is reset on load');
+    P.close();
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}

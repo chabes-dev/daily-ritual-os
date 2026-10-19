@@ -2136,6 +2136,7 @@ function initGoals(){
     if(typeof x.next!=='string')x.next='';
   });
   g.rules=g.rules.filter(r=>r&&r.id&&typeof r.text==='string'&&r.text.trim());
+  if(g.step&&(typeof g.step!=='object'||typeof g.step.at!=='number'||!g.step.ans))g.step=null;
 }
 initGoals();
 const gById=id=>S.goals.items.find(x=>x.id===id);
@@ -2182,10 +2183,11 @@ function viewGoals(){
   <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
     <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
   <div class="gpulse">
-    <button class="gbox gcheck" id="gcheck">
-      <span class="ht-label">Goals check-in</span>
-      <span class="gbig">${!act.length?'Add a goal first':ds===null?'Step back':'Step back again'}</span>
-      <span class="ht-meta">${ds===null?'whenever you need it':'last one '+(ds===0?'today':ds===1?'yesterday':ds+' days ago')} · is the route working?</span></button>
+    <div class="gcheckwrap"><button class="gbox gcheck" id="gcheck">
+      <span class="ht-label">Goals check-in · a ritual</span>
+      <span class="gbig">${G.step?'Continue stepping back':ds===null?'Step back':'Step back again'}</span>
+      <span class="ht-meta">${G.step?'step '+(G.step.at+1)+' of '+GSTEP.length:ds===null?'whenever you need it':'last one '+(ds===0?'today':ds===1?'yesterday':ds+' days ago')} · about 5 minutes</span></button>
+      ${act.length?`<button class="zlink" id="gquick">or just update the routes</button>`:''}</div>
     <div class="gbox gmeter">
       <span class="ht-label">On purpose, currently</span>
       <span class="gbig">${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</span>
@@ -2267,6 +2269,145 @@ function gSheet(id){
   draw();
   SHEET_CLOSE=()=>render();
 }
+/* -- step back: the goals check-in as a ritual --
+   Started by hand, whenever you feel lost or flat — never scheduled. Full screen, one thing at a
+   time, in the work ritual's shell (it runs in the same overlay as the Town rituals, its own
+   state in S.goals.step, so pausing keeps your place). Arrive → re-read → wins → each goal's
+   route → one move → close. Wins come before judging the route on purpose: coming back lost is
+   usually forgetting the progress, not lacking it. */
+const GSTEP=[{id:'arrive',name:'How are you, honestly?'},{id:'reread',name:'Remember where you’re going'},
+  {id:'wins',name:'What moved since last time'},{id:'route',name:'Is the route working?'},
+  {id:'move',name:'One move'},{id:'close',name:'What will you do on purpose now?'}];
+const GNOTE={arrive:'One line is enough. If there’s more, write it in Spark first and come back.',
+  reread:'Read it, don’t edit it. This is why the rest matters.',
+  wins:'Before judging anything: what actually happened.',
+  route:'Moving, drifting or stuck — and one line on why.',
+  move:'Pick one goal and the very next step. It goes to Sort, linked to the goal.',
+  close:'One sentence. The next check-in shows it back to you.'};
+/* the goals the ritual walks through, in horizon order, still active */
+const gStepGoals=()=>G_HOR.flatMap(h=>gActive().filter(x=>x.horizon===h.id));
+function startStepBack(){
+  if(!S.goals.step){S.goals.step={at:0,gi:0,startedAt:Date.now(),feel:'',ans:{},pick:null,move:'',close:'',taskId:null};save()}
+  tzOpen('step');
+}
+/* since the last check-in (or the last two weeks, the first time) */
+function gSince(){
+  const from=S.goals.lastCheck||Date.now()-14*864e5;
+  const done=S.items.filter(i=>i.mode==='work'&&i.done&&(i.doneAt||0)>=from).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const wins=S.goals.items.filter(x=>x.state==='achieved'&&(x.doneAt||0)>=from);
+  return {from,done,linked:done.filter(i=>i.goal&&gById(i.goal)),wins}}
+function gStepAns(x){const st=S.goals.step;
+  if(!st.ans[x.id]){const e=x.trail.find(t=>t.date===today());st.ans[x.id]={route:e?e.route:null,note:e?e.note||'':'',next:x.next||''}}
+  return st.ans[x.id]}
+function gStepNext(){
+  const st=S.goals.step,id=GSTEP[st.at].id,L=gStepGoals();
+  if(id==='route'&&st.gi<L.length-1){st.gi++;save();tzPaint(true);return}
+  if(id==='move'){const x=st.pick&&gById(st.pick),v=(st.move||'').trim();
+    if(x&&v){x.next=v;gStepAns(x).next=v;
+      const t=st.taskId&&byId(st.taskId);
+      if(t&&!t.done)t.text=v;else{const [n]=add(v,'work');n.goal=x.id;st.taskId=n.id}}}
+  if(id==='close'){gStepFinish();return}
+  st.at++;st.gi=0;
+  if(GSTEP[st.at].id==='move'&&!st.pick){const L2=gStepGoals(),r=k=>L2.find(x=>gStepAns(x).route===k);
+    const x=r('stuck')||r('drifting')||L2[0];if(x){st.pick=x.id;st.move=gStepAns(x).next||''}}
+  save();tzPaint(true);
+}
+function gStepBack(){
+  const st=S.goals.step,id=GSTEP[st.at].id;
+  if(id==='route'&&st.gi>0){st.gi--;save();tzPaint(true);return}
+  if(st.at===0)return;
+  st.at--;if(GSTEP[st.at].id==='route')st.gi=Math.max(0,gStepGoals().length-1);
+  save();tzPaint(true);
+}
+function gStepFinish(){
+  const st=S.goals.step,d=today();let n=0;
+  gStepGoals().forEach(x=>{const a=st.ans[x.id];if(!a)return;
+    if(a.next!=null)x.next=a.next.trim();
+    if(!a.route)return;n++;
+    x.route=a.route;x.trail=x.trail.filter(t=>t.date!==d);x.trail.push({date:d,route:a.route,note:(a.note||'').trim()});
+    x.trail.sort((p,q)=>p.date<q.date?-1:1)});
+  S.goals.lastCheck=Date.now();
+  S.goals.lastWord={date:d,feel:(st.feel||'').trim(),close:(st.close||'').trim()};
+  S.goals.step=null;save();tzClose();
+  toast(n?'stepped back — '+n+' goal'+(n===1?'':'s')+' checked':'stepped back');
+}
+function gStepPaint(change){
+  const st=S.goals.step;if(!st){tzClose();return}
+  if(!GSTEP[st.at])st.at=0;
+  const s=GSTEP[st.at],L=gStepGoals();
+  const o={dots:tzDots(GSTEP.length,st.at),step:`Step back · ${st.at+1} of ${GSTEP.length}`,name:s.name,note:GNOTE[s.id],
+    back:st.at>0||(s.id==='route'&&st.gi>0)?gStepBack:null,go:gStepNext,cta:'Next'};
+  if(s.id==='arrive'){
+    o.mid=`<div class="zdump"><textarea id="gsfeel" rows="1" placeholder="Flat. A bit lost after the holiday.">${esc(st.feel)}</textarea></div>
+      <button class="zlink" id="gsspark">Write in Spark first ↗</button>`;
+  }
+  else if(s.id==='reread'){
+    const G=S.goals,lw=G.lastWord;
+    o.mid=`${G.heading.trim()?`<div class="gsheading">${esc(G.heading)}</div>`
+        :`<div class="zdump"><textarea id="gshead" rows="1" placeholder="Where is all this going? One or two sentences."></textarea></div>
+          <div class="zkept">No heading yet — write one now, it stays on the Goals tab.</div>`}
+      ${G.rules.length?`<div class="zcarry-h" style="margin-top:30px">Keep straight</div>
+        <div class="gsrules">${G.rules.map(r=>`<div class="gsrule">— ${esc(r.text)}</div>`).join('')}</div>`:''}
+      ${lw&&(lw.close||lw.feel)?`<div class="zcarry-h" style="margin-top:30px">Last time — ${tShort(lw.date)}</div>
+        ${lw.close?`<div class="gslast">“${esc(lw.close)}”</div>`:''}${lw.feel?`<div class="zkept" style="margin-top:8px">you felt: ${esc(lw.feel)}</div>`:''}`:''}`;
+  }
+  else if(s.id==='wins'){
+    const w=gSince(),since=S.goals.lastCheck?'since '+tShort(w.from):'in the last two weeks';
+    o.mid=`<div class="gsbig">${w.done.length}</div>
+      <div class="zkept">${w.done.length===1?'thing':'things'} finished ${since}${w.done.length?` · ${w.linked.length} moved a goal`:''}</div>
+      ${w.wins.length?`<div class="zcarry-h">Goals achieved</div><div class="zcarry-l">${w.wins.map(x=>`<span class="zci" style="--cc:#1E8E3E">✓ ${esc(x.title)}</span>`).join('')}</div>`:''}
+      ${w.done.length?`<div class="zcarry-h" style="margin-top:22px">Finished</div>
+        <div class="zcarry-l">${[...w.linked,...w.done.filter(i=>!w.linked.includes(i))].slice(0,14).map(i=>
+          `<span class="zci" style="--cc:${i.goal&&gById(i.goal)?'var(--hot)':'var(--g300)'}">${i.goal&&gById(i.goal)?'◎ ':''}${esc(i.text)}</span>`).join('')}
+          ${w.done.length>14?`<span class="zci" style="--cc:var(--g300)">+${w.done.length-14} more</span>`:''}</div>`
+        :`<div class="zkept">A quiet stretch. That’s information, not a verdict.</div>`}`;
+  }
+  else if(s.id==='route'){
+    const x=L[Math.min(st.gi,L.length-1)];
+    if(!x){o.mid=`<div class="zkept">No goals yet. Add them on the Goals tab — this step will walk through each one.</div>`}
+    else{
+      const a=gStepAns(x),h=gHor(x.horizon),by=gByLabel(x);
+      o.step=`Step back · ${st.at+1} of ${GSTEP.length} · goal ${st.gi+1} of ${L.length}`;
+      o.name=x.title;
+      o.note=h.name+(by?' · '+by:'')+(x.why?' — '+x.why:'');
+      o.mid=`${x.trail.length?`<div class="gstrail"><span class="gtrail">${x.trail.slice(-8).map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
+          return `<i style="background:${c?c.color:'var(--g300)'}" title="${tShort(e.date)}"></i>`}).join('')}</span><span>so far</span></div>`:''}
+        <div class="gsroute">${G_ROUTE.map(r=>`<button class="zsel gsr ${a.route===r.id?'sel':''}" data-gsr="${r.id}" style="--rc:${r.color}">${r.name}</button>`).join('')}</div>
+        <input class="snew" id="gsnote" placeholder="One line — what moved it, or what’s in the way" value="${esc(a.note)}" />
+        <div class="gci-l">Next step</div>
+        <input class="snew" id="gsnext" placeholder="The very next move" value="${esc(a.next)}" />`;
+      o.cta=st.gi<L.length-1?'Next goal':'Next';
+    }
+  }
+  else if(s.id==='move'){
+    const x=st.pick&&gById(st.pick);
+    o.mid=L.length?`<div class="gspick">${L.map(g=>{const a=gStepAns(g),c=G_ROUTE.find(q=>q.id===a.route);
+        return `<button class="zsel ${st.pick===g.id?'sel':''}" data-gspick="${g.id}">${c?`<b style="color:${st.pick===g.id?'#fff':c.color}">●</b> `:''}${esc(g.title)}</button>`}).join('')}</div>
+      ${x?`<div class="zdump" style="margin-top:22px"><textarea id="gsmove" rows="1" placeholder="The very next step for ${esc(x.title)}">${esc(st.move)}</textarea></div>
+        <div class="zkept">${st.taskId&&byId(st.taskId)?'already in Sort — editing it':'goes to Sort as a task linked to this goal'}</div>`:''}`
+      :`<div class="zkept">No goals yet — nothing to move. That’s fine; close and add some on the Goals tab.</div>`;
+  }
+  else if(s.id==='close'){
+    o.mid=`<div class="zdump"><textarea id="gsclose" rows="1" placeholder="Finish the portfolio shortlist before Friday.">${esc(st.close)}</textarea></div>`;
+    o.cta='Close the check-in';
+  }
+  const mid=tzFrame(o,change);
+  document.getElementById('tzname').classList.toggle('zlong',o.name.length>34);   /* a goal can be a sentence */
+  const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
+    t.oninput=()=>{autosize(t);st[key]=t.value;save()}};
+  area('#gsfeel','feel');area('#gsmove','move');area('#gsclose','close');
+  const hd=mid.querySelector('#gshead');if(hd){autosize(hd);hd.oninput=()=>{autosize(hd);S.goals.heading=hd.value;save()}}
+  const sp=mid.querySelector('#gsspark');if(sp)sp.onclick=()=>window.open(SPARK_URL,'_blank');
+  const x=s.id==='route'&&L[Math.min(st.gi,L.length-1)];
+  if(x){const a=gStepAns(x);
+    mid.querySelectorAll('[data-gsr]').forEach(b=>b.onclick=()=>{a.route=a.route===b.dataset.gsr?null:b.dataset.gsr;save();tzPaint(false)});
+    const n=mid.querySelector('#gsnote');n.oninput=()=>{a.note=n.value;save()};
+    const nx=mid.querySelector('#gsnext');nx.oninput=()=>{a.next=nx.value;save()}}
+  mid.querySelectorAll('[data-gspick]').forEach(b=>b.onclick=()=>{const g=gById(b.dataset.gspick);if(!g)return;
+    st.pick=g.id;st.move=gStepAns(g).next||'';
+    const t=st.taskId&&byId(st.taskId);if(t&&!t.done)t.goal=g.id;save();tzPaint(false)});
+}
+
 /* the goals check-in: whenever you need to step back — every active goal, moving / drifting /
    stuck, a line and the next step. Checking in twice on one day keeps the latest. */
 function gCheckSheet(){
@@ -2310,7 +2451,8 @@ function wireGoals(){
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
   app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=()=>gSheet(b.dataset.gopen));
-  const ck=document.getElementById('gcheck');if(ck)ck.onclick=gCheckSheet;
+  const ck=document.getElementById('gcheck');if(ck)ck.onclick=startStepBack;
+  const qk=document.getElementById('gquick');if(qk)qk.onclick=gCheckSheet;
   app.querySelectorAll('[data-gadd]').forEach(ta=>{autosize(ta);ta.oninput=()=>autosize(ta);
     ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();
       const lines=ta.value.split('\n').map(s=>s.replace(/^[\s•\-–*·.]+/,'').trim()).filter(Boolean);if(!lines.length)return;
@@ -3194,7 +3336,7 @@ function tzOpen(kind){
 }
 function tzClose(){TZ=null;clearInterval(TZTICK);tzlayer.innerHTML='';document.body.style.overflow='';render()}
 function tzPause(){const k=TZ;tzClose();toast('paused — it picks up right here');if(k==='round')resumeWorkIfDetoured()}
-function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change)}
+function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change);else if(TZ==='step')gStepPaint(change)}
 function tzFrame(o,change){
   document.getElementById('tzdots').innerHTML=o.dots.map(c=>`<i class="${c}"></i>`).join('');
   document.getElementById('tzstep').textContent=o.step;
