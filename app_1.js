@@ -975,7 +975,7 @@ function render(){
   const tn=st=>S.town.items.filter(i=>i.state===st).length;
   const tabs=P?[['town:home','Town hall',''],['town:today','Today',S.town.items.filter(tIsToday).length],['town:ai','AI queue',tn('ai')],
       ['town:waiting','Waiting',tn('waiting')],['town:map','Town map',''],['spark','Journal ↗',''],['north','North Star','']]
-    :[['home','Home',''],['today','Today',''],['backlog','Backlog',inBacklog(m).length],['goals','Goals',gCheckDue()?'!':'']];
+    :[['home','Home',''],['today','Today',''],['backlog','Backlog',inBacklog(m).length],['goals','Goals','']];
   const tvOn=k=>P&&k.startsWith('town:')?v==='town'&&k.slice(5)===(S.ui.townView==='dept'?'map':S.ui.townView||'home'):v===k;
   app.innerHTML=`<div class="wrap">
     <div class="top">
@@ -1050,10 +1050,6 @@ function viewHome(m){
         <span class="ht-meta">Opens in a new tab</span>
       </button>
     </div>
-    ${m==='work'?(()=>{const now=gActive().filter(x=>x.horizon==='now'),h=S.goals.heading.trim();
-      return `<button class="hgoal" data-hv="goals"><span class="ht-label">◎ Goals${gCheckDue()?' · check-in due':''}</span>
-        <span class="hgoal-t">${h?esc(h):now.length?esc(now.map(x=>x.title).join(' · ')):'Step back — where is all this going?'}</span>
-        ${h&&now.length?`<span class="ht-meta">Now: ${esc(now.map(x=>x.title).join(' · '))}</span>`:''}</button>`})():''}
   </div>`;
 }
 
