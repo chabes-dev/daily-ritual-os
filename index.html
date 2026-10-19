@@ -852,6 +852,10 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
 }
 /* the tally marks in the header need room; on mid-size screens the number says it alone */
 @media(max-width:1000px){.ledger{min-width:0;text-align:right}.ledger i{display:none}}
+/* one-tap copy on the home screens */
+.hcopy{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-4px 0 0}
+.hcopy span{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.hcopy .tlink{font-size:12.5px;padding:7px 14px}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
