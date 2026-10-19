@@ -533,6 +533,14 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P=boot(NEW,bad);
     ok(P.g(`JSON.stringify([S.goals.heading,S.goals.items.length,S.goals.items[0].horizon,S.goals.items[0].state,Array.isArray(S.goals.items[0].trail),S.goals.items[0].route,S.goals.rules.length])`)==='["",1,"now","active",true,null,1]','damaged goals repaired, empties dropped');
     P.close();
+    /* goals saved by the first version: This year / Further and weekly entries move over */
+    const v1={};P=boot(NEW,v1);
+    P.g(`S.goals.items=[{id:'y',title:'Lead SOIP',horizon:'year',state:'active',trail:[{week:'2026-10-12',route:'moving',note:'ok'}],why:'',next:''},
+      {id:'f',title:'LATAM lead',horizon:'far',state:'active',trail:[],why:'',next:''},{id:'n',title:'EB1',horizon:'now',state:'active',trail:[],why:'',next:''}];save()`);P.close();
+    P=boot(NEW,v1);
+    ok(P.g(`S.goals.items.map(x=>x.horizon).join()`)==='long,long,now','This year and Further → A year or more; Now stays');
+    ok(P.g(`JSON.stringify(gById('y').trail)`)==='[{"route":"moving","note":"ok","date":"2026-10-12"}]','old weekly entries keep their date');
+    P.close();
 
     /* the tab */
     const st={};P=boot(NEW,st);
@@ -541,7 +549,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('.nav [data-v="goals"]').textContent==='Goals','the tab is just its name');
     P.click('.nav [data-v="goals"]');
     ok(P.g('S.ui.workView')==='goals'&&!!P.$('#gheading'),'the tab opens Goals');
-    ok(P.$$('.gcol').length===3&&P.$$('.gcol .slotlabel').map(e=>e.textContent).join()==='Now — 0,This year — 0,Further — 0','three horizons');
+    ok(P.$$('.gcol').length===3&&P.$$('.gcol .slotlabel').map(e=>e.textContent).join()==='Now — 0,3 months — 0,A year or more — 0','three horizons: Now, 3 months, a year or more');
     ok(P.$('#gcheck').textContent.includes('Add a goal first'),'check-in asks for a goal first');
     P.type('#gheading','Become the undeniable creative lead for LATAM.');
     ok(P.g('S.goals.heading')==='Become the undeniable creative lead for LATAM.','heading autosaves');
@@ -550,10 +558,10 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.g(`S.goals.items.map(x=>x.title+'/'+x.horizon).join()`)==='File the EB1 application/now','Enter adds a goal to its horizon');
     P.enter('[data-gadd="now"]','• New portfolio online\n- Two new exciting briefs\n\n');
     ok(P.g(`S.goals.items.filter(x=>x.horizon==='now').map(x=>x.title).join('|')`)==='File the EB1 application|New portfolio online|Two new exciting briefs','pasting several lines adds several (bullets stripped, blanks skipped)');
-    P.enter('[data-gadd="year"]','Lead SOIP MX and BR Relax');
-    P.enter('[data-gadd="far"]','Creative lead for LATAM, then the US');
+    P.enter('[data-gadd="q"]','Lead SOIP MX and BR Relax');
+    P.enter('[data-gadd="long"]','Creative lead for LATAM, then the US');
     ok(P.$$('.gcard').length===5,'cards render');
-    ok(P.$('[data-gadd="far"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
+    ok(P.$('[data-gadd="long"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
     /* ground rules */
     P.enter('#gruleadd','Rafa is an ally — never fight him');P.enter('#gruleadd','Make my value obvious to Luana and Pedro');
     ok(P.$$('.grule').length===2,'ground rules added');
@@ -576,7 +584,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.enter('#mlayer #gtadd','Collect award certificates');
     ok(P.g(`S.items.find(i=>i.text==='Collect award certificates').goal`)===eb&&P.g(`S.items.find(i=>i.text==='Collect award certificates').sorted`)===false,'a task added from the goal is linked and waits in Sort');
     ok(P.$$('#mlayer .gtask').length===1,'… and listed on the goal');
-    P.click('#mlayer [data-ghz="year"]');ok(P.g(`gById('${eb}').horizon`)==='year','horizon can change');
+    P.click('#mlayer [data-ghz="q"]');ok(P.g(`gById('${eb}').horizon`)==='q','horizon can change');
+    ok(P.$$('#mlayer [data-gby]').map(b=>b.textContent).join('|')==='No date|End of this month|End of next month|In 3 months|In a year','by-when choices match the horizons');
     P.click('#mlayer [data-ghz="now"]');
     P.click('#mlayer #gok');
     ok(P.$(`[data-gopen="${eb}"]`).textContent.includes('Next → Book the call')&&P.$(`[data-gopen="${eb}"]`).textContent.includes('1 task on it'),'card shows next step and linked tasks');
@@ -586,7 +595,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const tid=P.g(`S.items.find(i=>i.text==='Draft the SOIP MX idea').id`);
     P.g(`openDetail('${tid}')`);
     ok(P.$$('#mlayer [data-dgoal]').length===6,'task card offers every active goal + No');
-    const soip=P.g(`S.goals.items.find(x=>x.horizon==='year').id`);
+    const soip=P.g(`S.goals.items.find(x=>x.horizon==='q').id`);
     P.click(`#mlayer [data-dgoal="${soip}"]`);
     ok(P.g(`byId('${tid}').goal`)===soip,'task linked to a goal');
     P.click('#mlayer #dclose');
@@ -595,13 +604,21 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.deep .ggoal'),'… and can be unlinked');
     P.g(`byId('${tid}').goal='${soip}';save()`);
 
-    /* on purpose this week */
-    P.g(`const [a,b,c]=add('Linked done\\nUnlinked done\\nOld linked','work');a.goal='${eb}';[a,b,c].forEach(i=>{i.done=true;i.doneAt=Date.now()});
-      c.goal='${eb}';c.doneAt=Date.now()-14*864e5;S.ui.workView='goals';save();render()`);
-    ok(P.$('.gmeter .gbig').textContent==='1 of 2'&&P.$('.gmeter .gbar i').style.width==='50%','counts this week only: 1 of 2 finished things moved a goal');
+    /* on purpose, currently: what's on the board right now */
+    P.g(`S.items.filter(i=>i.mode==='work'&&!i.done).forEach(i=>{clearFromPlan('work',i.id);setBucket(i,'backlog')});
+      const [a,b,c,d]=add('On it\\nNot on it\\nParked in backlog\\nAlso on it','work','brief');[a,b,c,d].forEach(i=>i.sorted=true);
+      a.goal='${eb}';d.goal='${soip}';c.goal='${eb}';setBucket(c,'backlog');
+      const [e,f,g]=add('Linked done\\nUnlinked done\\nOld linked','work');e.goal='${eb}';g.goal='${eb}';
+      [e,f,g].forEach(i=>{i.done=true;i.doneAt=Date.now()});g.doneAt=Date.now()-14*864e5;S.ui.workView='goals';save();render()`);
+    ok(P.$('.gmeter .ht-label').textContent==='On purpose, currently','labelled “currently”, not “this week”');
+    ok(P.$('.gmeter .gbig').textContent==='2 of 3'&&P.$('.gmeter .gbar i').style.width==='67%','2 of the 3 things on the board move a goal (backlog not counted)');
+    ok(P.$('.gmeter .ht-meta').textContent.includes('last 7 days: 1 of 2 finished moved one'),'plus the last 7 days of finished work');
+    P.g(`gById('${soip}').state='dropped';save();render()`);
+    ok(P.$('.gmeter .gbig').textContent==='1 of 3','a let-go goal no longer counts');
+    P.g(`gById('${soip}').state='active';save();render()`);
 
-    /* weekly check-in */
-    ok(P.$('#gcheck').classList.contains('due')&&P.$('.nav [data-v="goals"]').textContent==='Goals','check-in is due (never done) — shown inside the tab only, the tab name stays plain');
+    /* goals check-in — whenever you want, no schedule */
+    ok(P.$('#gcheck .ht-label').textContent==='Goals check-in'&&P.$('#gcheck').textContent.includes('whenever you need it')&&!/due|week/i.test(P.$('#gcheck').textContent),'called Goals check-in, no schedule');
     P.click('#gcheck');
     ok(P.$$('#mlayer .gci').length===5,'check-in lists every active goal');
     P.click('#mlayer #gcok');
@@ -612,22 +629,22 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.type(`#mlayer [data-gcx="${soip}"]`,'Share the first route with Rafa');
     P.click('#mlayer #gcok');
     x=JSON.parse(P.g(`JSON.stringify(gById('${eb}'))`));
-    ok(x.route==='stuck'&&x.trail.length===1&&x.trail[0].route==='stuck'&&x.trail[0].note==='Lawyer has not replied'&&x.trail[0].week===P.g('isoWeek()'),'route and a week entry saved');
+    ok(x.route==='stuck'&&x.trail.length===1&&x.trail[0].route==='stuck'&&x.trail[0].note==='Lawyer has not replied'&&x.trail[0].date===P.g('today()'),'route and a dated entry saved');
     ok(P.g(`gById('${soip}').next`)==='Share the first route with Rafa','next step edited in the check-in');
     ok(P.$$('.toast').some(t=>t.textContent.includes('1 stuck')),'a stuck goal gets a nudge');
-    ok(!P.$('#gcheck').classList.contains('due')&&P.$('#gcheck').textContent.includes('Done today')&&P.$('.nav [data-v="goals"]').textContent==='Goals','check-in done → not due');
+    ok(P.$('#gcheck').textContent.includes('last one today')&&P.$('.nav [data-v="goals"]').textContent==='Goals','shows when the last one was; tab name stays plain');
     P.click('#gcheck');P.click(`#mlayer [data-gcr="${eb}:moving"]`);P.click('#mlayer #gcok');
-    ok(P.g(`gById('${eb}').trail.length`)===1&&P.g(`gById('${eb}').trail[0].route`)==='moving','checking in twice in a week replaces that week, not adds');
+    ok(P.g(`gById('${eb}').trail.length`)===1&&P.g(`gById('${eb}').trail[0].route`)==='moving','checking in twice on one day keeps the latest, not both');
     ok(P.$(`[data-gopen="${eb}"] .gtrail i`),'card shows the trail');
-    P.g(`S.goals.lastCheck=Date.now()-8*864e5;save();render()`);
-    ok(P.$('#gcheck').classList.contains('due')&&P.$('#gcheck').textContent.includes('8 days since'),'after a week it is due again');
+    P.g(`S.goals.lastCheck=Date.now()-40*864e5;save();render()`);
+    ok(P.$('#gcheck').textContent.includes('last one 40 days ago')&&!/due/i.test(P.$('#gcheck').textContent),'weeks later it just says when — never nags');
 
     /* achieved / let go / delete */
     P.click(`[data-gopen="${eb}"]`);P.click('#mlayer #gwin');
     ok(P.g(`gById('${eb}').state`)==='achieved'&&P.$$('.gwin').length===1&&!P.$(`.gcard[data-gopen="${eb}"]`),'Achieved → moves to Wins');
     P.click(`.gwin[data-gopen="${eb}"]`);P.click('#mlayer #gback');P.click('#mlayer #gok');
     ok(P.g(`gById('${eb}').state`)==='active'&&!!P.$(`.gcard[data-gopen="${eb}"]`),'… and can come back');
-    const far=P.g(`S.goals.items.find(x=>x.horizon==='far').id`);
+    const far=P.g(`S.goals.items.find(x=>x.horizon==='long').id`);
     P.click(`[data-gopen="${far}"]`);P.click('#mlayer #gdrop');
     ok(P.g(`gById('${far}').state`)==='dropped'&&P.$('#gletgo'),'Let it go → collapsed under Let go');
     P.click('#gletgo');ok(P.$$('.gwin').length===1,'… which opens');
