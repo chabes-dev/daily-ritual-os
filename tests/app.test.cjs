@@ -1,0 +1,711 @@
+/* Automatic checks for Daily Ritual OS — they open the app in a simulated browser (jsdom),
+   press its buttons and confirm everything still works. Nothing here ships with the app.
+
+   Run from this folder:   npm install   (once)   then   npm test
+
+   Older versions of the app are read straight from git history, to check that old saved data
+   still loads and that existing screens did not change by accident. REF (default: origin/main)
+   is the version to compare against. */
+const fs=require('fs'),path=require('path'),cp=require('child_process');
+const {JSDOM,VirtualConsole}=require('jsdom');
+const REPO=path.join(__dirname,'..');
+const HTML=fs.readFileSync(path.join(REPO,'index.html'),'utf8').replace(/<script src="\/app_1\.js"><\/script>/,'');
+const NEW=fs.readFileSync(path.join(REPO,'app_1.js'),'utf8');
+const gitShow=rev=>{try{return cp.execSync('git show '+rev+':app_1.js',{cwd:REPO,stdio:['ignore','pipe','ignore'],maxBuffer:64e6}).toString()}
+  catch(e){console.log('  (could not read '+rev+' from git history — run: git fetch --unshallow)');process.exit(3)}};
+const REF_REV=process.env.REF||'origin/main';
+const OLD=gitShow('276201f');                 /* main before the almanac */
+const PRETOWN=gitShow('5905f48');             /* main before Town */
+const PRETOWN_HOME_REF=gitShow(REF_REV);      /* the version to compare screens against */
+
+let pass=0,fail=0;const fails=[];
+function ok(c,msg){if(c){pass++}else{fail++;fails.push(msg);console.log('  ✗ '+msg)}}
+function section(t){console.log('\n— '+t)}
+
+/* a fresh page. storage: a plain object shared between "reloads" */
+function boot(code,store,opts={}){
+  const errors=[];
+  const vc=new VirtualConsole();
+  vc.on('jsdomError',e=>errors.push(String(e&&e.message||e)));
+  vc.on('error',e=>errors.push('console.error: '+e));
+  const dom=new JSDOM(HTML,{runScripts:'dangerously',pretendToBeVisual:true,url:'https://marcelo-os.test/',virtualConsole:vc,
+    beforeParse(w){
+      const mem=store;
+      Object.defineProperty(w,'localStorage',{value:{
+        getItem:k=>k in mem?mem[k]:null,setItem:(k,v)=>{mem[k]=String(v)},removeItem:k=>{delete mem[k]},clear:()=>{for(const k in mem)delete mem[k]}}});
+      w.matchMedia=()=>({matches:!!opts.touch,addListener(){},removeListener(){}});
+      w.Element.prototype.animate=function(){return {onfinish:null,cancel(){}}};
+      w.__opened=[];w.open=u=>{w.__opened.push(u);return null};
+      w.__clip=[];
+      Object.defineProperty(w.navigator,'clipboard',{value:{writeText:t=>{w.__clip.push(t);return Promise.resolve()}}});
+      w.document.execCommand=()=>true;
+      w.addEventListener('error',e=>errors.push('onerror: '+e.message));
+    }});
+  const w=dom.window;
+  const s=w.document.createElement('script');s.textContent=code;w.document.body.appendChild(s);
+  const g=x=>w.eval(x);
+  const $=q=>w.document.querySelector(q),$$=q=>[...w.document.querySelectorAll(q)];
+  const click=el=>{if(typeof el==='string'){const e=$(el);if(!e)throw new Error('no element '+el);el=e}
+    el.dispatchEvent(new w.MouseEvent('click',{bubbles:true}))};
+  const key=(k,target)=>(target||w.document.body).dispatchEvent(new w.KeyboardEvent('keydown',{key:k,bubbles:true}));
+  const type=(el,v)=>{if(typeof el==='string')el=$(el);el.value=v;el.dispatchEvent(new w.Event('input',{bubbles:true}))};
+  const enter=(el,v)=>{if(typeof el==='string')el=$(el);if(v!=null)type(el,v);key('Enter',el)};
+  return {w,g,$,$$,click,key,type,enter,errors,store,close:()=>w.close()};
+}
+const tick=ms=>new Promise(r=>setTimeout(r,ms||0));
+
+/* drive a classic ritual (work zen) to the end by pressing its main button */
+function runZen(P,mode){
+  P.g(`S.ui.mode='${mode}';save();render();startZen()`);
+  let guard=0;
+  while(P.g('ZEN')&&guard++<80){
+    const kind=P.g('ZKIND[ZSTEPS[ZI].id]');
+    if(kind==='dump'){P.enter('#zcap',mode+' ritual item '+guard)}
+    P.click('#zgo');
+    while(P.g('TOPEN')&&guard++<200){
+      if(P.$('[data-sort]'))P.click('[data-sort]');
+      else if(P.$('[data-put="plain"]'))P.click('[data-put="plain"]');
+      if(P.$('#mlayer #anyway'))P.click('#mlayer #anyway');
+    }
+  }
+  return guard<80;
+}
+/* a lived-in Town: every state, every department */
+const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
+  for(const d of TOWN_DEPTS){
+    tAdd('Inbox '+d.id,d.id,'inbox');
+    const w=tAdd('Week '+d.id,d.id,'inbox');tSet(w,'week');w.size=30;
+    const a=tAdd('AI '+d.id,d.id,'inbox');tSet(a,'ai');
+    const x=tAdd('Wait '+d.id,d.id,'inbox');x.wait={who:'Clinic',since:D(-2),checkBack:D(1)};tSet(x,'waiting');
+    const l=tAdd('Later '+d.id,d.id,'inbox');tSet(l,'later');l.back=D(9);
+    const f=tAdd('Done '+d.id,d.id,'inbox');tSet(f,'done');
+  }
+  const h=tAdd('Wife thing','family','inbox');h.wait={who:'Wife',since:today(),checkBack:null};tSet(h,'wife');
+  tAdd('Loose idea',null,'inbox');save()})()`;
+
+(async()=>{
+  /* ===================================================================== */
+  section('1. empty data — new code loads');
+  {
+    const P=boot(NEW,{});
+    ok(P.errors.length===0,'no errors on empty load: '+P.errors.join(' | '));
+    ok(P.g('typeof S.town')==='object','S.town created');
+    ok(P.g('S.town.items.length')===0,'town starts empty');
+    ok(P.g('Object.keys(S.town.depts).length')===9,'9 departments with defaults');
+    ok(P.g('S.town.aiTemplate.includes("{task}")'),'default AI template');
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';save();render()`);
+    ok(!!P.$('#tround')&&!!P.$('#tmove'),'Town hall shows both ritual buttons');
+    ok(P.g('S.town.adopted')===true,'adoption ran (nothing to copy)');
+    ok(P.$$('.nav [data-v]').map(b=>b.dataset.v).join()==='town:home,town:today,town:ai,town:waiting,town:map,north','personal nav is Town');
+    ok(!!P.$('#navspark'),'Journal ↗ kept');
+    P.g(`S.ui.mode='work';render()`);
+    ok(!P.$$('.nav [data-v]').some(b=>b.dataset.v.startsWith('town')),'work nav has no Town');
+    ok(P.errors.length===0,'no errors rendering: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('2. data from before Town: personal tasks move in once, work untouched');
+  const store={};
+  {
+    const O=boot(PRETOWN,store);
+    O.g(`add('Book the dentist\\nRenew passport','personal');add('Write the SOIP deck\\nReply to Pedro','work');
+      const p=S.items.find(i=>i.text==='Book the dentist');p.due='2099-01-01';S.north='Be great';save()`);
+    ok(O.errors.length===0,'old code ran: '+O.errors.join(' | '));
+    O.close();
+    const before=JSON.parse(store['os_v3']).items.length;
+    const P=boot(NEW,store);
+    ok(P.errors.length===0,'new code loads old data: '+P.errors.join(' | '));
+    ok(P.g('S.items.length')===before,'no items lost');
+    ok(P.g(`S.town.items.filter(i=>i.from).map(i=>i.title).sort().join()`)==='Book the dentist,Renew passport','open personal tasks copied into Town');
+    ok(P.g(`S.town.items.find(i=>i.title==='Book the dentist').due`)==='2099-01-01','due date carried');
+    ok(P.g(`S.items.filter(i=>i.mode==='work').length`)===2,'work tasks untouched');
+    ok(P.g('S.north')==='Be great','North Star text kept');
+    P.close();
+    const Q=boot(NEW,store);ok(Q.g('S.town.items.length')===2,'reload does not copy again');Q.close();
+  }
+
+  /* ===================================================================== */
+  section('3. every view renders, both modes');
+  const tstore={};
+  {
+    const P=boot(NEW,tstore);
+    P.g(TOWN_SEED);
+    P.g(`add('Write the SOIP deck\\nReply to Pedro\\nResearch prompts\\nPlan the shoot','work')`);
+    for(const v of ['home','today','backlog']){P.g(`S.ui.mode='work';S.ui.workView='${v}';render()`);
+      ok(P.$('#app').innerHTML.length>500,'work '+v+' renders')}
+    for(const v of ['home','today','ai','waiting','map']){P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='${v}';render()`);
+      ok(P.$('#app').innerHTML.length>500,'town '+v+' renders')}
+    for(const d of P.g('TOWN_DEPTS.map(d=>d.id)')){P.g(`townNav('dept','${d}')`);ok(P.$('.tdeptpage')&&P.$('.tcycs'),'dept '+d+' renders')}
+    P.g(`S.ui.personalView='north';render()`);ok(!!P.$('#northtext'),'North Star renders');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('4. work ritual, start to finish');
+  {
+    const P=boot(NEW,{...tstore});
+    ok(runZen(P,'work'),'work ritual runs to the end');
+    ok(!P.g('ZEN'),'ritual closed');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('5. weekly round — full run, with a pause and a reload');
+  {
+    const st={...tstore};let P=boot(NEW,st);
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';render();startRound()`);
+    ok(P.g('TZ')==='round','round opens');
+    P.click('#tzgo');P.click('#tzgo');   /* phrase, dump */
+    ok(P.g('S.town.round.step')===2,'on the sort step');
+    P.click('#tzexit');ok(!P.g('TZ')&&P.g('S.town.round.step')===2,'pause keeps the place');
+    P.close();P=boot(NEW,st);
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';render()`);
+    ok(P.$('#tround').textContent.includes('Continue'),'after a reload the hall offers to continue');
+    P.click('#tround');ok(P.g('S.town.round.step')===2,'… and it resumes on the same step');
+    let guard=0;while(P.g('TZ')==='round'&&guard++<40)P.click('#tzgo');
+    ok(!P.g('S.town.round')&&!!P.g('S.town.lastRound'),'round closes and records when it ran');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('6. today’s move');
+  {
+    const P=boot(NEW,{...tstore});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';render();startMove()`);
+    ok(P.g('TZ')==='move','move opens');
+    P.click('#tzgo');                                   /* spark */
+    P.click('[data-tmins]:last-of-type');               /* time */
+    ok(P.g('S.town.move.step')>=1,'time chosen');
+    let guard=0;while(P.g('TZ')==='move'&&P.g('S.town.move&&S.town.move.step')!==2&&guard++<5)P.click('#tzgo');
+    const t=P.$('#tzmid [data-ttoday]');if(t)P.click(t);
+    guard=0;while(P.g('TZ')==='move'&&guard++<6)P.click('#tzgo');
+    ok(!P.g('TZ'),'move ends');
+    ok(P.g('S.town.items.filter(tIsToday).length')>=1,'something went on today');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('7. every control in both rituals, every tab and every department responds');
+  {
+    const P=boot(NEW,{...tstore});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';save();render()`);
+    const dead=[];
+    const sweep=(label,open,sel)=>{
+      P.g(open);const n=P.$$(sel).length;
+      for(let k=0;k<n;k++){
+        P.g(open);const b=P.$$(sel)[k];if(!b||b.disabled||b.classList.contains('sel')||b.dataset.tback)continue;
+        const before=P.g('JSON.stringify(S)')+'|'+P.w.__opened.length+'|'+P.w.__clip.length;
+        const html=P.$('body').innerHTML;
+        P.click(b);
+        const changed=P.g('JSON.stringify(S)')+'|'+P.w.__opened.length+'|'+P.w.__clip.length!==before||!!P.$('#mlayer').innerHTML||!!P.$('#dplayer').innerHTML||P.$('body').innerHTML!==html;
+        if(!changed)dead.push(label+': '+(b.textContent.trim().slice(0,30)||b.className));
+        P.g('closeSheet();closeDP()');
+      }
+    };
+    for(let st=0;st<6;st++)sweep('round step '+(st+1),`if(TZ)tzClose();S.town.round={step:${st},startedAt:Date.now()};if(${st}===3)tStartRounds(S.town.round,0);save();tzOpen('round')`,'#tzmid button');
+    for(let st=0;st<4;st++)sweep('move step '+(st+1),`if(TZ)tzClose();S.town.move={date:today(),step:${st},mins:30};save();tzOpen('move')`,'#tzmid button');
+    P.g('if(TZ)tzClose();S.town.round=null;S.town.move=null;save()');
+    for(const tv of ['home','today','ai','waiting','map'])
+      sweep('tab '+tv,`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='${tv}';render()`,'#app .wrap > :not(.top):not(.nav):not(.foot) button');
+    for(const d of ['health','treasury','house','family','kitchen','wardrobe','future','buy','wishes'])
+      sweep('dept '+d,`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='dept';S.ui.townDept='${d}';render()`,'#app .wrap > :not(.top):not(.nav):not(.foot) button');
+    for(const wv of ['home','today'])
+      sweep('work '+wv,`S.ui.mode='work';S.ui.workView='${wv}';render()`,'#app .wrap > :not(.top):not(.nav):not(.foot) button:not([data-done]):not([data-unplan])');
+    ok(dead.length===0,'no dead buttons: '+dead.join(' | '));
+    ok(P.errors.length===0,'no errors clicking through: '+P.errors.join(' | '));
+    await tick(30);P.close();
+  }
+
+  /* ===================================================================== */
+  section('8. AI queue by department');
+  {
+    const P=boot(NEW,{});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='ai';
+      ['Cancel gym','Dispute fee','Find accountant'].forEach(t=>tSet(tAdd(t,'treasury','inbox'),'ai'));
+      ['Find a cleaner','Quote the leak'].forEach(t=>tSet(tAdd(t,'house','inbox'),'ai'));
+      tSet(tAdd('Book vaccines','health','inbox'),'ai');save();render()`);
+    const tiles=P.$$('.taidept').map(b=>b.querySelector('.taidept-n').textContent+':'+b.querySelector('.taidept-c').textContent.trim());
+    ok(tiles.join(' | ')==='All departments:6 left | Health:1 left | Treasury:3 left | House:2 left','overview tiles: '+tiles.join(' | '));
+    P.click('[data-taidept="treasury"]');
+    ok(P.$$('.taiitem').length===3&&P.$('.slotlabel').textContent.startsWith('Treasury'),'tap a department → only its items');
+    const first=P.$('.taiitem').dataset.taisel;
+    P.click(`.taipane [data-tsent="${first}"]`);P.click('#yes');
+    ok(P.$('[data-taidept="treasury"] .taidept-c').textContent.includes('2 left'),'sending one: 2 left');
+    P.click('[data-taidept="all"]');
+    ok(P.$$('.taiitem').length===5,'All shows everything left');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('9. sync payload');
+  {
+    const P=boot(NEW,{...tstore});
+    ok(!('ui' in JSON.parse(P.g('JSON.stringify(syncContent(S))'))),'device UI state is not synced');
+    ok(P.g(`JSON.stringify(syncContent(S)).includes('Week health')`),'Town data is synced');
+    P.close();
+  }
+
+  /* ===================================================================== */
+  section('17. almanac — recurring cycles');
+  {
+    const old={};const O=boot(OLD,old);O.g(`S.ui.mode='personal';save()`);O.close();
+    let P=boot(NEW,old);
+    ok(P.errors.length===0,'old data loads: '+P.errors.join(' | '));
+    ok(P.g('Array.isArray(S.town.cycles)&&S.town.cycles.length===0'),'S.town.cycles defaults to []');
+    P.close();
+    const bad={};P=boot(NEW,bad);
+    P.g(`S.town.cycles=[{id:'a',title:'Vaccines',dept:'dogs',type:'weird',n:0,unit:'eons',lead:'x'},null,{id:'b'}];save()`);P.close();
+    P=boot(NEW,bad);
+    ok(P.g('S.town.cycles.length')===1,'invalid cycles dropped');
+    ok(P.g(`JSON.stringify((c=>[c.dept,c.type,c.n,c.unit,c.lead,!!c.nextDue])(S.town.cycles[0]))`)==='["family","interval",1,"months",30,true]','a damaged cycle is repaired (Dogs → Family, safe defaults)');
+    P.close();
+    const bad2={};P=boot(NEW,bad2);P.g(`S.town.cycles={};save()`);P.close();P=boot(NEW,bad2);
+    ok(P.g('Array.isArray(S.town.cycles)'),'non-array cycles reset');P.close();
+
+    P=boot(NEW,{});
+    const A=(a,n,u)=>P.g(`tAddPer('${a}',${n},'${u}')`);
+    ok(A('2026-01-31',1,'months')==='2026-02-28','Jan 31 + 1 month = Feb 28');
+    ok(A('2028-01-31',1,'months')==='2028-02-29','… Feb 29 in a leap year');
+    ok(A('2028-02-29',1,'years')==='2029-02-28','Feb 29 + 1 year = Feb 28');
+    ok(A('2026-11-15',3,'months')==='2027-02-15','months roll into next year');
+    ok(A('2026-12-30',2,'weeks')==='2027-01-13','weeks');
+    ok(A('2026-02-27',3,'days')==='2026-03-02','days');
+    ok(P.g(`tCycAfter({type:'fixed',n:1,unit:'months',on:'2026-01-31'},'2026-02-28')`)==='2026-03-31','fixed monthly on the 31st does not drift after February');
+    ok(P.g(`tCycAfter({type:'fixed',n:1,unit:'years',on:'2027-02-15'},'2026-10-01')`)==='2027-02-15','fixed: an anchor still ahead is the next date');
+
+    P.g(`window.D=n=>tAddPer(today(),n,'days');
+      window.mk=(o)=>{const c=Object.assign({id:nid(),title:'Cycle',who:'',type:'interval',n:6,unit:'months',lead:30,lastDone:null,
+        nextDue:D(0),on:null,notes:'',dept:'health',itemId:null,retired:false,created:Date.now()},o);S.town.cycles.push(c);save();return c}`);
+    P.g(`window.c1=mk({title:'Near',nextDue:D(20)});window.c2=mk({title:'Far',nextDue:D(40)});window.c3=mk({title:'Late',nextDue:D(-5)});
+      window.c4=mk({title:'Gone',nextDue:D(3),retired:true});window.c5=mk({title:'Short lead',nextDue:D(10),lead:7})`);
+    ok(P.g(`tCycComing('health').map(c=>c.title).join()`)==='Late,Near','within lead time or overdue, sorted by due; far, retired and short-lead stay quiet');
+    ok(P.g(`tDeptBusy('health')`)===true&&P.g(`tDeptBusy('house')`)===false,'a coming cycle gives its department a round screen');
+    P.close();
+
+    const st={};P=boot(NEW,st);
+    P.g(`window.D=n=>tAddPer(today(),n,'days');S.ui.mode='personal';S.ui.personalView='town';
+      window.mk=(o)=>{const c=Object.assign({id:nid(),title:'Cycle',who:'',type:'interval',n:6,unit:'months',lead:30,lastDone:null,
+        nextDue:D(0),on:null,notes:'',dept:'health',itemId:null,retired:false,created:Date.now()},o);S.town.cycles.push(c);save();return c};
+      mk({id:'den',title:'Dentist',who:'Léo',nextDue:D(12),notes:'Dr. Paula'});
+      mk({id:'vac',title:'Vaccines',who:'Luna',type:'fixed',n:1,unit:'years',on:D(5),nextDue:D(5),dept:'family'});
+      mk({id:'tax',title:'Taxes',type:'fixed',n:1,unit:'years',on:D(-3),nextDue:D(-3),dept:'treasury'});
+      mk({id:'ac',title:'AC filter',n:3,unit:'months',nextDue:D(2),dept:'house'});
+      mk({id:'ins',title:'Car insurance',type:'fixed',n:1,unit:'years',on:D(25),nextDue:D(25),dept:'treasury'});
+      mk({id:'far',title:'Passport',type:'fixed',n:10,unit:'years',on:D(900),nextDue:D(900),dept:'future'});
+      save();render()`);
+    P.g(`townNav('map')`);
+    const tile=id=>(P.$(`[data-tdept="${id}"] .tsoon`)||{textContent:''}).textContent;
+    ok(tile('health')==='↻ 1 coming up'&&tile('treasury')==='↻ 2 coming up'&&tile('future')==='','map tiles count what is coming up');
+    P.g(`S.town.round={step:3,startedAt:Date.now()};tStartRounds(S.town.round,0);save();tzOpen('round')`);
+    ok(P.g('S.town.round.depts.length')===4,'round visits only departments with something coming: '+P.g('S.town.round.depts.join()'));
+    const goTo=id=>{P.g(`S.town.round.di=S.town.round.depts.indexOf('${id}');tEnterDept(S.town.round);save();tzPaint(true)`)};
+    goTo('health');
+    ok(P.$('#tzmid .zcarry-h')&&P.$('#tzmid .zcarry-h').textContent.includes('Coming up — 1'),'Coming up sits at the top of the department');
+    ok(P.$('#tzmid').firstElementChild.classList.contains('zcarry-h'),'… first thing on the screen');
+    ok(P.$('.tcycrow').textContent.includes('Dentist — Léo')&&P.$('.tcycrow').textContent.includes('due in 12 days'),'row shows title, who and when');
+    ok(P.$$('.tcycrow [data-tcverd]').length===7,'all seven verdicts offered (incl. Done already)');
+    P.click('[data-tcverd="den:week"]');
+    let it=JSON.parse(P.g(`JSON.stringify(S.town.items.find(i=>i.cycle==='den'))`));
+    ok(it&&it.state==='week'&&it.title==='Dentist — Léo'&&it.dept==='health'&&it.due===P.g('D(12)')&&it.notes==='Dr. Paula','This week → a regular item, linked, due date and notes carried');
+    ok(P.g(`tCyc('den').itemId`)===it.id,'cycle remembers its item');
+    ok(!P.$('.tcycrow'),'… and leaves Coming up');
+    ok(P.g(`S.town.round.lists.health.includes('${it.id}')`),'the item joins the frozen list for this department');
+    ok(P.$('.tvrow .tv-week.sel')&&P.$('#tzmid').textContent.includes('↻ almanac'),'shown below with its verdict selected and an almanac mark');
+    ok(P.g(`tCycComing('health').length`)===0,'an open item keeps the cycle from coming up again');
+    P.click(`[data-tverd="${it.id}:ai"]`);
+    ok(P.g(`tById('${it.id}').state`)==='ai'&&P.g(`S.town.items.filter(i=>i.cycle==='den').length`)===1,'changing the verdict reuses the item');
+
+    goTo('family');
+    P.click('[data-tcverd="vac:waiting"]');
+    ok(!!P.$('#mlayer #twho'),'Waiting opens the who sheet');
+    P.type('#twho','Vet');P.click('#mlayer #yes');
+    ok(P.g(`S.town.items.find(i=>i.cycle==='vac').state+'/'+S.town.items.find(i=>i.cycle==='vac').wait.who`)==='waiting/Vet','… item waiting on the vet');
+
+    goTo('treasury');
+    ok(P.$$('.tcycrow').map(r=>r.textContent.includes('Taxes')?'T':'I').join('')==='TI','overdue first');
+    ok(P.$('.tcycrow .zd.late')&&P.$('.tcycrow .zd.late').textContent==='3 days late','overdue reads late');
+    const taxDue=P.g(`tCyc('tax').nextDue`);
+    P.click('[data-tcverd="tax:done"]');
+    ok(P.g(`tCyc('tax').nextDue`)===P.g(`tAddPer('${taxDue}',1,'years')`)&&P.g(`tCyc('tax').lastDone`)===P.g('today()'),'Done already: fixed yearly rolls to the same date next year');
+    ok(P.g(`S.town.items.find(i=>i.cycle==='tax').state`)==='done','… and is logged as done');
+    P.click('[data-tcverd="ins:later"]');
+    ok(!!P.$('#mlayer [data-tbk]'),'Not this week opens the date sheet');
+    P.click('#mlayer [data-tbk]');
+    ok(P.g(`S.town.items.find(i=>i.cycle==='ins').state`)==='later','… item parked for next week');
+
+    goTo('house');
+    P.click('[data-tcverd="ac:dropped"]');
+    ok(P.$('#mlayer h3').textContent==='Skip this cycle once, or retire it?','Drop asks: skip once or retire');
+    P.click('#mlayer #no');
+    ok(P.g(`S.town.items.some(i=>i.cycle==='ac')`)===false&&!!P.$('.tcycrow'),'Cancel: nothing created, still coming up');
+    const acDue=P.g(`tCyc('ac').nextDue`);
+    P.click('[data-tcverd="ac:dropped"]');P.click('#mlayer #tcskip');
+    ok(P.g(`tCyc('ac').nextDue`)===P.g(`tAddPer('${acDue}',3,'months')`)&&!P.g(`tCyc('ac').retired`),'Skip once: moves one period, stays active');
+    ok(P.g(`tCyc('ac').lastDone`)===null,'… and is not logged as done');
+    ok(P.g(`S.town.items.find(i=>i.cycle==='ac').state`)==='dropped'&&!P.$('.tcycrow'),'… the item is dropped and the cycle leaves Coming up');
+    const acItem=P.g(`S.town.items.find(i=>i.cycle==='ac').id`);
+    P.click(`[data-tverd="${acItem}:week"]`);
+    ok(P.g(`tCyc('ac').nextDue`)===acDue&&P.g(`tCyc('ac').itemId`)===acItem,'re-deciding restores the cycle exactly');
+    P.click(`[data-tverd="${acItem}:dropped"]`);P.click('#mlayer #tcret');
+    ok(P.g(`tCyc('ac').retired`)===true&&P.g(`tById('${acItem}').state`)==='dropped','Retire: cycle retired, item dropped');
+    ok(P.g(`tCycComing('house').length`)===0,'retired never comes up');
+    P.click(`[data-tverd="${acItem}:done"]`);
+    ok(P.g(`tCyc('ac').retired`)===false&&P.g(`tCyc('ac').lastDone`)===P.g('today()')&&P.g(`tCyc('ac').nextDue`)===P.g(`tAddPer(today(),3,'months')`),'dropped → done: un-retires, then rolls from today');
+    ok(P.errors.length===0,'no errors in the round: '+P.errors.join(' | '));
+    P.g('tzClose()');P.close();
+
+    P=boot(NEW,st);
+    const den=P.g(`S.town.items.find(i=>i.cycle==='den').id`);
+    const before=P.g(`JSON.stringify(tCyc('den'))`);
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';townNav('ai')`);
+    P.g(`tItemSheet('${den}')`);
+    ok(P.$('#mlayer .zkept').textContent.includes('↻ almanac, every 6 months'),'item card says it comes from the almanac');
+    P.click('#mlayer #tdone');
+    ok(P.g(`tCyc('den').lastDone`)===P.g('today()')&&P.g(`tCyc('den').nextDue`)===P.g(`tAddPer(today(),6,'months')`),'interval: done today → next due = today + 6 months');
+    ok(P.g(`tCyc('den').itemId`)===null,'… unlinked, ready for the next time');
+    P.click('.toast .undo');
+    ok(P.g(`JSON.stringify(tCyc('den'))`)===before,'Undo puts the cycle back exactly');
+    ok(P.g(`tById('${den}').state`)==='ai','… and the item back where it was');
+    const vac=P.g(`S.town.items.find(i=>i.cycle==='vac').id`),vDue=P.g(`tCyc('vac').nextDue`);
+    P.g(`tLand(tById('${vac}'))`);P.type('#tnext','Take Luna to the vet on Friday');P.click('#mlayer #tadd');
+    ok(P.g(`tCyc('vac').nextDue`)===P.g(`tAddPer('${vDue}',1,'years')`),'Landed → the cycle rolls to next year');
+    const nx=JSON.parse(P.g(`JSON.stringify(S.town.items.find(i=>i.title==='Take Luna to the vet on Friday'))`));
+    ok(nx&&nx.state==='inbox'&&!nx.cycle,'… the next step is an ordinary inbox item (existing flow)');
+    P.g(`townNav('dept','treasury')`);
+    ok(P.$$('.donerow .t').some(t=>t.textContent.startsWith('↻ Taxes')),'Done log marks the completion ↻');
+    P.g(`S.town.cycles.find(c=>c.id==='den').nextDue=tAddPer(today(),10,'days');tSet(tById('${den}'),'week');save()`);
+    ok(P.g(`tCycComing('health').length`)===0,'open item → quiet');
+    P.g(`S.town.items=S.town.items.filter(i=>i.id!=='${den}');save()`);
+    ok(P.g(`tCycComing('health').length`)===1,'item deleted → the cycle comes up again');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+
+    const ds={};P=boot(NEW,ds);
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';townNav('dept','health')`);
+    ok(P.$('.tcycs .slotlabel').textContent.startsWith('Almanac — 0')&&P.$('.tcycs .col-empty'),'empty almanac at the bottom of the department');
+    ok(P.$('.tdeptpage').nextElementSibling===P.$('.tcycs'),'… below everything else');
+    P.click('#tcycadd');
+    ok(!!P.$('#mlayer #tcti')&&P.$('#mlayer [data-tctype="interval"]').classList.contains('on'),'Add opens the quick sheet (interval by default)');
+    P.click('#mlayer #tcok');
+    ok(P.g('S.town.cycles.length')===0&&!!P.$('#mlayer #tcti'),'no name → not added');
+    P.type('#mlayer #tcti','Dentist');P.type('#mlayer #tcwho','Léo');
+    P.type('#mlayer #tcn','6');P.click('#mlayer [data-tcu="months"]');
+    P.click('#mlayer #tclast');
+    const lastIso=P.g(`tAddPer(today(),-150,'days')`);
+    P.g(`DPV.y=${+lastIso.slice(0,4)};DPV.m=${+lastIso.slice(5,7)-1};drawDP()`);
+    P.click(`#dplayer [data-iso="${lastIso}"]`);
+    ok(P.$('#mlayer .zkept').textContent.includes('Next due'),'shows the computed next due');
+    P.click('#mlayer #tcok');
+    let c=JSON.parse(P.g('JSON.stringify(S.town.cycles[0])'));
+    ok(c&&c.title==='Dentist'&&c.who==='Léo'&&c.type==='interval'&&c.n===6&&c.unit==='months'&&c.dept==='health'&&c.lead===30,'interval cycle saved with defaults: '+JSON.stringify(c));
+    ok(c.lastDone===lastIso&&c.nextDue===P.g(`tAddPer('${lastIso}',6,'months')`),'next due = last done + 6 months');
+    ok(P.$$('.tcycline').length===1&&P.$('.tcycline').textContent.includes('Léo'),'listed on the department page');
+    P.click('#tcycadd');
+    ok(P.$$('#mlayer [data-tcw]').map(b=>b.textContent).join()==='Léo','who chips offer names already used');
+    P.type('#mlayer #tcti','Checkup');P.click('#mlayer [data-tcw="Léo"]');
+    P.click('#mlayer [data-tctype="fixed"]');
+    ok(P.$$('#mlayer [data-tcu]').map(b=>b.dataset.tcu).join()==='months,years','fixed offers months or years');
+    ok(P.$('#mlayer [data-tcu="years"]').classList.contains('on')&&P.$('#mlayer #tcn').value==='1'&&P.$('#mlayer #tcon').textContent==='Pick the date','a new fixed cycle starts yearly and asks for its date');
+    P.click('#mlayer #tcok');
+    ok(P.g('S.town.cycles.length')===1&&!!P.$('#mlayer #tcon'),'no date → not added');
+    P.click('#mlayer [data-tcu="years"]');P.type('#mlayer #tcn','1');
+    P.click('#mlayer #tcon');
+    const fixIso=P.g(`tAddPer(today(),3,'days')`);
+    P.g(`DPV.y=${+fixIso.slice(0,4)};DPV.m=${+fixIso.slice(5,7)-1};drawDP()`);
+    P.click(`#dplayer [data-iso="${fixIso}"]`);
+    P.click('#mlayer #tcmore');
+    ok(!!P.$('#mlayer #tclead')&&!!P.$('#mlayer #tcnotes'),'More reveals lead time and notes');
+    P.type('#mlayer #tclead','14');P.type('#mlayer #tcnotes','Fasting');
+    P.click('#mlayer #tcok');
+    c=JSON.parse(P.g(`JSON.stringify(S.town.cycles.find(c=>c.title==='Checkup'))`));
+    ok(c.type==='fixed'&&c.who==='Léo'&&c.unit==='years'&&c.n===1&&c.nextDue===fixIso&&c.on===fixIso&&c.lead===14&&c.notes==='Fasting','fixed cycle saved: '+JSON.stringify(c));
+    ok(P.$$('.tcycline .zt').map(e=>e.textContent.split(' · ')[0]).join()==='Checkup,Dentist','list sorted by next due');
+    ok(P.$('.tcycline .ztag.cyc'),'the near one is marked coming up');
+    const did=P.g(`S.town.cycles.find(c=>c.title==='Dentist').id`);
+    P.click(`[data-tcyc="${did}"]`);
+    ok(P.$('#mlayer h3').textContent.startsWith('Edit cycle')&&P.$('#mlayer #tcti').value==='Dentist','tap a row → edit sheet');
+    P.type('#mlayer #tcn','4');P.click('#mlayer #tcok');
+    ok(P.g(`tCyc('${did}').nextDue`)===P.g(`tAddPer('${lastIso}',4,'months')`),'editing the period recomputes next due');
+    P.g(`tCyc('${did}').nextDue='2099-01-01';save();render()`);
+    P.click(`[data-tcyc="${did}"]`);P.type('#mlayer #tcwho','Léo M.');P.click('#mlayer #tcok');
+    ok(P.g(`tCyc('${did}').nextDue`)==='2099-01-01'&&P.g(`tCyc('${did}').who`)==='Léo M.','renaming leaves the dates alone');
+    P.click(`[data-tcyc="${did}"]`);P.click('#mlayer #tcmore');P.click('#mlayer [data-tcdp="family"]');P.click('#mlayer #tcok');
+    ok(P.g(`tCyc('${did}').dept`)==='family'&&P.$$('.tcycline').length===1,'edit can move it to another department');
+    P.g(`townNav('dept','family')`);
+    P.click(`[data-tcyc="${did}"]`);P.click('#mlayer #tcmore');P.click('#mlayer #tcdue');
+    const ovIso=P.g(`tAddPer(today(),20,'days')`);
+    P.g(`DPV.y=${+ovIso.slice(0,4)};DPV.m=${+ovIso.slice(5,7)-1};drawDP()`);P.click(`#dplayer [data-iso="${ovIso}"]`);
+    P.type('#mlayer #tcn','5');P.click('#mlayer #tcok');
+    ok(P.g(`tCyc('${did}').nextDue`)===ovIso&&P.g(`tCyc('${did}').n`)===5,'next-due override sticks');
+    P.g(`townNav('dept','health')`);
+    const cid=P.g(`S.town.cycles.find(c=>c.title==='Checkup').id`);
+    P.click(`[data-tcyc="${cid}"]`);P.click('#mlayer #tcretire');
+    ok(P.g(`tCyc('${cid}').retired`)===true&&P.$$('.tcycline').length===0&&P.$('#tcycret'),'Retire hides it under a collapsed Retired list');
+    P.click('#tcycret');
+    ok(P.$$('.tcycline.off').length===1,'… which you can open');
+    P.click(`[data-tcyc="${cid}"]`);
+    ok(P.$('#mlayer #tcretire').textContent==='Bring it back','retired cycle offers Bring it back');
+    P.click('#mlayer #tcretire');
+    ok(P.g(`tCyc('${cid}').retired`)===false,'… and it is back');
+    P.g(`tCycPlant(tCyc('${cid}'))`);
+    P.click(`[data-tcyc="${cid}"]`);P.click('#mlayer #tcdel');
+    ok(P.$('#mlayer h3').textContent==='Delete this cycle?','delete asks first');
+    P.click('#mlayer #yes');
+    ok(!P.g(`tCyc('${cid}')`)&&P.g(`S.town.items.some(i=>i.title.startsWith('Checkup')&&!i.cycle)`),'deleted; the item it planted stays, unlinked');
+    ok(P.g(`JSON.parse(JSON.stringify(S)).town.cycles.length`)===1,'backup export (JSON of S) carries cycles');
+    ok(P.g(`JSON.stringify(syncContent(S)).includes('Dentist')`),'sync payload carries cycles');
+    P.close();
+    P=boot(NEW,ds);
+    ok(P.g('S.town.cycles.length')===1&&P.g('S.town.cycles[0].who')==='Léo M.','survives a reload');
+    ok(P.errors.length===0,'no errors on the department page: '+P.errors.join(' | '));
+    P.close();
+
+    P=boot(NEW,{...st},{touch:true});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';townNav('dept','treasury')`);
+    ok(P.$$('.tcycline').length===2,'phone: department almanac renders');
+    P.click('#tcycadd');ok(!!P.$('#mlayer #tcn')&&P.$('#mlayer #tcn').getAttribute('inputmode')==='numeric','phone: numeric keypad for the period');
+    P.g('closeSheet()');
+    const dead=[];
+    const sweep=(label,open,sel)=>{P.g(open);const n=P.$$(sel).length;
+      for(let k=0;k<n;k++){P.g(open);const b=P.$$(sel)[k];if(!b||b.classList.contains('on'))continue;
+        const before=P.g('JSON.stringify(S)'),html=P.$('body').innerHTML;P.click(b);
+        if(P.g('JSON.stringify(S)')===before&&!P.$('#dplayer').innerHTML&&P.$('body').innerHTML===html)dead.push(label+': '+b.textContent.trim().slice(0,30));
+        P.g('closeDP();closeSheet()')}};
+    sweep('dept page',`townNav('dept','treasury')`,'.tcycs button, .tcycs [data-tcyc]');
+    sweep('cycle sheet',`closeSheet();tCycSheet('treasury',S.town.cycles.find(c=>c.id==='ins').id)`,'#mlayer button');
+    sweep('new cycle sheet',`closeSheet();tCycSheet('treasury')`,'#mlayer button');
+    ok(dead.length===0,'no dead almanac controls: '+dead.join(' | '));
+    ok(P.errors.length===0,'no errors on phone: '+P.errors.join(' | '));
+    await tick(30);P.close();
+  }
+
+  /* ===================================================================== */
+  section('18. home screens: one-tap copy');
+  if(!NEW.includes('tcopyall'))console.log('  (skipped — not on this branch)');else{
+    const P=boot(NEW,{});
+    P.g(`S.ui.mode='work';S.ui.workView='home';save();render()`);
+    ok(!!P.$('#hcopy')&&P.$('.hcopy span').textContent.includes('nothing picked'),'work home has Copy today (empty state says so)');
+    P.click('#hcopy');await tick(5);
+    ok(P.w.__clip.length===0&&P.$('.toast').textContent.includes('nothing picked'),'empty plan: nothing copied, says why');
+    P.g(`const [a,b,c]=add('Write the SOIP deck\\nReply to Pedro\\nResearch prompts','work','brief');
+      assign('work','deep',a.id);assign('work','batch',b.id);assign('work','buffer',c.id);S.ui.workView='home';save();render()`);
+    ok(P.$('.hcopy span').textContent==='3 on today’s plan','shows how many lines it will copy');
+    P.click('#hcopy');await tick(5);
+    ok(P.w.__clip[0]===P.g(`planText('work')`)&&P.w.__clip[0]==='DEEP / Write the SOIP deck\nBATCH / Reply to Pedro\nDELEGATE TO AI / Research prompts','copies the same text as the ritual’s paper step: '+JSON.stringify(P.w.__clip[0]));
+    ok(!P.$('#tcopyall'),'Town button is not on the work home');
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';save();render()`);
+    ok(!!P.$('#tcopyall')&&!P.$('#hcopy'),'Town hall has Copy today + this week');
+    P.click('#tcopyall');await tick(5);
+    ok(P.w.__clip.length===1&&P.$$('.toast').some(t=>t.textContent.includes('nothing on today')),'empty week: nothing copied, says why');
+    P.g(`const a=tAdd('Call the bank','treasury','inbox');tSet(a,'week');a.size=10;
+      const b=tAdd('Book vaccines','family','inbox');tSet(b,'week');b.today=today();b.stakes=3;
+      const c=tAdd('Fix the shelf','house','inbox');tSet(c,'week');c.home=true;
+      const d=tAdd('Inbox thing','house','inbox');const e=tAdd('Waiting thing','house','inbox');tSet(e,'waiting');
+      setWeekPhrase('Play with Léo');save();render()`);
+    ok(P.$('.hcopy span').textContent==='1 on today · 2 more this week','counts today and the rest of the week: '+P.$('.hcopy span').textContent);
+    P.click('#tcopyall');await tick(5);
+    ok(P.w.__clip[1]==='THIS WEEK IS GOOD IF / Play with Léo\nTODAY / Book vaccines (Family)\nTHIS WEEK / Call the bank (Treasury) · 10 min\nTHIS WEEK / Fix the shelf (House) · after work','today first, then the week; inbox and waiting left out: '+JSON.stringify(P.w.__clip[1]));
+    P.g(`setWeekPhrase('');S.town.items.forEach(i=>{if(i.state==='week')tSet(i,'done')});save();render()`);
+    P.click('#tcopyall');await tick(5);
+    ok(P.w.__clip.length===2,'nothing left on the week → nothing copied');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    await tick(30);P.close();
+  }
+
+  /* ===================================================================== */
+  section('19. goals tab (work)');
+  {
+    /* old data gains goals with safe defaults; damaged data is repaired */
+    const old={};const O=boot(OLD,old);O.g(`add('Old work task','work');save()`);O.close();
+    let P=boot(NEW,old);
+    ok(P.errors.length===0,'old data loads: '+P.errors.join(' | '));
+    ok(P.g(`JSON.stringify(S.goals)`)==='{"heading":"","items":[],"rules":[],"lastCheck":null}','S.goals defaults');
+    ok(P.g(`S.items.length`)===1,'work tasks untouched');
+    P.close();
+    const bad={};P=boot(NEW,bad);
+    P.g(`S.goals={heading:5,items:[{id:'a',title:'Visa',horizon:'zzz',state:'?',trail:'x',route:'fast'},{id:'b'},null],rules:[{id:'r',text:''},{id:'s',text:'Rafa is an ally'}]};save()`);P.close();
+    P=boot(NEW,bad);
+    ok(P.g(`JSON.stringify([S.goals.heading,S.goals.items.length,S.goals.items[0].horizon,S.goals.items[0].state,Array.isArray(S.goals.items[0].trail),S.goals.items[0].route,S.goals.rules.length])`)==='["",1,"now","active",true,null,1]','damaged goals repaired, empties dropped');
+    P.close();
+
+    /* the tab */
+    const st={};P=boot(NEW,st);
+    P.g(`S.ui.mode='work';S.ui.workView='home';save();render()`);
+    ok(P.$$('.nav [data-v]').map(b=>b.dataset.v).join()==='home,today,backlog,goals','Goals tab sits after Home, Today, Backlog');
+    ok(P.$('.nav [data-v="goals"]').textContent==='Goals','the tab is just its name');
+    P.click('.nav [data-v="goals"]');
+    ok(P.g('S.ui.workView')==='goals'&&!!P.$('#gheading'),'the tab opens Goals');
+    ok(P.$$('.gcol').length===3&&P.$$('.gcol .slotlabel').map(e=>e.textContent).join()==='Now — 0,This year — 0,Further — 0','three horizons');
+    ok(P.$('#gcheck').textContent.includes('Add a goal first'),'check-in asks for a goal first');
+    P.type('#gheading','Become the undeniable creative lead for LATAM.');
+    ok(P.g('S.goals.heading')==='Become the undeniable creative lead for LATAM.','heading autosaves');
+    /* add goals: one, then a pasted list */
+    P.enter('[data-gadd="now"]','File the EB1 application');
+    ok(P.g(`S.goals.items.map(x=>x.title+'/'+x.horizon).join()`)==='File the EB1 application/now','Enter adds a goal to its horizon');
+    P.enter('[data-gadd="now"]','• New portfolio online\n- Two new exciting briefs\n\n');
+    ok(P.g(`S.goals.items.filter(x=>x.horizon==='now').map(x=>x.title).join('|')`)==='File the EB1 application|New portfolio online|Two new exciting briefs','pasting several lines adds several (bullets stripped, blanks skipped)');
+    P.enter('[data-gadd="year"]','Lead SOIP MX and BR Relax');
+    P.enter('[data-gadd="far"]','Creative lead for LATAM, then the US');
+    ok(P.$$('.gcard').length===5,'cards render');
+    ok(P.$('[data-gadd="far"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
+    /* ground rules */
+    P.enter('#gruleadd','Rafa is an ally — never fight him');P.enter('#gruleadd','Make my value obvious to Luana and Pedro');
+    ok(P.$$('.grule').length===2,'ground rules added');
+    P.click('[data-gredit]');P.type('#mlayer #f','Rafa is an ally. Never fight.');P.click('#mlayer #yes');
+    ok(P.g('S.goals.rules[0].text')==='Rafa is an ally. Never fight.','tap a rule to edit it');
+    const r2=P.g('S.goals.rules[1].id');P.click(`[data-grdel="${r2}"]`);
+    ok(P.g('S.goals.rules.length')===1,'× removes a rule');
+    P.click('.toast .undo');ok(P.g('S.goals.rules.length')===2,'… with undo');
+
+    /* goal sheet */
+    const eb=P.g(`S.goals.items[0].id`);
+    P.click(`[data-gopen="${eb}"]`);
+    ok(!!P.$('#mlayer #gti')&&P.$('#mlayer #gti').value==='File the EB1 application','tap a goal → its card');
+    P.type('#mlayer #gwhy','Freedom to choose where we live.');
+    P.type('#mlayer #gnext','Book the call with the lawyer');
+    P.click('#mlayer [data-gby]:nth-child(2)');
+    P.click('#mlayer [data-grt="moving"]');
+    let x=JSON.parse(P.g(`JSON.stringify(gById('${eb}'))`));
+    ok(x.why==='Freedom to choose where we live.'&&x.next==='Book the call with the lawyer'&&x.by===P.g('gMonthEnd(0)')&&x.route==='moving','why, next step, date and route save as you go');
+    P.enter('#mlayer #gtadd','Collect award certificates');
+    ok(P.g(`S.items.find(i=>i.text==='Collect award certificates').goal`)===eb&&P.g(`S.items.find(i=>i.text==='Collect award certificates').sorted`)===false,'a task added from the goal is linked and waits in Sort');
+    ok(P.$$('#mlayer .gtask').length===1,'… and listed on the goal');
+    P.click('#mlayer [data-ghz="year"]');ok(P.g(`gById('${eb}').horizon`)==='year','horizon can change');
+    P.click('#mlayer [data-ghz="now"]');
+    P.click('#mlayer #gok');
+    ok(P.$(`[data-gopen="${eb}"]`).textContent.includes('Next → Book the call')&&P.$(`[data-gopen="${eb}"]`).textContent.includes('1 task on it'),'card shows next step and linked tasks');
+
+    /* link an existing task from its own card; the today card shows the link */
+    P.g(`const [t]=add('Draft the SOIP MX idea','work','brief');t.sorted=true;assign('work','deep',t.id);S.ui.workView='today';render()`);
+    const tid=P.g(`S.items.find(i=>i.text==='Draft the SOIP MX idea').id`);
+    P.g(`openDetail('${tid}')`);
+    ok(P.$$('#mlayer [data-dgoal]').length===6,'task card offers every active goal + No');
+    const soip=P.g(`S.goals.items.find(x=>x.horizon==='year').id`);
+    P.click(`#mlayer [data-dgoal="${soip}"]`);
+    ok(P.g(`byId('${tid}').goal`)===soip,'task linked to a goal');
+    P.click('#mlayer #dclose');
+    ok(P.$('.deep .ggoal')&&P.$('.deep .ggoal').textContent.includes('Lead SOIP MX'),'the deep card shows which goal it moves');
+    P.g(`openDetail('${tid}')`);P.click('#mlayer [data-dgoal=""]');P.click('#mlayer #dclose');
+    ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.deep .ggoal'),'… and can be unlinked');
+    P.g(`byId('${tid}').goal='${soip}';save()`);
+
+    /* on purpose this week */
+    P.g(`const [a,b,c]=add('Linked done\\nUnlinked done\\nOld linked','work');a.goal='${eb}';[a,b,c].forEach(i=>{i.done=true;i.doneAt=Date.now()});
+      c.goal='${eb}';c.doneAt=Date.now()-14*864e5;S.ui.workView='goals';save();render()`);
+    ok(P.$('.gmeter .gbig').textContent==='1 of 2'&&P.$('.gmeter .gbar i').style.width==='50%','counts this week only: 1 of 2 finished things moved a goal');
+
+    /* weekly check-in */
+    ok(P.$('#gcheck').classList.contains('due')&&P.$('.nav [data-v="goals"]').textContent==='Goals','check-in is due (never done) — shown inside the tab only, the tab name stays plain');
+    P.click('#gcheck');
+    ok(P.$$('#mlayer .gci').length===5,'check-in lists every active goal');
+    P.click('#mlayer #gcok');
+    ok(!!P.$('#mlayer .gci')&&P.g('S.goals.lastCheck')===null,'saving with nothing rated is refused');
+    P.click(`#mlayer [data-gcr="${eb}:stuck"]`);
+    P.type(`#mlayer [data-gcn="${eb}"]`,'Lawyer has not replied');
+    P.click(`#mlayer [data-gcr="${soip}:moving"]`);
+    P.type(`#mlayer [data-gcx="${soip}"]`,'Share the first route with Rafa');
+    P.click('#mlayer #gcok');
+    x=JSON.parse(P.g(`JSON.stringify(gById('${eb}'))`));
+    ok(x.route==='stuck'&&x.trail.length===1&&x.trail[0].route==='stuck'&&x.trail[0].note==='Lawyer has not replied'&&x.trail[0].week===P.g('isoWeek()'),'route and a week entry saved');
+    ok(P.g(`gById('${soip}').next`)==='Share the first route with Rafa','next step edited in the check-in');
+    ok(P.$$('.toast').some(t=>t.textContent.includes('1 stuck')),'a stuck goal gets a nudge');
+    ok(!P.$('#gcheck').classList.contains('due')&&P.$('#gcheck').textContent.includes('Done today')&&P.$('.nav [data-v="goals"]').textContent==='Goals','check-in done → not due');
+    P.click('#gcheck');P.click(`#mlayer [data-gcr="${eb}:moving"]`);P.click('#mlayer #gcok');
+    ok(P.g(`gById('${eb}').trail.length`)===1&&P.g(`gById('${eb}').trail[0].route`)==='moving','checking in twice in a week replaces that week, not adds');
+    ok(P.$(`[data-gopen="${eb}"] .gtrail i`),'card shows the trail');
+    P.g(`S.goals.lastCheck=Date.now()-8*864e5;save();render()`);
+    ok(P.$('#gcheck').classList.contains('due')&&P.$('#gcheck').textContent.includes('8 days since'),'after a week it is due again');
+
+    /* achieved / let go / delete */
+    P.click(`[data-gopen="${eb}"]`);P.click('#mlayer #gwin');
+    ok(P.g(`gById('${eb}').state`)==='achieved'&&P.$$('.gwin').length===1&&!P.$(`.gcard[data-gopen="${eb}"]`),'Achieved → moves to Wins');
+    P.click(`.gwin[data-gopen="${eb}"]`);P.click('#mlayer #gback');P.click('#mlayer #gok');
+    ok(P.g(`gById('${eb}').state`)==='active'&&!!P.$(`.gcard[data-gopen="${eb}"]`),'… and can come back');
+    const far=P.g(`S.goals.items.find(x=>x.horizon==='far').id`);
+    P.click(`[data-gopen="${far}"]`);P.click('#mlayer #gdrop');
+    ok(P.g(`gById('${far}').state`)==='dropped'&&P.$('#gletgo'),'Let it go → collapsed under Let go');
+    P.click('#gletgo');ok(P.$$('.gwin').length===1,'… which opens');
+    P.click(`[data-gopen="${soip}"]`);P.click('#mlayer #gdel');P.click('#mlayer #yes');
+    ok(!P.g(`gById('${soip}')`)&&P.g(`byId('${tid}').goal`)===undefined,'delete removes the goal and unlinks its tasks');
+
+    /* home strip, persistence, backup, sync */
+    P.g(`S.ui.workView='home';render()`);
+    const homeTxt=P.$('#app').textContent;
+    ok(!/LATAM|EB1|Goals ·|check-in/i.test(homeTxt.replace(/\bGoals\b(?=\s*$)/m,''))&&!P.$('.hgoal')&&!P.$('[data-hv="goals"]'),'nothing from Goals on the work home screen');
+    ok(P.g(`JSON.parse(JSON.stringify(S)).goals.items.length`)===4,'backup (JSON of S) carries goals');
+    ok(P.g(`JSON.stringify(syncContent(S)).includes('EB1')`),'sync carries goals');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+    P=boot(NEW,st);
+    ok(P.g('S.goals.items.length')===4&&P.g('S.goals.heading').startsWith('Become')&&P.g('S.goals.rules.length')===2,'survives a reload');
+    P.g(`S.ui.workView='goals';save()`);P.close();P=boot(NEW,st);
+    ok(P.g('S.ui.workView')==='goals'&&!!P.$('#gheading'),'reopens on the Goals tab');
+    /* typing in Goals never fires the global keys */
+    P.$('#gheading').focus();P.key('2',P.$('#gheading'));P.key('t',P.$('#gheading'));
+    ok(P.g('S.ui.mode')==='work'&&!P.g('TOPEN'),'typing 2 or t in a goal field does not switch mode or open Sort');
+    /* every control responds */
+    const dead=[];
+    const sweep=(label,open,sel)=>{P.g(open);const n=P.$$(sel).length;
+      for(let k=0;k<n;k++){P.g(open);const b=P.$$(sel)[k];if(!b||b.classList.contains('on'))continue;
+        const before=P.g('JSON.stringify(S)'),html=P.$('body').innerHTML;P.click(b);
+        if(P.g('JSON.stringify(S)')===before&&!P.$('#dplayer').innerHTML&&P.$('body').innerHTML===html)dead.push(label+': '+b.textContent.trim().slice(0,30));
+        P.g('closeDP();closeSheet()')}};
+    sweep('goals tab',`closeSheet();S.ui.mode='work';S.ui.workView='goals';render()`,'#app .wrap > :not(.top):not(.nav):not(.foot) button, #app [data-gopen], #app [data-gredit]');
+    sweep('goal sheet',`closeSheet();gSheet(S.goals.items.find(x=>x.state==='active').id)`,'#mlayer button');
+    sweep('check-in',`closeSheet();gCheckSheet()`,'#mlayer button');
+    ok(dead.length===0,'no dead goal controls: '+dead.join(' | '));
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    await tick(30);P.close();
+  }
+
+  /* the work home screen is exactly what it was before Goals existed */
+  {
+    const seed=`add('Write the SOIP deck\\nReply to Pedro','work');S.ui.mode='work';S.ui.workView='home';save();render()`;
+    const A=boot(PRETOWN_HOME_REF,{});A.g(seed);const before=A.$('.home-grid').outerHTML.replace(/\s+/g,' ');A.close();
+    const B=boot(NEW,{});B.g(seed);B.g(`gAdd('File the EB1 application','now');S.goals.heading='Big direction';save();render()`);
+    const after=B.$('.home-grid').outerHTML.replace(/\s+/g,' ');B.close();
+    ok(after===before,'work home shows nothing from Goals, even with goals set');
+  }
+
+  /* ===================================================================== */
+  section('20. side by side with the live version ('+REF_REV+'): screens a change does not mean to touch stay identical');
+  {
+    const seed=TOWN_SEED+`;(()=>{const m=add('Write the SOIP deck\\nReply to Pedro\\nResearch prompts\\nPlan the shoot\\nOld idea','work');
+      m.forEach(i=>{i.sorted=true;i.lane='important'});assign('work','deep',m[0].id);assign('work','batch',m[1].id);assign('work','buffer',m[2].id);
+      setBucket(m[4],'backlog');m[3].done=true;m[3].doneAt=Date.now();save()})()`;
+    const views=[['work home',`S.ui.mode='work';S.ui.workView='home';render()`],['work today',`S.ui.mode='work';S.ui.workView='today';render()`],
+      ['work backlog',`S.ui.mode='work';S.ui.workView='backlog';render()`],
+      ...['home','today','ai','waiting','map'].map(v=>['town '+v,`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='${v}';render()`]),
+      ['town dept',`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='dept';S.ui.townDept='health';render()`],
+      ['north star',`S.ui.mode='personal';S.ui.personalView='north';render()`]];
+    /* random ids and spacing differ between runs; what you see must not */
+    const norm=h=>h.replace(/="[a-z0-9]{8}(:[a-z0-9]+)?"/g,'="ID"').replace(/\s+/g,' ').replace(/> </g,'><');
+    const snap=(code)=>{const st={};const P=boot(code,st);P.g(seed);const out={};
+      for(const [n,js] of views){P.g(js);const a=P.$('#app').cloneNode(true);a.querySelectorAll('.nav').forEach(e=>e.remove());
+        out[n]=norm(a.innerHTML)}
+      const wid=P.g(`S.items.find(i=>i.mode==='work'&&!i.done).id`);P.g(`S.ui.mode='work';render();openDetail('${wid}')`);
+      out['work task card']=norm(P.$('#mlayer').innerHTML);P.g('closeSheet()');
+      out.navWork=(P.g(`S.ui.mode='work';render()`),P.$$('.nav [data-v]').map(b=>b.textContent).join('|'));
+      out.navPersonal=(P.g(`S.ui.mode='personal';S.ui.personalView='town';render()`),P.$$('.nav [data-v]').map(b=>b.textContent).join('|'));
+      out.err=P.errors.join('|');P.close();return out};
+    /* ids differ between runs, so compare structure: strip ids, then text and markup must match */
+    const A=snap(PRETOWN_HOME_REF),B=snap(NEW);
+    const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
+    for(const [n] of views)ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])));
+    ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
+    ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
+    ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');
+    ok(!A.err&&!B.err,'no errors in either: '+A.err+B.err);
+  }
+
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
+  process.exit(0);
+})().catch(e=>{console.error('CRASH',e);process.exit(2)});
