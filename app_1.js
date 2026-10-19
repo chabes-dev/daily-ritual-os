@@ -1029,6 +1029,8 @@ function viewHome(m){
       <span class="ht-title">${ritualDone?'Ritual done':done.length?'Continue the ritual':'Begin the ritual'}</span>
       <span class="ht-meta">${done.length} of ${steps.length} steps</span>
     </button>
+    ${m==='work'?`<div class="hcopy"><button class="tlink" id="hcopy" title="Copies today’s plan — deep, batch, AI, spare — to paste anywhere">⧉ Copy today</button>
+      <span>${planText('work')?planText('work').split('\n').length+' on today’s plan':'nothing picked for today yet'}</span></div>`:''}
     <div class="home-row">
       <button class="hometile" data-hv="today">
         <span class="ht-label">${m==='personal'?'This week':'Today'}</span>
@@ -2666,6 +2668,8 @@ function tViewHome(){
         <span class="ht-title">${mv?'Continue today’s move':todayN?'Today is planned':'Plan today'}</span>
         <span class="ht-meta">${todayN?`${todayN} on today${mt?' · '+mt.name:''}`:n('week')+' on this week’s list'}</span></button>
     </div>
+    <div class="hcopy"><button class="tlink" id="tcopyall" title="Copies everything on today and this week’s list, one line each">⧉ Copy today + this week</button>
+      <span>${todayN} on today · ${n('week')-T.filter(i=>i.state==='week'&&tIsToday(i)).length} more this week</span></div>
     <div class="zdump tcap"><textarea id="tcap" rows="1" placeholder="Something on your mind? It goes to the inbox — ⏎"></textarea></div>
     ${moved?`<div class="zkept tmoved">${moved} task${moved===1?'':'s'} from the old personal board ${moved===1?'is':'are'} in the inbox — the weekly round sorts ${moved===1?'it':'them'}.</div>`:''}
     <div class="town-row">
@@ -3169,6 +3173,15 @@ function tzRound(change){
   const cp=document.getElementById('tzcopy');
   if(cp)cp.onclick=()=>tCopy(tPaperText());
 }
+/* the Town hall's one-tap copy: today first, then the rest of this week — one line each */
+function tTodayWeekText(){
+  const L=[],ph=weekPhrase();if(ph)L.push('THIS WEEK IS GOOD IF / '+ph);
+  const line=(lb,i)=>lb+' / '+i.title+(i.dept?' ('+tDept(i.dept).name+')':'')+(i.home?' · after work':tSize(i)?' · '+tSize(i).name:'');
+  const open=S.town.items.filter(i=>tOpen(i)&&(i.state==='week'||tIsToday(i))).sort(tOrder);
+  open.filter(tIsToday).forEach(i=>L.push(line('TODAY',i)));
+  open.filter(i=>!tIsToday(i)).forEach(i=>L.push(line('THIS WEEK',i)));
+  return L.length>(ph?1:0)?L.join('\n'):'';
+}
 function tPaperText(){
   const L=[],ph=weekPhrase();if(ph)L.push('THIS WEEK IS GOOD IF / '+ph,'');
   const week=S.town.items.filter(i=>i.state==='week').sort(tOrder);
@@ -3286,6 +3299,10 @@ function wire(){
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
   const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
+  const hc=document.getElementById('hcopy');
+  if(hc)hc.onclick=()=>{const t=planText('work');if(!t){toast('nothing picked for today yet');return}tCopy(t)};
+  const tc=document.getElementById('tcopyall');
+  if(tc)tc.onclick=()=>{const t=tTodayWeekText();if(!t){toast('nothing on today or this week yet');return}tCopy(t)};
   const hts=document.getElementById('hometile-spark');if(hts)hts.onclick=()=>window.open(SPARK_URL,'_blank');
   const nsp=document.getElementById('navspark');if(nsp)nsp.onclick=()=>window.open(SPARK_URL,'_blank');
   const htp=document.getElementById('hometile-phrase');
