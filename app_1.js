@@ -2110,12 +2110,14 @@ document.addEventListener('keydown',e=>{
 
 /* ===== goals (work mode) =====
    A place to step back from the daily board: where all this is going, goals on three horizons,
-   the ground rules that must stay straight, and a weekly check-in on whether the route is
-   working. Work tasks can point at a goal (i.goal) — optional — and the tab counts how much of
-   what you finished this week moved one, so auto mode shows up as a number, not a feeling. */
-const G_HOR=[{id:'now',name:'Now',hint:'the next weeks — what has to happen by a date'},
-  {id:'year',name:'This year',hint:'the next 12 months'},
-  {id:'far',name:'Further',hint:'3 to 5 years out — where this is heading'}];
+   the ground rules that must stay straight, and a check-in — whenever you need it, not on a
+   schedule — on whether the route is working. Work tasks can point at a goal (i.goal), optional,
+   and the tab shows how much of what's on your board right now moves one, so auto mode shows up
+   as a number, not a feeling. */
+const G_HOR=[{id:'now',name:'Now',hint:'the next weeks — what has to happen soon'},
+  {id:'q',name:'3 months',hint:'the next three months'},
+  {id:'long',name:'A year or more',hint:'where all this is heading'}];
+const G_HOR_OLD={year:'long',far:'long'};   /* the first version had This year and Further */
 const G_ROUTE=[{id:'moving',name:'Moving',color:'#1E8E3E'},{id:'drifting',name:'Drifting',color:'#E37400'},{id:'stuck',name:'Stuck',color:'#D93025'}];
 function initGoals(){
   const g=S.goals=Object.assign({heading:'',items:[],rules:[],lastCheck:null},S.goals||{});
@@ -2124,9 +2126,11 @@ function initGoals(){
   if(!Array.isArray(g.rules))g.rules=[];
   g.items=g.items.filter(x=>x&&x.id&&typeof x.title==='string'&&x.title.trim());
   g.items.forEach(x=>{
+    if(G_HOR_OLD[x.horizon])x.horizon=G_HOR_OLD[x.horizon];
     if(!G_HOR.some(h=>h.id===x.horizon))x.horizon='now';
     if(!['active','achieved','dropped'].includes(x.state))x.state='active';
     if(!Array.isArray(x.trail))x.trail=[];
+    x.trail.forEach(e=>{if(!e.date&&e.week)e.date=e.week;delete e.week});   /* check-ins were weekly once */
     if(x.route&&!G_ROUTE.some(r=>r.id===x.route))x.route=null;
     if(typeof x.why!=='string')x.why='';
     if(typeof x.next!=='string')x.next='';
@@ -2143,24 +2147,26 @@ function gAdd(title,horizon){
   S.goals.items.push(x);save();return x}
 /* the work tasks that point at a goal */
 const gTasks=id=>S.items.filter(i=>i.mode==='work'&&i.goal===id);
-/* what you finished this week, and how much of it moved a goal */
-function gWeek(){
-  const from=new Date(isoWeek()+'T00:00:00').getTime();
-  const done=S.items.filter(i=>i.mode==='work'&&i.done&&(i.doneAt||0)>=from);
-  return {done,moved:done.filter(i=>i.goal&&gById(i.goal))}}
+/* on purpose, currently: what's on the work board right now, and how much of it moves a goal;
+   plus what you finished in the last 7 days, for the trend */
+function gNow(){
+  const live=i=>i.goal&&gById(i.goal)&&gById(i.goal).state==='active';
+  const board=onBoard('work'),since=Date.now()-7*864e5;
+  const done=S.items.filter(i=>i.mode==='work'&&i.done&&(i.doneAt||0)>=since);
+  return {board,moving:board.filter(live),done,moved:done.filter(i=>i.goal&&gById(i.goal))}}
 const gSinceCheck=()=>S.goals.lastCheck?Math.floor((Date.now()-S.goals.lastCheck)/864e5):null;
-const gCheckDue=()=>{const d=gSinceCheck();return gActive().length>0&&(d===null||d>=7)};
 const gByLabel=x=>{if(!x.by)return '';const n=daysTo(x.by);
   return 'by '+tShort(x.by)+(n<0?' · '+Math.abs(n)+' days late':n===0?' · today':n<=60?' · '+n+' days':'')};
 const gMonthEnd=k=>{const d=new Date();d.setMonth(d.getMonth()+1+k,0);return d.toISOString().slice(0,10)};
+const gMonthsOut=k=>{const d=new Date();d.setMonth(d.getMonth()+k);return d.toISOString().slice(0,10)};
 /* the work task's link to a goal, shown on the today cards */
 const gTag=i=>{const x=i.goal&&gById(i.goal);return x?`<span class="tag ggoal" title="${esc(x.title)}">◎ ${esc(x.title)}</span>`:''};
 let GLETGO=false;
 function viewGoals(){
-  const G=S.goals,act=gActive(),wk=gWeek(),ds=gSinceCheck(),due=gCheckDue();
+  const G=S.goals,act=gActive(),cur=gNow(),ds=gSinceCheck();
   const wins=G.items.filter(x=>x.state==='achieved').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
   const gone=G.items.filter(x=>x.state==='dropped');
-  const pct=wk.done.length?Math.round(wk.moved.length/wk.done.length*100):0;
+  const pct=cur.board.length?Math.round(cur.moving.length/cur.board.length*100):0;
   const card=x=>{const r=gRoute(x),open=gTasks(x.id).filter(i=>!i.done).length,by=gByLabel(x);
     return `<div class="gcard" data-gopen="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
       <div class="gcard-t">${esc(x.title)}</div>
@@ -2170,21 +2176,21 @@ function viewGoals(){
         ${by?`<span class="${daysTo(x.by)<0?'late':''}">${by}</span>`:''}
         ${open?`<span>${open} task${open===1?'':'s'} on it</span>`:''}
         ${x.trail.length?`<span class="gtrail" title="the last weeks, oldest first">${x.trail.slice(-8).map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
-          return `<i style="background:${c?c.color:'var(--g300)'}"></i>`}).join('')}</span>`:''}</div></div>`};
+          return `<i style="background:${c?c.color:'var(--g300)'}" title="${tShort(e.date)}"></i>`}).join('')}</span>`:''}</div></div>`};
   return `
   <div class="planhead"><h2>Goals</h2><span>step back · where you’re going · is the route working</span></div>
   <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
     <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
   <div class="gpulse">
-    <button class="gbox gcheck ${due?'due':''}" id="gcheck">
-      <span class="ht-label">Weekly check-in</span>
-      <span class="gbig">${!act.length?'Add a goal first':ds===null?'Not done yet':due?'Due':ds===0?'Done today':ds===1?'Done yesterday':'Done '+ds+' days ago'}</span>
-      <span class="ht-meta">${due&&ds!==null?ds+' days since the last · ':''}is the route working? two minutes</span></button>
+    <button class="gbox gcheck" id="gcheck">
+      <span class="ht-label">Goals check-in</span>
+      <span class="gbig">${!act.length?'Add a goal first':ds===null?'Step back':'Step back again'}</span>
+      <span class="ht-meta">${ds===null?'whenever you need it':'last one '+(ds===0?'today':ds===1?'yesterday':ds+' days ago')} · is the route working?</span></button>
     <div class="gbox gmeter">
-      <span class="ht-label">On purpose this week</span>
-      <span class="gbig">${wk.done.length?wk.moved.length+' of '+wk.done.length:'—'}</span>
+      <span class="ht-label">On purpose, currently</span>
+      <span class="gbig">${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</span>
       <span class="gbar"><i style="width:${pct}%"></i></span>
-      <span class="ht-meta">${wk.done.length?'things you finished moved a goal':'nothing finished yet this week'} · link a task to a goal from its card</span></div>
+      <span class="ht-meta">${cur.board.length?'things on your board move a goal':'nothing on your board'}${cur.done.length?` · last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one`:''}</span></div>
   </div>
   <div class="ghor">${G_HOR.map(h=>{const L=act.filter(x=>x.horizon===h.id);
     return `<div class="gcol"><div class="slotlabel" style="margin-top:0">${h.name} — ${L.length}</div>
@@ -2193,7 +2199,7 @@ function viewGoals(){
       <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div>
   <div class="grules">
     <div class="slotlabel">Keep straight — ${G.rules.length}</div>
-    <div class="ghint">Ground rules for how you get there. Worth a read before the week starts.</div>
+    <div class="ghint">Ground rules for how you get there. Worth a read whenever you step back.</div>
     ${G.rules.map(r=>`<div class="grule"><span class="grule-t" data-gredit="${r.id}">${esc(r.text)}</span>
       <button class="act del" data-grdel="${r.id}" title="Remove">×</button></div>`).join('')}
     <input class="snew" id="gruleadd" placeholder="Add a ground rule — ⏎" /></div>
@@ -2209,7 +2215,7 @@ function gSheet(id){
   const draw=()=>{
     const x=gById(id);if(!x||!mlayer.contains(box)){closeSheet();return}
     const T=gTasks(id),open=T.filter(i=>!i.done),done=T.filter(i=>i.done);
-    const ends=[['End of this month',gMonthEnd(0)],['End of next month',gMonthEnd(1)],['End of the year',new Date().getFullYear()+'-12-31']];
+    const ends=[['End of this month',gMonthEnd(0)],['End of next month',gMonthEnd(1)],['In 3 months',gMonthsOut(3)],['In a year',gMonthsOut(12)]];
     const custom=x.by&&!ends.some(([,d])=>d===x.by);
     box.innerHTML=`
       <textarea class="dtext" id="gti" rows="1">${esc(x.title)}</textarea>
@@ -2227,7 +2233,7 @@ function gSheet(id){
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Is the route working?</div>
         <div class="chips">${G_ROUTE.map(r=>`<button class="chip ${x.route===r.id?'on':''}" data-grt="${r.id}" style="color:${r.color}"><b></b>${r.name}</button>`).join('')}</div>
         ${x.trail.length?`<div class="gtrailrows">${x.trail.slice(-6).reverse().map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
-          return `<div class="gtr"><span class="gtr-w">week of ${tShort(e.week)}</span><span style="color:${c?c.color:'var(--ink-3)'}">● ${c?c.name:'—'}</span>${e.note?`<span class="gtr-n">${esc(e.note)}</span>`:''}</div>`}).join('')}</div>`:''}</div>
+          return `<div class="gtr"><span class="gtr-w">${tShort(e.date)}</span><span style="color:${c?c.color:'var(--ink-3)'}">● ${c?c.name:'—'}</span>${e.note?`<span class="gtr-n">${esc(e.note)}</span>`:''}</div>`}).join('')}</div>`:''}</div>
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Tasks on it ${T.length?`— ${open.length} open · ${done.length} done`:''}</div>
         ${open.map(i=>`<div class="gtask" data-gtopen="${i.id}">${esc(i.text)}</div>`).join('')}
         ${done.slice(-3).map(i=>`<div class="gtask done">✓ ${esc(i.text)}</div>`).join('')}
@@ -2261,15 +2267,16 @@ function gSheet(id){
   draw();
   SHEET_CLOSE=()=>render();
 }
-/* the weekly check-in: two minutes, every active goal, moving / drifting / stuck + a line */
+/* the goals check-in: whenever you need to step back — every active goal, moving / drifting /
+   stuck, a line and the next step. Checking in twice on one day keeps the latest. */
 function gCheckSheet(){
-  const act=G_HOR.flatMap(h=>gActive().filter(x=>x.horizon===h.id)),wk=isoWeek();
+  const act=G_HOR.flatMap(h=>gActive().filter(x=>x.horizon===h.id)),wk=today();
   const box=tSheetBox(true);
-  if(!act.length){box.innerHTML=`<h3>Weekly check-in</h3><p>Add a goal first — then this is where you ask, once a week, whether the route is working.</p>
+  if(!act.length){box.innerHTML=`<h3>Goals check-in</h3><p>Add a goal first — then this is where you step back and ask whether the route is working.</p>
     <div class="sheet-acts"><button class="btn btn-hot" id="gcok">OK</button></div>`;box.querySelector('#gcok').onclick=closeSheet;return}
-  const ans={};act.forEach(x=>{const e=x.trail.find(t=>t.week===wk);ans[x.id]={route:e?e.route:null,note:e?e.note||'':'',next:x.next||''}});
+  const ans={};act.forEach(x=>{const e=x.trail.find(t=>t.date===wk);ans[x.id]={route:e?e.route:null,note:e?e.note||'':'',next:x.next||''}});
   const draw=()=>{
-    box.innerHTML=`<h3>Weekly check-in</h3>
+    box.innerHTML=`<h3>Goals check-in</h3>
       <p>Step back for two minutes. For each one: is the route working — and what’s the next move?</p>
       ${act.map(x=>`<div class="gci">
         <div class="gci-t">${esc(x.title)} <span>${gHor(x.horizon).name}</span></div>
@@ -2289,8 +2296,8 @@ function gCheckSheet(){
       if(!rated.length){toast('rate at least one — moving, drifting or stuck');return}
       act.forEach(x=>{const a=ans[x.id];x.next=a.next.trim();
         if(!a.route)return;
-        x.route=a.route;x.trail=x.trail.filter(t=>t.week!==wk);x.trail.push({week:wk,route:a.route,note:a.note.trim()});
-        x.trail.sort((p,q)=>p.week<q.week?-1:1)});
+        x.route=a.route;x.trail=x.trail.filter(t=>t.date!==wk);x.trail.push({date:wk,route:a.route,note:a.note.trim()});
+        x.trail.sort((p,q)=>p.date<q.date?-1:1)});
       S.goals.lastCheck=Date.now();save();closeSheet();render();
       const stuck=rated.filter(x=>ans[x.id].route==='stuck').length;
       toast(stuck?'saved — '+stuck+' stuck: give '+(stuck===1?'it':'one')+' a next step this week':'check-in saved');

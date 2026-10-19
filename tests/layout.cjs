@@ -42,12 +42,12 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
       assign('work','deep',made[0].id);assign('work','batch',made[1].id);assign('work','buffer',made[2].id);assign('work','next',made[3].id);
       if(typeof gAdd==='function'){
         S.goals.heading='Become the undeniable creative engine for LATAM — and build the life where we choose where we live.';
-        const a=gAdd('File the EB1 application with the lawyer before the end of November','now');a.why='Freedom to choose. The window will not stay open.';a.next='Book the call with the lawyer';a.by=D(42);a.route='stuck';a.trail=[{week:'2026-10-05',route:'drifting',note:''},{week:'2026-10-12',route:'stuck',note:'no reply'}];
+        const a=gAdd('File the EB1 application with the lawyer before the end of November','now');a.why='Freedom to choose. The window will not stay open.';a.next='Book the call with the lawyer';a.by=D(42);a.route='stuck';a.trail=[{date:'2026-10-05',route:'drifting',note:''},{date:'2026-10-12',route:'stuck',note:'no reply'}];
         const b=gAdd('New portfolio online','now');b.route='moving';b.by=D(42);
         gAdd('Two new exciting briefs on the table','now');
-        const c=gAdd('Lead SOIP MX and the big BR Relax campaign','year');c.why='Proof that I can carry the region.';
-        gAdd('Be the obvious successor if Rafa leaves','year');
-        gAdd('Creative lead for LATAM, then the US','far');
+        const c=gAdd('Lead SOIP MX and the big BR Relax campaign','q');c.why='Proof that I can carry the region.';
+        gAdd('Be the obvious successor if Rafa leaves','long');
+        gAdd('Creative lead for LATAM, then the US','long');
         S.goals.rules.push({id:nid(),text:'Rafa is an ally. Never fight — keep bringing value.'},{id:nid(),text:'Make my value obvious to Luana and Pedro.'});
         const ws=S.items.filter(i=>i.mode==='work');ws[0].goal=a.id;ws[1].goal=c.id;
       }
