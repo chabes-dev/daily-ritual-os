@@ -978,6 +978,99 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     await tick(30);P.close();
   }
 
+  /* ===================================================================== */
+  section('23. sync: merge instead of asking; housekeeping is not an edit');
+  {
+    let P=boot(NEW,{});
+    const M=(b,l,r)=>JSON.parse(P.g(`JSON.stringify(syncMerge3(${JSON.stringify(b)},${JSON.stringify(l)},${JSON.stringify(r)},''))`));
+    const t=(id,text,x)=>Object.assign({id,text},x||{});
+    ok(JSON.stringify(M({a:1},{a:2},{a:2}))==='{"v":{"a":2}}','same change on both → no question');
+    ok(JSON.stringify(M({a:1,b:1},{a:2,b:1},{a:1,b:3}))==='{"v":{"a":2,"b":3}}','different fields → both kept');
+    let r=M({items:[t('1','A'),t('2','B')]},{items:[t('1','A edited'),t('2','B')]},{items:[t('1','A'),t('2','B done',{done:true})]});
+    ok(JSON.stringify(r.v.items)==='[{"id":"1","text":"A edited"},{"id":"2","text":"B done","done":true}]','different tasks edited on each device → both edits');
+    r=M({items:[t('1','A')]},{items:[t('1','A'),t('2','new here')]},{items:[t('1','A'),t('3','new there')]});
+    ok(r.v.items.map(x=>x.id).join()==='1,2,3','a new task on each device → both kept');
+    r=M({items:[t('1','A'),t('2','B')]},{items:[t('2','B')]},{items:[t('1','A'),t('2','B edited there')]});
+    ok(r.v.items.map(x=>x.id+x.text).join()==='2B edited there','deleted here, untouched there → stays deleted (while other edits merge)');
+    r=M({items:[t('1','A'),t('2','B')]},{items:[t('2','B')]},{items:[t('1','A edited there'),t('2','B')]});
+    ok(r.v.items.some(x=>x.text==='A edited there'),'deleted here but edited there → kept (nothing lost)');
+    ok(M({items:[t('1','A')]},{items:[t('1','X')]},{items:[t('1','Y')]}).clash===true,'the same task renamed two ways → a real clash');
+    ok(JSON.stringify(M({x:{movedAt:1}},{x:{movedAt:5}},{x:{movedAt:9}}))==='{"v":{"x":{"movedAt":9}}}','a clock field changed on both → the later one');
+    r=M({reset:{at:1,avoiding:'',moved:{}}},{reset:{at:2,avoiding:'The deck',moved:{}}},{reset:{at:2,avoiding:'',moved:{water:true}}});
+    ok(JSON.stringify(r.v.reset)==='{"at":2,"avoiding":"The deck","moved":{"water":true}}','energy reset: Mac typed, phone ticked → both');
+    ok(M(null,{a:1},{a:2}).clash===true&&JSON.stringify(M(null,{a:1,b:2},{a:1,c:3}))==='{"v":{"a":1,"b":2,"c":3}}','no saved base: still merges what doesn’t collide');
+    P.close();
+
+    /* in the app: a pull while this device has edits → merged, uploaded, no question */
+    const st={};P=boot(NEW,st);
+    P.g(`add('Shared task','work');add('Will be edited on the Mac','work');save()`);
+    const baseS=JSON.parse(P.g('JSON.stringify(syncContent(S))'));
+    P.g(`window.__put=[];window.__reloads=0;
+      syncOpen=async(k,remote)=>JSON.parse(JSON.stringify(remote.data));
+      syncSeal=async(k,data)=>data;
+      syncPut=async(id,etag,payload)=>{__put.push({etag,payload});return {etag:'e3'}};
+      syncReload=()=>{__reloads++};
+      syncBaseSet(syncContent(S));
+      SY={id:'x',k:'k',etag:'e1',dirty:true,h:null,at:null};syncSave()`);
+    /* this device: a new task. the Mac: edited another task. */
+    P.g(`add('Added on the phone','work');save()`);
+    const macS=JSON.parse(JSON.stringify(baseS));macS.items.find(i=>i.text==='Will be edited on the Mac').text='Edited on the Mac';
+    P.g(`window.__remote={etag:'e2',device:'Mac',savedAt:Date.now(),data:${JSON.stringify(macS)}};syncGet=async()=>__remote`);
+    P.g('syncPull()');await tick(30);
+    const put=JSON.parse(P.g('JSON.stringify(__put)'));
+    ok(put.length===1&&put[0].etag==='e2','merged copy uploaded on top of the Mac’s version');
+    ok(put[0].payload.items.some(i=>i.text==='Added on the phone')&&put[0].payload.items.some(i=>i.text==='Edited on the Mac'),'… holding both changes');
+    const saved=JSON.parse(st.os_v3);
+    ok(saved.items.some(i=>i.text==='Edited on the Mac')&&saved.items.some(i=>i.text==='Added on the phone')&&saved.ui,'this device now has both, its open tab kept');
+    ok(P.g('__reloads')===1&&!P.$('#mlayer h3'),'… reloads quietly — no pop-up');
+    ok(P.g('SY.etag')==='e3'&&P.g('SY.dirty')===false&&JSON.parse(st.os_sync_base).items.length===3,'sync state and base updated');
+    /* the pop-up's case: both sides "changed" but the content is the same */
+    P.g(`__put=[];__reloads=0;SY.etag='e3';SY.dirty=true;syncSave();
+      __remote={etag:'e4',device:'Mac',savedAt:Date.now(),data:JSON.parse(JSON.stringify(syncContent(S)))}`);
+    P.g('syncPull()');await tick(30);
+    ok(P.g('__put.length')===0&&P.g('__reloads')===0&&!P.$('#mlayer h3')&&P.g('SY.etag')==='e4'&&P.g('SY.dirty')===false,'identical content → settled silently: no upload, no reload, no pop-up');
+    /* a real clash still asks */
+    P.g(`const i=S.items.find(i=>i.text==='Shared task');syncBaseSet(syncContent(S));i.text='Phone name';SY.dirty=true;syncSave();save();
+      const d=JSON.parse(JSON.stringify(syncContent(S)));d.items.find(x=>x.id===i.id).text='Mac name';
+      __remote={etag:'e5',device:'Mac',savedAt:Date.now(),data:d}`);
+    P.g('syncPull()');await tick(30);
+    ok(P.$('#mlayer h3')&&P.$('#mlayer h3').textContent==='Both devices changed things'&&P.$('#mlayer p').textContent.includes('the same thing in different ways'),'the same thing changed two ways → still asks');
+    P.click('#mlayer #syuse');await tick(30);
+    ok(P.g('__reloads')===1,'… and either choice works');
+    /* a normal upload remembers what both sides now agree on */
+    P.g(`closeSheet();__put=[];syncPut=async(id,etag,payload)=>{__put.push({etag,payload});return {etag:'e5b'}};
+      SY.etag='e5a';SY.dirty=true;syncSave();add('Plain push','work')`);
+    P.g('syncPush()');await tick(30);
+    ok(JSON.parse(st.os_sync_base).items.some(i=>i.text==='Plain push')&&P.g('SY.etag')==='e5b','after an upload, the agreed copy is saved for the next merge');
+    /* a push that hits a newer copy merges too */
+    P.g(`__put=[];__reloads=0;closeSheet();syncBaseSet(syncContent(S));SY.etag='e6';SY.dirty=true;syncSave();
+      add('Pushed from here','work');
+      const d=JSON.parse(JSON.stringify(syncContent(S)));d.items=d.items.filter(i=>i.text!=='Pushed from here');d.items.push({id:'mac1',text:'Mac new',mode:'work',done:false,created:1,ord:1,bucket:'board',sorted:false,steps:[]});
+      window.__cur={etag:'e7',device:'Mac',savedAt:Date.now(),data:d};let first=true;
+      syncPut=async(id,etag,payload)=>{__put.push({etag,payload});if(first){first=false;return {conflict:true,current:__cur}}return {etag:'e8'}}`);
+    P.g('syncPush()');await tick(40);
+    const p2=JSON.parse(P.g('JSON.stringify(__put)'));
+    ok(p2.length===2&&p2[1].etag==='e7'&&p2[1].payload.items.some(i=>i.text==='Mac new')&&p2[1].payload.items.some(i=>i.text==='Pushed from here'),'a rejected upload is merged and sent again');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.g('SY=null;syncSave()');P.close();
+
+    /* housekeeping on load (a finished focus timer) does not become an "edit" on the next tap */
+    const hk={};P=boot(NEW,hk);
+    P.g(`S.focus={until:Date.now()+300,move:'x',from:Date.now()};save();
+      SY={id:'x',k:'k',etag:'e1',dirty:false,h:syncHash(JSON.stringify(syncContent(S))),at:null};syncSave()`);
+    P.close();await tick(400);
+    P=boot(NEW,hk);
+    ok(P.g('S.focus')===null,'the finished timer is tidied away on load');
+    P.g(`LAST_INPUT=Date.now();S.ui.workView='today';save()`);
+    ok(P.g('SY.dirty')===false,'… and the next tap does not mark this device as changed');
+    P.g(`S.ritual.work=['w1','w2'];S.ritual.workDate='2000-01-01';LAST_INPUT=0;save();syncRebase();DAY='2000-01-01';LAST_INPUT=Date.now();checkDay()`);
+    ok(P.g('S.ritual.work.length')===0,'(the new day really did reset things)');
+    ok(P.g('SY.dirty')===false,'a new day’s reset right after a tap is not an edit either');
+    P.g(`LAST_INPUT=Date.now();add('A real edit','work');save()`);
+    ok(P.g('SY.dirty')===true,'a real edit still counts');
+    P.g('SY=null;syncSave()');await tick(30);P.close();
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
   process.exit(0);
