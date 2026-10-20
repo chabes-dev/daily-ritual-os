@@ -2500,11 +2500,12 @@ const RNOTE={close:'Everything there can wait. Close them, then tap the button.'
   enter:'Small enough to start right now — walking back or at the desk.'};
 const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air']];
 const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['music','The soundtrack'],['reel','Reel']];
-const RDEF={claude:'https://claude.ai/projects',music:'https://www.youtube.com/@flavourtrip/videos',reel:REEL_URL,protect:60,talk:10,focus:25};
+const RDEF={claude:'https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207',music:'https://www.youtube.com/@flavourtrip/videos',reel:REEL_URL,protect:60,talk:10,focus:25};
 const RLIVE_H=3;   /* a reset older than this no longer opens by itself */
 function initReset(){
   const c=S.resetCfg=Object.assign({},RDEF,S.resetCfg||{});
   ['claude','music','reel'].forEach(k=>{if(typeof c[k]!=='string'||!/^https?:\/\//.test(c[k]))c[k]=RDEF[k]});
+  if(c.claude==='https://claude.ai/projects')c.claude=RDEF.claude;   /* the first placeholder → your therapy-talks project */
   ['protect','talk','focus'].forEach(k=>{c[k]=Math.round(+c[k]);if(!(c[k]>=1&&c[k]<=240))c[k]=RDEF[k]});
   if(!Array.isArray(S.resetLog))S.resetLog=[];
   const r=S.reset;
