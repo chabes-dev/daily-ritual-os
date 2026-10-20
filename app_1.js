@@ -507,7 +507,8 @@ const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
    device. From it the browser derives (PBKDF2) an AES key and an anonymous storage id, then
    uploads only ciphertext to /api/sync. What syncs is everything except S.ui (which tab is
    open on this device). The server only accepts a write if nobody else saved in between
-   (etag); when both devices changed, you choose which version to keep.
+   (etag). When both devices changed, the two are merged field by field against the last
+   synced copy (os_sync_base) — only a true clash, the same thing changed two ways, asks you.
    Local device state lives in its own key (os_sync): {id, k, etag, dirty, h, at}. */
 const SYNC_KEY='os_sync',SYNC_SALT='ritual-os/sync/v1',SYNC_ITER=310000;
 SY=(()=>{try{const v=JSON.parse(localStorage.getItem(SYNC_KEY));return v&&v.id&&v.k?v:null}catch(e){return null}})();
@@ -516,6 +517,67 @@ let SYNC_STATUS=SY?'idle':'off',SYNC_PUSH_T=null,SYNC_BUSY=false,SYNC_N=0;
 ['pointerdown','keydown','input','change'].forEach(t=>document.addEventListener(t,()=>{LAST_INPUT=Date.now()},true));
 function syncSave(){try{if(SY)localStorage.setItem(SYNC_KEY,JSON.stringify(SY));else localStorage.removeItem(SYNC_KEY)}catch(e){}}
 function syncReload(){location.reload()}
+/* the last copy both sides agreed on — what a merge compares each side against */
+const SYNC_BASE='os_sync_base';
+function syncBaseSet(data){try{localStorage.setItem(SYNC_BASE,JSON.stringify(data))}catch(e){}}
+function syncBaseGet(){try{return JSON.parse(localStorage.getItem(SYNC_BASE))}catch(e){return null}}
+/* the app's own housekeeping (a new day, a finished timer, a new version's defaults) is not
+   an edit: when nothing is pending, the current content becomes the baseline */
+function syncRebase(){if(SY&&!SY.dirty){SY.h=syncHash(JSON.stringify(syncContent(S)));syncSave()}}
+/* three-way merge: b = last synced, l = this device, r = the other device.
+   Returns {v} or {clash:true}. Lists of things with an id (tasks, Town items, cycles, goals,
+   rules, steps) merge item by item; a clock field changed on both sides keeps the later one. */
+const SYNC_TIMEKEY=/(At|^at|Until|^until|^lastVisit|^lastCheck|^lastRound|^lastBackup)$/;
+function syncMerge3(b,l,r,key){
+  const J=x=>JSON.stringify(x);
+  if(J(l)===J(r))return {v:l};
+  if(J(l)===J(b))return {v:r};
+  if(J(r)===J(b))return {v:l};
+  const idList=x=>Array.isArray(x)&&x.every(e=>e&&typeof e==='object'&&!Array.isArray(e)&&e.id!=null);
+  if(idList(l)&&idList(r)&&(b==null||idList(b))){
+    const B=new Map((b||[]).map(e=>[e.id,e])),L=new Map(l.map(e=>[e.id,e])),R=new Map(r.map(e=>[e.id,e])),out=[];
+    for(const e of l){
+      if(R.has(e.id)){const m=syncMerge3(B.get(e.id),e,R.get(e.id),key);if(m.clash)return m;out.push(m.v)}
+      else if(!B.has(e.id)||J(e)!==J(B.get(e.id)))out.push(e);   /* new here, or edited here while deleted there: keep it */
+    }
+    r.forEach(e=>{if(L.has(e.id))return;
+      if(B.has(e.id)&&J(e)===J(B.get(e.id)))return;               /* deleted here, untouched there */
+      out.push(e)});                                              /* new there (or edited there while deleted here) */
+    return {v:out};
+  }
+  const obj=x=>x&&typeof x==='object'&&!Array.isArray(x);
+  if(obj(l)&&obj(r)){
+    const out={},B=obj(b)?b:{};
+    for(const k of new Set([...Object.keys(l),...Object.keys(r)])){
+      const m=syncMerge3(B[k],l[k],r[k],k);if(m.clash)return m;
+      if(m.v!==undefined)out[k]=m.v}
+    return {v:out};
+  }
+  if(typeof l==='number'&&typeof r==='number'&&SYNC_TIMEKEY.test(key||''))return {v:Math.max(l,r)};
+  return {clash:true};
+}
+/* both devices changed: merge if the changes don't collide, otherwise ask */
+async function syncResolve(remote){
+  let other=null;try{other=await syncOpen(SY.k,remote)}catch(e){}
+  const base=syncBaseGet(),mine=syncContent(S);
+  if(!other)return syncConflict(remote,null);
+  const m=syncMerge3(base,mine,syncContent(other),'');
+  if(m.clash)return syncConflict(remote,other);
+  const merged=m.v,same=JSON.stringify(merged)===JSON.stringify(syncContent(other));
+  try{
+    let etag=remote.etag;
+    if(!same){const r=await syncPut(SY.id,remote.etag,await syncSeal(SY.k,merged));
+      if(r.conflict){syncStatus('pending');SYNC_PUSH_T=setTimeout(()=>syncPull(),1500);return}   /* moved again meanwhile: start over */
+      etag=r.etag}
+    const changedHere=JSON.stringify(merged)!==JSON.stringify(mine);
+    SY.etag=etag;SY.dirty=false;SY.at=Date.now();SY.h=syncHash(JSON.stringify(merged));syncSave();syncBaseSet(merged);
+    if(!changedHere){syncStatus('idle');return}
+    const data=Object.assign({},merged);data.ui=S.ui;
+    localStorage.setItem(KEY,JSON.stringify(data));
+    try{sessionStorage.setItem('os_synced','merged with your '+(remote.device||'other device'))}catch(e){}
+    syncReload();
+  }catch(e){syncStatus('offline')}
+}
 const syncContent=s=>{const o=Object.assign({},s);delete o.ui;return o};
 function syncHash(str){let h=5381;for(let i=0;i<str.length;i++)h=(h*33^str.charCodeAt(i))>>>0;return h.toString(36)+':'+str.length}
 const syncDevice=()=>{const u=navigator.userAgent||'';return /iPhone/.test(u)?'iPhone':/iPad/.test(u)?'iPad':/Android/.test(u)?'Android':/Mac/.test(u)?'Mac':/Windows/.test(u)?'Windows':'another device'};
@@ -575,9 +637,9 @@ async function syncPush(force){
     if(r.conflict){
       SYNC_BUSY=false;
       if(!r.current){SY.etag=null;syncSave();return syncPush(true)}   /* the stored copy vanished: recreate it */
-      return syncConflict(r.current);
+      return syncResolve(r.current);
     }
-    SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();
+    SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();syncBaseSet(data);
     if(SYNC_N===n)SY.dirty=false;
     syncSave();SYNC_BUSY=false;syncStatus(SY.dirty?'pending':'idle');
     if(SY.dirty)SYNC_PUSH_T=setTimeout(()=>syncPush(),1500);
@@ -592,7 +654,7 @@ async function syncPull(){
     if(!remote){SY.etag=null;syncSave();return syncPush(true)}
     if(remote.etag===SY.etag){syncStatus(SY.dirty?'pending':'idle');if(SY.dirty)syncPush();return}
     if(!SY.dirty)return syncApply(remote);
-    syncConflict(remote);
+    syncResolve(remote);
   }catch(e){SYNC_BUSY=false;syncStatus('offline')}
 }
 /* take the synced copy: keep this device's open tab, reload so every migration runs on it */
@@ -601,19 +663,19 @@ async function syncApply(remote,msg){
   let ui=null;try{ui=(JSON.parse(localStorage.getItem(KEY))||{}).ui||null}catch(e){}
   if(ui)data.ui=ui;
   localStorage.setItem(KEY,JSON.stringify(data));
-  SY.etag=remote.etag;SY.dirty=false;SY.at=Date.now();SY.h=syncHash(JSON.stringify(syncContent(data)));syncSave();
+  SY.etag=remote.etag;SY.dirty=false;SY.at=Date.now();SY.h=syncHash(JSON.stringify(syncContent(data)));syncSave();syncBaseSet(syncContent(data));
   try{sessionStorage.setItem('os_synced',msg||'updated from your '+(remote.device||'other device'))}catch(e){}
   syncReload();
 }
 const syncSummary=d=>{const t=(d.town&&d.town.items)||[],w=(d.items||[]).filter(i=>i.mode==='work'&&!i.done);
   return `${w.length} open work task${w.length===1?'':'s'} · ${t.filter(i=>!['done','dropped'].includes(i.state)).length} open in Town`};
 const syncWhen=ts=>ts?new Date(ts).toLocaleString(undefined,{weekday:'short',hour:'2-digit',minute:'2-digit'}):'—';
-/* both devices changed since they last synced: you choose, nothing is merged silently */
-async function syncConflict(remote){
+/* a true clash — the same thing changed two different ways: you choose */
+async function syncConflict(remote,other){
   syncStatus('conflict');
-  let other=null;try{other=await syncOpen(SY.k,remote)}catch(e){}
+  if(other===undefined){other=null;try{other=await syncOpen(SY.k,remote)}catch(e){}}
   sheet(`<h3>Both devices changed things</h3>
-    <p>This device and your ${esc(remote.device||'other device')} were both edited since they last synced. Pick the version to keep — the other one is replaced everywhere.</p>
+    <p>This device and your ${esc(remote.device||'other device')} changed the same thing in different ways. Pick the version to keep — the other one is replaced everywhere.</p>
     <div class="syncpick"><div><b>This device</b><span>${esc(syncSummary(S))}</span></div>
       <div><b>${esc(remote.device||'Other device')} · saved ${esc(syncWhen(remote.savedAt))}</b><span>${other?esc(syncSummary(other)):'(couldn’t read it)'}</span></div></div>
     <p style="font-size:14px;color:var(--ink-3)">Not sure? Tap <b>↓ Export backup</b> first — that saves this device’s version as a file.</p>
@@ -635,7 +697,7 @@ function syncSheet(){
       el.querySelector('#synow').onclick=()=>{closeSheet();if(SY.dirty)syncPush();else syncPull()};
       el.querySelector('#syoff').onclick=()=>sheetConfirm('Turn off sync on this device?',
         'Your data stays on this device. Other devices keep syncing with each other. You can turn it back on with the same passphrase.','Turn off',
-        ()=>{SY=null;syncSave();syncStatus('off');toast('sync off on this device')})});
+        ()=>{SY=null;syncSave();try{localStorage.removeItem(SYNC_BASE)}catch(e){}syncStatus('off');toast('sync off on this device')})});
     return;
   }
   sheet(`<h3>☁ Sync your devices</h3>
@@ -2057,7 +2119,7 @@ function checkDay(){
   if(S.adCheck.date!==DAY)S.adCheck={date:DAY,answer:null};
   if(S.personal.todayPick&&S.personal.todayPick.date!==DAY)S.personal.todayPick=null;
   const moved=migrateStaleBacklog();
-  save();render();toast('new day — ritual reset');
+  LAST_INPUT=0;save();syncRebase();render();toast('new day — ritual reset');
   if(moved)toast(moved+' backlog item'+(moved===1?'':'s')+' moved to Wishes');
 }
 setInterval(checkDay,30000);
@@ -4010,5 +4072,6 @@ function wire(){
   wireGoals();
 }
 render();
+syncRebase();   /* load-time tidying (migrations, a finished timer) is not an edit */
 syncStart();
 if(rLive()&&!ZEN&&!TZ)tzOpen('reset');
