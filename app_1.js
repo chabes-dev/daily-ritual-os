@@ -691,6 +691,8 @@ function syncStart(){
   document.addEventListener('visibilitychange',()=>{if(!SY)return;
     if(document.hidden){if(SY.dirty){clearTimeout(SYNC_PUSH_T);syncPush()}}else syncPull()});
   window.addEventListener('online',()=>{if(SY){if(SY.dirty)syncPush();else syncPull()}});
+  /* back at the desk with this tab already in front: no visibility change, so catch up on focus */
+  window.addEventListener('focus',()=>{if(SY&&!SY.dirty&&!SYNC_BUSY)syncPull()});
 }
 
 
@@ -987,6 +989,7 @@ function render(){
       <div class="ledger">${'<i></i>'.repeat(Math.min(otherN,20))||'<i style="opacity:.15"></i>'} ${otherN} held in ${other}</div>
     </div>
     ${!STORE_OK?`<div class="alarm"><b>This copy can't save.</b> Storage is blocked here. Download the file and open it from your own machine.</div>`:''}
+    ${resetBar()}
     ${healed?`<div class="alarm">${healed} item${healed===1?'':'s'} were filed under a category that no longer exists. They're back in the sort queue.</div>`:''}
     ${wishMoved?`<div class="alarm">${wishMoved} item${wishMoved===1?'':'s'} moved from the backlog to Wishes after ${WISH_AFTER_DAYS} quiet days there.</div>`:''}
     <div class="nav">
@@ -1028,11 +1031,19 @@ function viewHome(m){
       <span class="ht-label">💛 What would make this week good</span>
       <span class="ht-title">${phrase?esc(phrase):'Not set yet — tap to choose one thing'}</span>
     </button>`:''}
+    ${m==='work'?'<div class="home-rituals">':''}
     <button class="hometile hometile-ritual" id="hometile-ritual">
       <span class="ht-label">${m==='personal'?'Personal':'Work'} ritual</span>
       <span class="ht-title">${ritualDone?'Ritual done':done.length?'Continue the ritual':'Begin the ritual'}</span>
       <span class="ht-meta">${done.length} of ${steps.length} steps</span>
     </button>
+    ${m==='work'?`<div class="hreset"><button class="hometile hometile-reset" id="hometile-reset">
+        <span class="ht-label">⚡ Energy reset</span>
+        <span class="ht-title">${S.reset?'Continue the reset':S.focus?'Focus':'Stuck? Reset'}</span>
+        <span class="ht-meta">${S.reset?'step '+(S.reset.at+1)+' of '+RSTEPS.length
+          :S.focus?`<span data-until="${S.focus.until}" data-over="done">${rLeft(S.focus.until-Date.now())}</span> left${S.focus.move?' · '+esc(S.focus.move):''}`
+          :'when procrastination wins · '+RSTEPS.length+' steps'}</span></button>
+      <button class="zlink" id="rsettings">links &amp; timers</button></div></div>`:''}
     ${m==='work'?`<div class="hcopy"><button class="tlink" id="hcopy" title="Copies today’s plan — deep, batch, AI, spare — to paste anywhere">⧉ Copy today</button>
       <span>${planText('work')?planText('work').split('\n').length+' on today’s plan':'nothing picked for today yet'}</span></div>`:''}
     <div class="home-row">
@@ -2469,6 +2480,193 @@ function wireGoals(){
   const lg=document.getElementById('gletgo');if(lg)lg.onclick=()=>{GLETGO=!GLETGO;render()};
 }
 
+/* ===== energy reset (work mode) =====
+   For when procrastination takes over. A pit stop, not a lap: cut the distractions, name what
+   you're avoiding, get up and move, talk it out loud with Claude, soundtrack on, (Reel), then a
+   first two-minute move and a focus timer. It starts at the desk and follows you to the phone:
+   its state lives in S.reset (synced, unlike S.ui), and opening the app anywhere while a reset is
+   running drops you back on the same step. Timers count from the clock (an end time), so a locked
+   phone or a trip to another app never loses them. Nothing is counted against you. */
+const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'name',name:'What are you avoiding?'},
+  {id:'move',name:'Get the blood moving'},{id:'talk',name:'Talk it out — out loud'},
+  {id:'music',name:'Put on a soundtrack'},{id:'reel',name:'Remember why you save ideas'},
+  {id:'enter',name:'What’s the first 2-minute move?'}];
+const RNOTE={close:'Everything there can wait. Close them, then tap the button.',
+  name:'One line. Naming it shrinks it.',
+  move:'Leave the desk. Take your phone — this follows you.',
+  talk:'Open Claude in voice and say it out loud: what’s stuck, then who you want to become.',
+  music:'Something that lifts you.',
+  reel:'Optional. Look at what you saved — and why: you want to make work at that level one day.',
+  enter:'Small enough to start right now — walking back or at the desk.'};
+const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air']];
+const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['music','The soundtrack'],['reel','Reel']];
+const RDEF={claude:'https://claude.ai/projects',music:'https://www.youtube.com/@flavourtrip/videos',reel:REEL_URL,protect:60,talk:10,focus:25};
+const RLIVE_H=3;   /* a reset older than this no longer opens by itself */
+function initReset(){
+  const c=S.resetCfg=Object.assign({},RDEF,S.resetCfg||{});
+  ['claude','music','reel'].forEach(k=>{if(typeof c[k]!=='string'||!/^https?:\/\//.test(c[k]))c[k]=RDEF[k]});
+  ['protect','talk','focus'].forEach(k=>{c[k]=Math.round(+c[k]);if(!(c[k]>=1&&c[k]<=240))c[k]=RDEF[k]});
+  if(!Array.isArray(S.resetLog))S.resetLog=[];
+  const r=S.reset;
+  if(r&&(typeof r!=='object'||typeof r.at!=='number'||!RSTEPS[r.at]||!r.startedAt))S.reset=null;
+  if(S.reset){S.reset.moved=S.reset.moved||{};S.reset.helped=Array.isArray(S.reset.helped)?S.reset.helped:[]}
+  /* the focus that follows a reset: just an end time, dropped once it's over */
+  if(S.focus&&!(S.focus.until>Date.now()))S.focus=null;
+}
+initReset();
+const rLive=()=>S.reset&&Date.now()-S.reset.startedAt<RLIVE_H*36e5;
+const rClock=ts=>new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+const rLeft=ms=>{const s=Math.max(0,Math.ceil(ms/1000));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+/* counts down every [data-until] on screen, wherever it is */
+setInterval(()=>{document.querySelectorAll('[data-until]').forEach(el=>{
+  const left=+el.dataset.until-Date.now();
+  if(left>0){el.textContent=rLeft(left);return}
+  el.textContent=el.dataset.over||'time’s up';el.removeAttribute('data-until');el.classList.add('over');
+  if(el.dataset.chime&&!document.hidden)rChime()})},1000);
+/* a soft two-note chime; the sound is unlocked by the tap that started the timer */
+let RAUDIO=null;
+function rUnlock(){try{RAUDIO=RAUDIO||new (window.AudioContext||window.webkitAudioContext)();if(RAUDIO.state==='suspended')RAUDIO.resume()}catch(e){}}
+function rChime(){try{if(navigator.vibrate)navigator.vibrate([120,80,120]);if(!RAUDIO)return;const t=RAUDIO.currentTime;
+  [660,880].forEach((f,k)=>{const o=RAUDIO.createOscillator(),g=RAUDIO.createGain();o.frequency.value=f;o.connect(g);g.connect(RAUDIO.destination);
+    g.gain.setValueAtTime(0.0001,t+k*.35);g.gain.exponentialRampToValueAtTime(0.25,t+k*.35+.03);g.gain.exponentialRampToValueAtTime(0.0001,t+k*.35+.6);
+    o.start(t+k*.35);o.stop(t+k*.35+.65)})}catch(e){}}
+function startReset(){
+  if(!S.reset){S.reset={at:0,startedAt:Date.now(),avoiding:'',moved:{},protectedUntil:null,talkUntil:null,
+    musicOn:false,reelOpened:false,firstMove:'',helped:[]};save()}
+  if(ZEN)exitZen();
+  tzOpen('reset');
+}
+function endReset(){S.reset=null;save();if(TZ==='reset')tzClose();else render()}
+function rNext(){
+  const r=S.reset;if(!r)return;
+  if(RSTEPS[r.at].id==='enter'){rFinish();return}
+  r.at++;save();tzPaint(true);
+}
+function rBack(){const r=S.reset;if(!r||r.at===0)return;r.at--;save();tzPaint(true)}
+function rFinish(){
+  const r=S.reset,c=S.resetCfg,mv=(r.firstMove||'').trim();
+  S.resetLog.push({date:today(),at:Date.now(),avoiding:(r.avoiding||'').trim(),firstMove:mv,helped:r.helped.slice()});
+  if(S.resetLog.length>200)S.resetLog=S.resetLog.slice(-200);
+  S.focus={until:Date.now()+c.focus*6e4,move:mv,from:Date.now()};
+  S.reset=null;save();tzClose();
+  toast(mv?'go — '+mv:'go. '+c.focus+' minutes.');
+}
+/* what to talk about: what you named, and who you're becoming (from the Goals tab) */
+function rTalkText(){
+  const r=S.reset,h=(S.goals&&S.goals.heading||'').trim(),far=S.goals?gActive().filter(x=>x.horizon==='long').map(x=>x.title):[];
+  const L=['I want to talk this through out loud for 10 minutes.'];
+  if(r.avoiding.trim())L.push('I’m stuck — avoiding: '+r.avoiding.trim()+'.');
+  if(h)L.push('Remind me who I’m becoming: '+h);
+  if(far.length)L.push('Where I’m heading: '+far.join('; ')+'.');
+  L.push('Help me see what’s really in the way, then land on one small first move.');
+  return L.join('\n');
+}
+function rPaint(change){
+  const r=S.reset;if(!r){tzClose();return}
+  const s=RSTEPS[r.at],c=S.resetCfg,now=Date.now();
+  const o={dots:tzDots(RSTEPS.length,r.at),step:`Energy reset · ${r.at+1} of ${RSTEPS.length}`,name:s.name,note:RNOTE[s.id],
+    back:r.at>0?rBack:null,go:rNext,cta:'Next'};
+  const timer=(until,label,over)=>`<div class="rtimer ${until&&until<=now?'over':''}"><span class="rtimer-l">${label}</span>
+    <span class="rtimer-t" ${until>now?`data-until="${until}" data-chime="1" data-over="${over}"`:''}>${until>now?rLeft(until-now):until?over:''}</span></div>`;
+  if(s.id==='close'){
+    o.mid=r.protectedUntil?`${timer(r.protectedUntil,'Protected until '+rClock(r.protectedUntil),'protection over')}
+        <div class="zkept">Email and Webex stay closed until then. Nothing there is on fire.</div>`
+      :`<button class="rbig" id="rprotect">Done — protect the next ${c.protect} minutes</button>`;
+    o.cta=r.protectedUntil?'Next':'Skip';
+  }
+  else if(s.id==='name'){
+    o.mid=`<div class="zdump"><textarea id="ravoid" rows="1" placeholder="The SOIP deck intro. I don’t know where to start.">${esc(r.avoiding)}</textarea></div>
+      ${TOUCH?'':`<div class="rhand">📱 Next you get up. Take your phone and open the app there — this reset will be waiting on the next step.</div>`}`;
+  }
+  else if(s.id==='move'){
+    o.mid=`<div class="rchips">${RMOVE.map(([k,l])=>`<button class="rchip ${r.moved[k]?'on':''}" data-rmove="${k}">${l}</button>`).join('')}</div>
+      <div class="zkept">${Object.values(r.moved).filter(Boolean).length?'Good. Keep going until your body feels it.':'Tap each one as you do it.'}</div>`;
+  }
+  else if(s.id==='talk'){
+    const h=(S.goals&&S.goals.heading||'').trim(),far=S.goals?gActive().filter(x=>x.horizon==='long'):[];
+    o.mid=`<div class="racts"><a class="rbig" id="rclaude" href="${esc(c.claude)}" target="_blank" rel="noopener">Open Claude ↗</a>
+        ${r.talkUntil?'':`<button class="rbig ghost" id="rtalkgo">Start ${c.talk} min</button>`}</div>
+      ${r.talkUntil?timer(r.talkUntil,'Talking','that’s 10 — land it'):''}
+      <div class="rpoints">
+        ${r.avoiding.trim()?`<div class="rpt"><span>What’s stuck</span>${esc(r.avoiding)}</div>`:''}
+        ${h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
+        ${far.length?`<div class="rpt"><span>Where you’re heading</span>${far.map(x=>esc(x.title)).join(' · ')}</div>`:''}
+        ${!r.avoiding.trim()&&!h&&!far.length?`<div class="rpt"><span>Talk about</span>What’s stuck — then who you want to become, and the work you want to be doing.</div>`:''}
+      </div>
+      <button class="zlink" id="rtalkcopy">Copy an opener to paste into Claude</button>`;
+  }
+  else if(s.id==='music'){
+    o.mid=`<a class="rbig" id="rmusic" href="${esc(c.music)}" target="_blank" rel="noopener">${/flavourtrip/i.test(c.music)?'Flavour Trip':'Your soundtrack'} ↗</a>
+      ${r.musicOn?`<div class="zkept" style="margin-top:16px">♪ on</div>`:''}`;
+  }
+  else if(s.id==='reel'){
+    o.mid=`<a class="rbig" id="rreel" href="${esc(c.reel)}" target="_blank" rel="noopener">Open Reel ↗</a>
+      <div class="zkept" style="margin-top:16px">${r.reelOpened?'Why did you save them? That level is where you’re going.':'Skip it if you’re ready.'}</div>`;
+    o.cta=r.reelOpened?'Next':'Skip';
+  }
+  else if(s.id==='enter'){
+    const p=plan('work'),deep=p.deep?byId(p.deep):null;
+    o.mid=`${deep?`<div class="rpt" style="margin-bottom:18px"><span>Today’s deep work</span>${esc(deep.text)}</div>`
+        :r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>What you were avoiding</span>${esc(r.avoiding)}</div>`:''}
+      <div class="zdump"><textarea id="rfirst" rows="1" placeholder="Open the deck and write one ugly headline.">${esc(r.firstMove)}</textarea></div>
+      <div class="zcarry-h" style="margin-top:26px">What helped most? <span style="text-transform:none;letter-spacing:0;font-family:var(--sans)">— optional</span></div>
+      <div class="rchips">${RHELP.map(([k,l])=>`<button class="rchip sm ${r.helped.includes(k)?'on':''}" data-rhelp="${k}">${l}</button>`).join('')}</div>`;
+    o.cta=`Start — ${c.focus} min focus`;
+    o.hint='⏎ starts the focus timer · Pause keeps your place';
+  }
+  const mid=tzFrame(o,change);
+  const z=tzlayer.querySelector('#zen');if(z)z.classList.add('rzen');
+  const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
+    t.oninput=()=>{autosize(t);r[key]=t.value;save()}};
+  area('#ravoid','avoiding');area('#rfirst','firstMove');
+  const pr=mid.querySelector('#rprotect');if(pr)pr.onclick=()=>{r.protectedUntil=Date.now()+c.protect*6e4;save();rUnlock();tzPaint(false)};
+  mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];save();tzPaint(false)});
+  const startTalk=()=>{if(!r.talkUntil){r.talkUntil=Date.now()+c.talk*6e4;save();rUnlock()}};
+  const cl=mid.querySelector('#rclaude');if(cl)cl.addEventListener('click',()=>{startTalk();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
+  const tg=mid.querySelector('#rtalkgo');if(tg)tg.onclick=()=>{startTalk();tzPaint(false)};
+  const tc=mid.querySelector('#rtalkcopy');if(tc)tc.onclick=()=>tCopy(rTalkText());
+  const mu=mid.querySelector('#rmusic');if(mu)mu.addEventListener('click',()=>{r.musicOn=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
+  const re=mid.querySelector('#rreel');if(re)re.addEventListener('click',()=>{r.reelOpened=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
+  mid.querySelectorAll('[data-rhelp]').forEach(b=>b.onclick=()=>{const k=b.dataset.rhelp;
+    r.helped=r.helped.includes(k)?r.helped.filter(x=>x!==k):[...r.helped,k];save();tzPaint(false)});
+}
+/* links and timers, set once */
+function rSettings(){
+  const c=S.resetCfg,box=tSheetBox();
+  box.innerHTML=`<h3>Energy reset — links &amp; timers</h3>
+    <p>Each one opens in its own app on the phone when it can.</p>
+    <div class="seg-label" style="margin:14px 0 6px">Claude — your project for these talks</div>
+    <input class="snew" id="rcfgclaude" value="${esc(c.claude)}" placeholder="https://claude.ai/project/…" />
+    <div class="seg-label" style="margin:14px 0 6px">Soundtrack</div>
+    <input class="snew" id="rcfgmusic" value="${esc(c.music)}" />
+    <div class="seg-label" style="margin:14px 0 6px">Reel</div>
+    <input class="snew" id="rcfgreel" value="${esc(c.reel)}" />
+    <div class="tcform" style="margin-top:20px"><span class="tcl">Protect</span><input class="tnum" id="rcfgprotect" type="number" inputmode="numeric" min="1" max="240" value="${c.protect}" /><span class="tcl" style="min-width:0">min</span></div>
+    <div class="tcform"><span class="tcl">Talk</span><input class="tnum" id="rcfgtalk" type="number" inputmode="numeric" min="1" max="240" value="${c.talk}" /><span class="tcl" style="min-width:0">min</span></div>
+    <div class="tcform"><span class="tcl">Focus</span><input class="tnum" id="rcfgfocus" type="number" inputmode="numeric" min="1" max="240" value="${c.focus}" /><span class="tcl" style="min-width:0">min</span></div>
+    <div class="zkept" id="rcfgmsg" style="min-height:18px;margin:6px 0 0"></div>
+    <div class="sheet-acts" style="margin-top:18px"><button class="btn" id="rcfgdef">Defaults</button><span style="flex:1"></span>
+      <button class="btn" id="no">Cancel</button><button class="btn btn-hot" id="rcfgok">Save</button></div>`;
+  const q=s=>box.querySelector(s);
+  q('#no').onclick=closeSheet;
+  q('#rcfgdef').onclick=()=>{['claude','music','reel','protect','talk','focus'].forEach(k=>q('#rcfg'+k).value=RDEF[k])};
+  q('#rcfgok').onclick=()=>{
+    const v={};for(const k of ['claude','music','reel']){const u=q('#rcfg'+k).value.trim();
+      if(!/^https?:\/\/\S+$/.test(u)){q('#rcfgmsg').textContent='That '+k+' link needs to start with https://';return}v[k]=u}
+    for(const k of ['protect','talk','focus']){const n=Math.round(+q('#rcfg'+k).value);
+      if(!(n>=1&&n<=240)){q('#rcfgmsg').textContent='Minutes between 1 and 240.';return}v[k]=n}
+    Object.assign(S.resetCfg,v);save();closeSheet();render();toast('✓ saved')};
+}
+/* shown on every screen while a reset is running and its overlay is closed */
+function resetBar(){
+  if(!S.reset||TZ==='reset')return '';
+  const s=RSTEPS[S.reset.at];
+  return `<div class="rbar"><span>⚡ Energy reset · ${S.reset.at+1} of ${RSTEPS.length} — ${esc(s.name)}</span>
+    <button class="rbar-go" id="rbargo">Continue</button><button class="zlink" id="rbarend">End</button></div>`;
+}
+/* while a reset runs, the other device's progress is pulled in every so often */
+setInterval(()=>{if(S.reset&&SY&&!document.hidden&&!SY.dirty&&!SYNC_BUSY)syncPull()},20000);
+
 /* ===== town (personal mode) =====
    Personal life as a small town with departments. Two hand-started rituals do the work —
    the weekly round and today's move — and the tabs are the records office. Town keeps
@@ -3336,7 +3534,7 @@ function tzOpen(kind){
 }
 function tzClose(){TZ=null;clearInterval(TZTICK);tzlayer.innerHTML='';document.body.style.overflow='';render()}
 function tzPause(){const k=TZ;tzClose();toast('paused — it picks up right here');if(k==='round')resumeWorkIfDetoured()}
-function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change);else if(TZ==='step')gStepPaint(change)}
+function tzPaint(change){if(TZ==='round')tzRound(change);else if(TZ==='move')tzMove(change);else if(TZ==='step')gStepPaint(change);else if(TZ==='reset')rPaint(change)}
 function tzFrame(o,change){
   document.getElementById('tzdots').innerHTML=o.dots.map(c=>`<i class="${c}"></i>`).join('');
   document.getElementById('tzstep').textContent=o.step;
@@ -3665,6 +3863,10 @@ function wire(){
   app.querySelectorAll('.capopen').forEach(b=>b.onclick=capSheet);
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
   const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
+  const hrs=document.getElementById('hometile-reset');if(hrs)hrs.onclick=startReset;
+  const rst=document.getElementById('rsettings');if(rst)rst.onclick=rSettings;
+  const rbg=document.getElementById('rbargo');if(rbg)rbg.onclick=startReset;
+  const rbe=document.getElementById('rbarend');if(rbe)rbe.onclick=()=>sheetConfirm('End this reset?','You can start a new one any time.','End it',endReset);
   const hc=document.getElementById('hcopy');
   if(hc)hc.onclick=()=>{const t=planText('work');if(!t){toast('nothing picked for today yet');return}tCopy(t)};
   const tc=document.getElementById('tcopyall');
@@ -3808,3 +4010,4 @@ function wire(){
 }
 render();
 syncStart();
+if(rLive()&&!ZEN&&!TZ)tzOpen('reset');

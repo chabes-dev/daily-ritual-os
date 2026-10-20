@@ -53,6 +53,12 @@ function boot(code,store,opts={}){
   return {w,g,$,$$,click,key,type,enter,errors,store,close:()=>w.close()};
 }
 const tick=ms=>new Promise(r=>setTimeout(r,ms||0));
+/* additions that are meant to change a screen — removed before side-by-side comparisons */
+function intended(root){
+  root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
+  root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
+  root.querySelectorAll('.rbar').forEach(e=>e.remove());
+  return root}
 
 /* drive a classic ritual (work zen) to the end by pressing its main button */
 function runZen(P,mode){
@@ -684,9 +690,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
   /* the work home screen is exactly what it was before Goals existed */
   {
     const seed=`add('Write the SOIP deck\\nReply to Pedro','work');S.ui.mode='work';S.ui.workView='home';save();render()`;
-    const A=boot(PRETOWN_HOME_REF,{});A.g(seed);const before=A.$('.home-grid').outerHTML.replace(/\s+/g,' ');A.close();
+    const A=boot(PRETOWN_HOME_REF,{});A.g(seed);const before=intended(A.$('.home-grid').cloneNode(true)).outerHTML.replace(/\s+/g,' ');A.close();
     const B=boot(NEW,{});B.g(seed);B.g(`gAdd('File the EB1 application','now');S.goals.heading='Big direction';save();render()`);
-    const after=B.$('.home-grid').outerHTML.replace(/\s+/g,' ');B.close();
+    const after=intended(B.$('.home-grid').cloneNode(true)).outerHTML.replace(/\s+/g,' ');B.close();
     ok(after===before,'work home shows nothing from Goals, even with goals set');
   }
 
@@ -704,7 +710,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* random ids and spacing differ between runs; what you see must not */
     const norm=h=>h.replace(/="[a-z0-9]{8}(:[a-z0-9]+)?"/g,'="ID"').replace(/\s+/g,' ').replace(/> </g,'><');
     const snap=(code)=>{const st={};const P=boot(code,st);P.g(seed);const out={};
-      for(const [n,js] of views){P.g(js);const a=P.$('#app').cloneNode(true);a.querySelectorAll('.nav').forEach(e=>e.remove());
+      for(const [n,js] of views){P.g(js);const a=intended(P.$('#app').cloneNode(true));a.querySelectorAll('.nav').forEach(e=>e.remove());
         out[n]=norm(a.innerHTML)}
       const wid=P.g(`S.items.find(i=>i.mode==='work'&&!i.done).id`);P.g(`S.ui.mode='work';render();openDetail('${wid}')`);
       out['work task card']=norm(P.$('#mlayer').innerHTML);P.g('closeSheet()');
@@ -828,6 +834,138 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`S.goals.step={at:'x'};save()`);P.close();
     P=boot(NEW,P.store);ok(P.g('S.goals.step')===null&&P.errors.length===0,'damaged ritual state is reset on load');
     P.close();
+  }
+
+  /* ===================================================================== */
+  section('22. energy reset (work)');
+  {
+    const desk={};let P=boot(NEW,desk);
+    P.g(`S.ui.mode='work';S.ui.workView='home';
+      S.goals.heading='Be the creative engine LATAM can’t do without.';gAdd('Creative lead for LATAM','long');gAdd('File EB1','now');
+      const [d]=add('Write the SOIP deck intro','work','brief');d.sorted=true;assign('work','deep',d.id);S.ui.workView='home';save();render()`);
+    ok(P.$('.home-rituals #hometile-ritual')&&P.$('.home-rituals #hometile-reset'),'work home: Energy reset sits beside the work ritual');
+    ok(P.$('#hometile-reset').textContent.includes('Stuck? Reset'),'… inviting when nothing is running');
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';render()`);
+    ok(!P.$('#hometile-reset'),'not on the personal side');
+    P.g(`S.ui.mode='work';S.ui.workView='home';render()`);
+    const zenBefore=P.g('JSON.stringify(S.ritual)');
+    P.click('#hometile-reset');
+    ok(P.g('TZ')==='reset'&&P.$('#zen').classList.contains('rzen')&&P.$('#tzname').textContent==='Close email and Webex','1 · close email and Webex (its own colour)');
+    ok(P.$('#tzgo').textContent==='Skip','… you can skip it');
+    P.click('#rprotect');
+    const pu=P.g('S.reset.protectedUntil');
+    ok(Math.abs(pu-(Date.now()+60*6e4))<5000&&P.$('.rtimer-l').textContent.startsWith('Protected until')&&P.$('.rtimer-t').dataset.until===String(pu),'protect → 60 minutes, counting down');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='What are you avoiding?'&&!!P.$('.rhand'),'2 · name it — and a nudge to take the phone');
+    P.type('#ravoid','The SOIP deck intro');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='Get the blood moving'&&P.$$('[data-rmove]').length===4,'3 · move');
+    P.click('[data-rmove="water"]');P.click('[data-rmove="sun"]');
+    ok(P.g('JSON.stringify(S.reset.moved)')==='{"water":true,"sun":true}','… ticks what you did');
+    /* — the desk is left behind: the phone opens the app — */
+    const phone={};Object.keys(desk).forEach(k=>phone[k]=desk[k]);
+    const dd=JSON.parse(phone.os_v3);dd.ui={mode:'personal',personalView:'town',townView:'home',sawHome:true,open:{}};phone.os_v3=JSON.stringify(dd);
+    P.close();
+    let Q=boot(NEW,phone,{touch:true});
+    ok(Q.g('TZ')==='reset'&&Q.$('#tzname').textContent==='Get the blood moving'&&Q.g('S.reset.avoiding')==='The SOIP deck intro','phone: opening the app lands back in the reset, same step, same answers');
+    ok(Q.$$('[data-rmove].on').length===2,'… with the ticks kept');
+    Q.click('#tzgo');
+    ok(Q.$('#tzname').textContent.startsWith('Talk it out')&&Q.$('#rclaude').getAttribute('href')===Q.g('S.resetCfg.claude'),'4 · talk it out — Open Claude goes to your Claude link');
+    const pts=Q.$('.rpoints').textContent;
+    ok(pts.includes('The SOIP deck intro')&&pts.includes('creative engine LATAM')&&pts.includes('Creative lead for LATAM')&&!pts.includes('File EB1'),'talking points: what is stuck, who you are becoming, where you are heading (from Goals)');
+    Q.click('#rclaude');await tick(80);
+    const tu=Q.g('S.reset.talkUntil');
+    ok(Math.abs(tu-(Date.now()+10*6e4))<5000&&Q.$('.rtimer-t[data-until]'),'opening Claude starts the 10-minute timer');
+    Q.click('#rtalkcopy');await tick(5);
+    ok(Q.w.__clip.at(-1).includes('avoiding: The SOIP deck intro')&&Q.w.__clip.at(-1).includes('Remind me who I’m becoming'),'copy an opener for Claude');
+    /* the timer runs out while the screen is open */
+    Q.g(`S.reset.talkUntil=Date.now()+600;save();tzPaint(false)`);await tick(1700);
+    ok(Q.$('.rtimer-t').classList.contains('over')&&Q.$('.rtimer-t').textContent.includes('land it'),'when the time is up it says so');
+    Q.click('#tzgo');
+    ok(Q.$('#tzname').textContent==='Put on a soundtrack'&&/youtube\.com\/@flavourtrip/.test(Q.$('#rmusic').href)&&Q.$('#rmusic').textContent.includes('Flavour Trip'),'5 · soundtrack: Flavour Trip');
+    Q.click('#rmusic');await tick(80);ok(Q.g('S.reset.musicOn')===true,'… marked on');
+    Q.click('#tzgo');
+    ok(Q.$('#tzname').textContent==='Remember why you save ideas'&&Q.$('#rreel').href===Q.g('REEL_URL')&&Q.$('#tzgo').textContent==='Skip','6 · Reel — optional (Skip)');
+    Q.click('#rreel');await tick(80);ok(Q.$('#tzgo').textContent==='Next','… Next once opened');
+    /* pause on the phone, finish back at the desk */
+    Q.click('#tzexit');
+    ok(!Q.g('TZ')&&Q.$('.rbar')&&Q.$('.rbar').textContent.includes('6 of 7'),'Pause: a bar on every screen keeps it one tap away');
+    Q.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='map';render()`);ok(!!Q.$('.rbar'),'… even in Town');
+    const back={};Object.keys(phone).forEach(k=>back[k]=phone[k]);
+    const bd=JSON.parse(back.os_v3);bd.ui={mode:'work',workView:'today',sawHome:true,open:{}};back.os_v3=JSON.stringify(bd);
+    Q.close();
+    P=boot(NEW,back);
+    ok(P.g('TZ')==='reset'&&P.$('#tzname').textContent==='Remember why you save ideas','back at the desk: same step');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='What’s the first 2-minute move?'&&P.$('.rpt').textContent.includes('Write the SOIP deck intro'),'7 · re-entry, with today’s deep work');
+    ok(P.$('#tzgo').textContent==='Start — 25 min focus','… ends by starting a focus timer');
+    P.type('#rfirst','Write one ugly headline');P.click('[data-rhelp="move"]');P.click('[data-rhelp="talk"]');
+    P.click('#tzgo');
+    ok(!P.g('TZ')&&P.g('S.reset')===null,'the reset ends');
+    const f=JSON.parse(P.g('JSON.stringify(S.focus)'));
+    ok(Math.abs(f.until-(Date.now()+25*6e4))<5000&&f.move==='Write one ugly headline','focus: 25 minutes, with the first move');
+    const log=JSON.parse(P.g('JSON.stringify(S.resetLog)'));
+    ok(log.length===1&&log[0].avoiding==='The SOIP deck intro'&&log[0].helped.join()==='move,talk','what helped is noted quietly');
+    ok(P.$$('.toast').some(t=>t.textContent.includes('Write one ugly headline')),'toast says the first move');
+    P.g(`S.ui.workView='home';render()`);
+    ok(P.$('#hometile-reset').textContent.includes('Focus')&&P.$('#hometile-reset [data-until]')&&P.$('#hometile-reset').textContent.includes('Write one ugly headline'),'home card shows the focus countdown and the move');
+    ok(!/\d+ resets?/i.test(P.$('#app').textContent),'no count of resets anywhere');
+    ok(P.g('JSON.stringify(S.ritual)')===zenBefore&&!P.g('ZEN'),'the work ritual is untouched');
+    ok(P.g(`JSON.stringify(syncContent(S)).includes('resetCfg')`)&&P.g(`'focus' in syncContent(S)`),'reset state and settings travel with sync');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+
+    /* stale reset: no auto-open; Continue / End from the bar */
+    const old={};P=boot(NEW,old);
+    P.g(`S.ui.mode='work';S.ui.workView='today';S.reset={at:2,startedAt:Date.now()-4*36e5,avoiding:'x',moved:{},helped:[]};save()`);P.close();
+    P=boot(NEW,old);
+    ok(!P.g('TZ')&&!!P.$('.rbar'),'a reset from hours ago does not jump up by itself, but the bar is there');
+    P.click('#rbargo');ok(P.g('TZ')==='reset'&&P.$('#tzname').textContent==='Get the blood moving','Continue opens it');
+    P.key('Escape');ok(!P.g('TZ')&&!!P.g('S.reset'),'Escape pauses');
+    P.click('#rbarend');P.click('#mlayer #yes');ok(P.g('S.reset')===null&&!P.$('.rbar'),'End clears it');
+    /* starting while the work ritual is open closes the ritual (it keeps its place) */
+    P.g(`S.ui.workView='home';render();startZen()`);ok(P.g('ZEN'),'work ritual open');
+    P.g('startReset()');ok(!P.g('ZEN')&&P.g('TZ')==='reset','starting a reset steps out of the work ritual');
+    P.g('endReset()');
+    /* keyboard: Enter in the text box types, outside it moves on */
+    P.g('startReset();S.reset.at=1;save();tzPaint(true)');
+    P.key('Enter',P.$('#ravoid'));ok(P.g('S.reset.at')===1,'Enter inside the box does not skip');
+    P.key('Enter');ok(P.g('S.reset.at')===2,'Enter outside moves on');
+    P.g('endReset()');
+    /* settings */
+    P.g(`S.ui.workView='home';render()`);P.click('#rsettings');
+    ok(P.$('#mlayer #rcfgmusic').value.includes('flavourtrip')&&P.$('#mlayer #rcfgreel').value===P.g('REEL_URL')&&P.$('#mlayer #rcfgclaude').value==='https://claude.ai/projects','settings: defaults (Claude, Flavour Trip, Reel)');
+    P.type('#mlayer #rcfgclaude','not a link');P.click('#mlayer #rcfgok');
+    ok(P.$('#mlayer #rcfgmsg').textContent.includes('https://')&&P.g('S.resetCfg.claude')==='https://claude.ai/projects','a bad link is refused');
+    P.type('#mlayer #rcfgclaude','https://claude.ai/project/abc123');P.type('#mlayer #rcfgtalk','15');P.click('#mlayer #rcfgok');
+    ok(P.g('S.resetCfg.claude')==='https://claude.ai/project/abc123'&&P.g('S.resetCfg.talk')===15,'links and minutes saved');
+    P.g('startReset();S.reset.at=3;save();tzPaint(true)');
+    ok(P.$('#rclaude').getAttribute('href')==='https://claude.ai/project/abc123'&&P.$('#rtalkgo').textContent==='Start 15 min','the ritual uses them');
+    P.g('endReset()');
+    /* back at the desk with the tab already in front: focus pulls the other device's progress */
+    P.g(`window.__pulled=0;syncPull=()=>{__pulled++};SY={id:'x',k:null,etag:'e',dirty:false}`);
+    P.w.dispatchEvent(new P.w.Event('focus'));
+    ok(P.g('__pulled')===1,'window focus checks for updates from the other device');
+    P.g('SY=null');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+    /* damaged state and settings are repaired on load */
+    const bad={};P=boot(NEW,bad);P.g(`S.reset={at:99};S.resetCfg={claude:'javascript:alert(1)',talk:-5,focus:'x'};S.focus={until:1};save()`);P.close();
+    P=boot(NEW,bad);
+    ok(P.g('S.reset')===null&&P.g('S.resetCfg.claude')==='https://claude.ai/projects'&&P.g('S.resetCfg.talk')===10&&P.g('S.resetCfg.focus')===25&&P.g('S.focus')===null&&P.errors.length===0,'damaged reset data repaired (no unsafe links)');
+    P.close();
+    /* every button responds, on a phone */
+    P=boot(NEW,{},{touch:true});
+    const dead=[];
+    for(let k=0;k<7;k++){
+      const open=`if(TZ)tzClose();S.ui.mode='work';S.reset={at:${k},startedAt:Date.now(),avoiding:'x',moved:{},protectedUntil:null,talkUntil:null,musicOn:false,reelOpened:false,firstMove:'',helped:[]};save();tzOpen('reset')`;
+      P.g(open);const n=P.$$('#tzmid button, #tzmid a').length;
+      for(let j=0;j<n;j++){P.g(open);const b=P.$$('#tzmid button, #tzmid a')[j];
+        const before=P.g('JSON.stringify(S)')+P.w.__clip.length,html=P.$('body').innerHTML;P.click(b);await tick(70);
+        if(P.g('JSON.stringify(S)')+P.w.__clip.length===before&&P.$('body').innerHTML===html)dead.push('step '+(k+1)+': '+b.textContent.trim().slice(0,30))}}
+    ok(dead.length===0,'no dead buttons in the reset: '+dead.join(' | '));
+    ok(P.errors.length===0,'no errors on phone: '+P.errors.join(' | '));
+    await tick(30);P.close();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
