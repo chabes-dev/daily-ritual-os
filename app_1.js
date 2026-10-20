@@ -1042,8 +1042,7 @@ function viewHome(m){
         <span class="ht-title">${S.reset?'Continue the reset':S.focus?'Focus':'Stuck? Reset'}</span>
         <span class="ht-meta">${S.reset?'step '+(S.reset.at+1)+' of '+RSTEPS.length
           :S.focus?`<span data-until="${S.focus.until}" data-over="done">${rLeft(S.focus.until-Date.now())}</span> left${S.focus.move?' · '+esc(S.focus.move):''}`
-          :'when procrastination wins · '+RSTEPS.length+' steps'}</span></button>
-      <button class="zlink" id="rsettings">links &amp; timers</button></div></div>`:''}
+          :'when procrastination wins · '+RSTEPS.length+' steps'}</span></button></div></div>`:''}
     ${m==='work'?`<div class="hcopy"><button class="tlink" id="hcopy" title="Copies today’s plan — deep, batch, AI, spare — to paste anywhere">⧉ Copy today</button>
       <span>${planText('work')?planText('work').split('\n').length+' on today’s plan':'nothing picked for today yet'}</span></div>`:''}
     <div class="home-row">
@@ -2573,6 +2572,7 @@ function rPaint(change){
     o.mid=r.protectedUntil?`${timer(r.protectedUntil,'Protected until '+rClock(r.protectedUntil),'protection over')}
         <div class="zkept">Email and Webex stay closed until then. Nothing there is on fire.</div>`
       :`<button class="rbig" id="rprotect">Done — protect the next ${c.protect} minutes</button>`;
+    o.mid+=`<div class="rcfgrow"><button class="zlink" id="rcfg">⚙ Links &amp; timers</button></div>`;
     o.cta=r.protectedUntil?'Next':'Skip';
   }
   else if(s.id==='name'){
@@ -2620,6 +2620,7 @@ function rPaint(change){
   const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
     t.oninput=()=>{autosize(t);r[key]=t.value;save()}};
   area('#ravoid','avoiding');area('#rfirst','firstMove');
+  const cf=mid.querySelector('#rcfg');if(cf)cf.onclick=rSettings;
   const pr=mid.querySelector('#rprotect');if(pr)pr.onclick=()=>{r.protectedUntil=Date.now()+c.protect*6e4;save();rUnlock();tzPaint(false)};
   mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];save();tzPaint(false)});
   const startTalk=()=>{if(!r.talkUntil){r.talkUntil=Date.now()+c.talk*6e4;save();rUnlock()}};
@@ -2656,7 +2657,7 @@ function rSettings(){
       if(!/^https?:\/\/\S+$/.test(u)){q('#rcfgmsg').textContent='That '+k+' link needs to start with https://';return}v[k]=u}
     for(const k of ['protect','talk','focus']){const n=Math.round(+q('#rcfg'+k).value);
       if(!(n>=1&&n<=240)){q('#rcfgmsg').textContent='Minutes between 1 and 240.';return}v[k]=n}
-    Object.assign(S.resetCfg,v);save();closeSheet();render();toast('✓ saved')};
+    Object.assign(S.resetCfg,v);save();closeSheet();if(TZ==='reset')tzPaint(false);else render();toast('✓ saved')};
 }
 /* shown on every screen while a reset is running and its overlay is closed */
 function resetBar(){
@@ -3865,7 +3866,6 @@ function wire(){
   const br=document.getElementById('beginritual');if(br)br.onclick=startZen;
   const htr=document.getElementById('hometile-ritual');if(htr)htr.onclick=startZen;
   const hrs=document.getElementById('hometile-reset');if(hrs)hrs.onclick=startReset;
-  const rst=document.getElementById('rsettings');if(rst)rst.onclick=rSettings;
   const rbg=document.getElementById('rbargo');if(rbg)rbg.onclick=startReset;
   const rbe=document.getElementById('rbarend');if(rbe)rbe.onclick=()=>sheetConfirm('End this reset?','You can start a new one any time.','End it',endReset);
   const hc=document.getElementById('hcopy');

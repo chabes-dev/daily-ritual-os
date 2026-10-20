@@ -933,12 +933,17 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.key('Enter');ok(P.g('S.reset.at')===2,'Enter outside moves on');
     P.g('endReset()');
     /* settings */
-    P.g(`S.ui.workView='home';render()`);P.click('#rsettings');
+    P.g(`S.ui.workView='home';render()`);
+    ok(!P.$('#rsettings')&&!/links/i.test(P.$('.hreset').textContent),'the home card is just the card — no settings link under it');
+    P.g('startReset()');
+    ok(P.$('#tzname').textContent==='Close email and Webex'&&!!P.$('#rcfg'),'links & timers live in step 1 of the ritual');
+    P.click('#rcfg');
     ok(P.$('#mlayer #rcfgmusic').value.includes('flavourtrip')&&P.$('#mlayer #rcfgreel').value===P.g('REEL_URL')&&P.$('#mlayer #rcfgclaude').value==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207','settings: defaults (your Claude project, Flavour Trip, Reel)');
     P.type('#mlayer #rcfgclaude','not a link');P.click('#mlayer #rcfgok');
     ok(P.$('#mlayer #rcfgmsg').textContent.includes('https://')&&P.g('S.resetCfg.claude')==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207','a bad link is refused');
     P.type('#mlayer #rcfgclaude','https://claude.ai/project/abc123');P.type('#mlayer #rcfgtalk','15');P.click('#mlayer #rcfgok');
     ok(P.g('S.resetCfg.claude')==='https://claude.ai/project/abc123'&&P.g('S.resetCfg.talk')===15,'links and minutes saved');
+    ok(P.g('TZ')==='reset'&&P.$('#tzname').textContent==='Close email and Webex'&&!P.$('#mlayer .sheet'),'… and you are back in the ritual, same step');
     P.g('startReset();S.reset.at=3;save();tzPaint(true)');
     ok(P.$('#rclaude').getAttribute('href')==='https://claude.ai/project/abc123'&&P.$('#rtalkgo').textContent==='Start 15 min','the ritual uses them');
     P.g('endReset()');
