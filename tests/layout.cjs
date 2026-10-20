@@ -67,10 +67,12 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
       ['goal-sheet',`closeSheet();if(typeof gSheet==='function'&&S.goals&&S.goals.items[0]){S.ui.mode='work';S.ui.workView='goals';render();gSheet(S.goals.items[0].id)}`],
       ...[0,1,2,3,4,5].map(k=>['step-'+k,`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='goals';render();S.goals.lastWord={date:today(),feel:'A bit lost after the holiday',close:'Lawyer email first thing, then the portfolio shortlist'};S.goals.step={at:${k},gi:0,startedAt:Date.now(),feel:'A bit lost after the holiday',ans:{},pick:S.goals.items[0].id,move:'Email the lawyer this morning',close:'',taskId:null};S.items.filter(i=>i.mode==='work').slice(0,3).forEach(i=>{i.done=true;i.doneAt=Date.now()});save();tzOpen('step')`]),
       ['step-close',`if(TZ)tzClose();render()`],
+      ...[0,1,2,3,4,5,6].map(k=>['reset-'+k,`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='home';render();S.reset={at:${k},startedAt:Date.now(),avoiding:'The SOIP deck intro — I don’t know where to start and it feels too big',moved:{water:true},protectedUntil:Date.now()+60*6e4,talkUntil:${k===3}?Date.now()+10*6e4:null,musicOn:false,reelOpened:false,firstMove:'Write one ugly headline',helped:['move']};save();tzOpen('reset')`]),
+      ['reset-bar',`if(TZ)tzClose();render()`],
       ['goal-check',`closeSheet();if(typeof gCheckSheet==='function'){gCheckSheet()}`],
     ].filter(([n])=>!ONLY||n.includes(ONLY));
     for(const [name,js] of views){
-      await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */
+      await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step|reset-\d/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */
       const r=await page.evaluate(()=>{
         const bad=[];const vw=document.documentElement.clientWidth;
         const root=document.querySelector('#mlayer .sheet')||document.querySelector('.tzen')||document.getElementById('app');
@@ -85,7 +87,7 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
         const sw=document.documentElement.scrollWidth;if(sw>vw+1)bad.push('page scrolls sideways '+sw+'>'+vw);
         return [...new Set(bad)].slice(0,6)});
       if(r.length)out.push(`${W} ${name}: ${r.join(' | ')}`);
-      if(SHOT)await page.screenshot({path:`${OUT}/${W}-${name}.png`,fullPage:!name.match(/round|move|sheet|check|step/)});
+      if(SHOT)await page.screenshot({path:`${OUT}/${W}-${name}.png`,fullPage:!name.match(/round|move|sheet|check|step|reset-\d/)});
     }
     await ctx.close();
   }
