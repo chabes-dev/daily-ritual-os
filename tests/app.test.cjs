@@ -934,9 +934,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g('endReset()');
     /* settings */
     P.g(`S.ui.workView='home';render()`);P.click('#rsettings');
-    ok(P.$('#mlayer #rcfgmusic').value.includes('flavourtrip')&&P.$('#mlayer #rcfgreel').value===P.g('REEL_URL')&&P.$('#mlayer #rcfgclaude').value==='https://claude.ai/projects','settings: defaults (Claude, Flavour Trip, Reel)');
+    ok(P.$('#mlayer #rcfgmusic').value.includes('flavourtrip')&&P.$('#mlayer #rcfgreel').value===P.g('REEL_URL')&&P.$('#mlayer #rcfgclaude').value==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207','settings: defaults (your Claude project, Flavour Trip, Reel)');
     P.type('#mlayer #rcfgclaude','not a link');P.click('#mlayer #rcfgok');
-    ok(P.$('#mlayer #rcfgmsg').textContent.includes('https://')&&P.g('S.resetCfg.claude')==='https://claude.ai/projects','a bad link is refused');
+    ok(P.$('#mlayer #rcfgmsg').textContent.includes('https://')&&P.g('S.resetCfg.claude')==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207','a bad link is refused');
     P.type('#mlayer #rcfgclaude','https://claude.ai/project/abc123');P.type('#mlayer #rcfgtalk','15');P.click('#mlayer #rcfgok');
     ok(P.g('S.resetCfg.claude')==='https://claude.ai/project/abc123'&&P.g('S.resetCfg.talk')===15,'links and minutes saved');
     P.g('startReset();S.reset.at=3;save();tzPaint(true)');
@@ -952,8 +952,13 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* damaged state and settings are repaired on load */
     const bad={};P=boot(NEW,bad);P.g(`S.reset={at:99};S.resetCfg={claude:'javascript:alert(1)',talk:-5,focus:'x'};S.focus={until:1};save()`);P.close();
     P=boot(NEW,bad);
-    ok(P.g('S.reset')===null&&P.g('S.resetCfg.claude')==='https://claude.ai/projects'&&P.g('S.resetCfg.talk')===10&&P.g('S.resetCfg.focus')===25&&P.g('S.focus')===null&&P.errors.length===0,'damaged reset data repaired (no unsafe links)');
+    ok(P.g('S.reset')===null&&P.g('S.resetCfg.claude')==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207'&&P.g('S.resetCfg.talk')===10&&P.g('S.resetCfg.focus')===25&&P.g('S.focus')===null&&P.errors.length===0,'damaged reset data repaired (no unsafe links)');
     P.close();
+    /* a device that saved the first placeholder gets the project link; a link you chose yourself is kept */
+    {const a={};let Q=boot(NEW,a);Q.g(`S.resetCfg.claude='https://claude.ai/projects';save()`);Q.close();Q=boot(NEW,a);
+      ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207','the old placeholder becomes your Claude project');Q.close();
+      const b={};Q=boot(NEW,b);Q.g(`S.resetCfg.claude='https://claude.ai/project/somethingelse';save()`);Q.close();Q=boot(NEW,b);
+      ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/somethingelse','a link you set yourself is never overwritten');Q.close()}
     /* every button responds, on a phone */
     P=boot(NEW,{},{touch:true});
     const dead=[];
