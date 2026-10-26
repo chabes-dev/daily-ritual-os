@@ -841,7 +841,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
   /* ===================================================================== */
   section('22. energy reset (work)');
   {
-    const CLAUDE='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207';
+    const CLAUDE='https://claude.ai/project/01a1798f-8f85-777a-b5fb-fdf995e253f8';
     const desk={};let P=boot(NEW,desk);
     P.g(`S.ui.mode='work';S.ui.workView='home';
       S.goals.heading='Be the creative engine LATAM can’t do without.';gAdd('Creative lead for LATAM','long');gAdd('File EB1','now');
@@ -947,6 +947,11 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
     P.close();
 
+    /* a device still on the previous talks project moves to the new one; a link set by hand is kept */
+    {const a={};let Q=boot(NEW,a);Q.g(`S.resetCfg.claude='https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207';save()`);Q.close();Q=boot(NEW,a);
+      ok(Q.g('S.resetCfg.claude')===CLAUDE,'the previous talks project becomes the new one');Q.close();
+      const b={};Q=boot(NEW,b);Q.g(`S.resetCfg.claude='https://claude.ai/project/mine'`);Q.g('save()');Q.close();Q=boot(NEW,b);
+      ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/mine','a link you set yourself is never overwritten');Q.close()}
     /* every step can go back */
     P=boot(NEW,{});
     for(let k=1;k<7;k++){P.g(`if(TZ)tzClose();S.ui.mode='work';startReset();S.reset.at=${k};save();tzPaint(true)`);P.click('#tzback');
