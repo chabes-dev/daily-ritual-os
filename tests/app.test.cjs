@@ -58,6 +58,7 @@ function intended(root){
   root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
   root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
   root.querySelectorAll('.rbar').forEach(e=>e.remove());
+  root.querySelectorAll('#hometile-ritual .ht-meta').forEach(e=>e.textContent=e.textContent.replace(/of \d+ steps/,'of N steps'));   /* the weekly mission step */
   return root}
 
 /* drive a classic ritual (work zen) to the end by pressing its main button */
@@ -531,7 +532,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const old={};const O=boot(OLD,old);O.g(`add('Old work task','work');save()`);O.close();
     let P=boot(NEW,old);
     ok(P.errors.length===0,'old data loads: '+P.errors.join(' | '));
-    ok(P.g(`JSON.stringify(S.goals)`)==='{"heading":"","items":[],"rules":[],"lastCheck":null}','S.goals defaults');
+    ok(P.g(`JSON.stringify({...S.goals,lines:undefined})`)==='{"heading":"","items":[],"rules":[],"lastCheck":null,"missions":[]}','S.goals defaults');
+    ok(P.g('S.goals.lines.map(l=>l.id).join()')==='l1,l2,l3,l4'&&P.g('S.goals.lines[0].text').includes('Jason Bagley'),'lines that move you start with your four (fixed ids, so two devices merge cleanly)');
     ok(P.g(`S.items.length`)===1,'work tasks untouched');
     P.close();
     const bad={};P=boot(NEW,bad);
@@ -570,7 +572,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('[data-gadd="long"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
     /* ground rules */
     P.enter('#gruleadd','Rafa is an ally — never fight him');P.enter('#gruleadd','Make my value obvious to Luana and Pedro');
-    ok(P.$$('.grule').length===2,'ground rules added');
+    ok(P.$$('[data-gredit]').length===2,'ground rules added');
     P.click('[data-gredit]');P.type('#mlayer #f','Rafa is an ally. Never fight.');P.click('#mlayer #yes');
     ok(P.g('S.goals.rules[0].text')==='Rafa is an ally. Never fight.','tap a rule to edit it');
     const r2=P.g('S.goals.rules[1].id');P.click(`[data-grdel="${r2}"]`);
@@ -883,12 +885,19 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     Q.type('#rlink','https://claude.ai/project/new1');Q.click('#rlinksave');
     ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/new1'&&Q.$('#rclaude').getAttribute('href')==='https://claude.ai/project/new1'&&!Q.$('#rlink'),'saved, used at once');
     Q.click('[data-redit="claude"]');Q.click('#rlinkx');ok(!Q.$('#rlink'),'cancel closes it');
-    Q.click('#rtalkcopy');await tick(5);
+    ok(Q.$('.rpt.rq').textContent.includes('Kill it, shrink it, or keep it?'),'Stacey’s questions are on screen to say out loud');
+    ok(Q.$('#rspark').getAttribute('href')===Q.g('SPARK_URL'),'… and Spark is one tap away');
+    Q.click('#rtpl');await tick(5);
+    const tpl=Q.w.__clip.at(-1);
+    ok(tpl.startsWith('What I’m avoiding: The SOIP deck intro')&&tpl.includes('Why am I avoiding it?')&&tpl.includes('Why do I care about it?')&&tpl.includes('Kill it, shrink it, or keep it?')&&tpl.includes('doesn’t depend on anyone')&&tpl.includes('coolest thing'),'copy the writing template for Spark — Stacey’s questions, filled with what you named');
     ok(Q.w.__clip.at(-1).includes('avoiding: The SOIP deck intro'),'copy an opener for Claude');
     Q.click('#tzgo');
-    ok(Q.$('#tzname').textContent==='Remember why you save ideas'&&Q.$('#rreel').href===Q.g('REEL_URL')&&Q.$('#tzgo').textContent==='Skip','5 · Reel — optional (Skip); the soundtrack step is gone');
+    ok(Q.$('#tzname').textContent==='What’s the coolest thing about this?'&&Q.$('#tzmid').textContent.includes('The SOIP deck intro')&&Q.$('#tzgo').textContent==='Skip','5 · the coolest thing about it — optional (Skip)');
+    ok(Q.$('#tznote').textContent.includes('ad breakfast')&&Q.$('#rreel').href===Q.g('REEL_URL'),'… written like an ad breakfast note, with Reel there if you need a spark');
     ok(!!Q.$('[data-redit="reel"]'),'… its link can be changed here too');
-    Q.click('#rreel');await tick(80);ok(Q.$('#tzgo').textContent==='Next','… Next once opened');
+    Q.type('#rcool','The switchers insight — imagine it live, everyone would see themselves');
+    ok(Q.g('S.reset.cool').startsWith('The switchers')&&Q.$('#tzgo').textContent==='Skip','… saved as you type');
+    Q.g('tzPaint(false)');ok(Q.$('#tzgo').textContent==='Next','… Next once written');
     Q.click('#tzgo');
     ok(Q.$('#tzname').textContent==='What are the first 2-minute moves?'&&Q.$('.rpt').textContent.includes('Write the SOIP deck intro'),'6 · moves, with today’s deep work');
     ok(Q.$('#rmovenew').getAttribute('placeholder').startsWith('Write one ugly headline'),'… “write one ugly headline” to get going');
@@ -928,7 +937,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click('#tzgo');P.click('#tzgo');
     ok(!P.g('TZ')&&P.g('S.reset')===null,'Done closes the reset');
     const log=JSON.parse(P.g('JSON.stringify(S.resetLog)'));
-    ok(log.length===1&&log[0].moves.length===3&&log[0].done===1&&log[0].talk.startsWith('Claude:')&&log[0].helped.join()==='move','kept quietly: moves, what you did, the summary, what helped');
+    ok(log.length===1&&log[0].moves.length===3&&log[0].done===1&&log[0].talk.startsWith('Claude:')&&log[0].helped.join()==='move'&&log[0].cool.startsWith('The switchers'),'kept quietly: moves, what you did, the summary, the coolest thing, what helped');
     ok(P.$$('.toast').some(t=>t.textContent.includes('1 move done')),'toast');
     P.g(`S.ui.workView='home';render()`);
     ok(P.$('#hometile-reset').textContent.includes('Stuck? Reset')&&!P.$('#hometile-reset [data-until]'),'home card is back to itself — no countdown in it');
@@ -957,7 +966,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`S.reset={at:4,startedAt:Date.now(),avoiding:'x',moved:{water:true},protectedUntil:Date.now(),talkUntil:Date.now(),musicOn:true,reelOpened:false,firstMove:'Old first move',helped:[]};
       S.resetCfg={claude:'https://claude.ai/projects',music:'https://youtube.com/x',reel:'https://reel.app',protect:60,talk:10,focus:30};S.focus={until:Date.now()+9e5};save()`);P.close();
     P=boot(NEW,v1);
-    ok(P.$('#tzname').textContent==='Remember why you save ideas'&&P.g('S.reset.moved.music')===true&&P.g('S.reset.moves[0].text')==='Old first move','an old reset on the soundtrack step lands on Reel, nothing lost');
+    ok(P.$('#tzname').textContent==='What’s the coolest thing about this?'&&P.g('S.reset.moved.music')===true&&P.g('S.reset.moves[0].text')==='Old first move'&&P.g('S.reset.v')===3,'an old reset on the soundtrack step lands on the coolest-thing step, nothing lost');
     ok(P.g('JSON.stringify(S.resetCfg)')===JSON.stringify({claude:CLAUDE,reel:'https://reel.app',focus:30})&&P.g("'focus' in S")===false,'old settings tidied: links kept, timers gone');
     P.g('tzClose()');P.close();
     /* damaged state is repaired, never fatal */
@@ -988,10 +997,10 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P=boot(NEW,{},{touch:true});
     const dead=[];
     for(let k=0;k<7;k++){
-      const open=`if(TZ)tzClose();S.ui.mode='work';S.reset={v:2,at:${k},startedAt:Date.now(),avoiding:'x',moved:{},reelOpened:false,moves:[{id:'m1',text:'One',done:false}],talk:'',helped:[],focusMins:25,focusUntil:null};REDIT=null;save();tzOpen('reset')`;
+      const open=`if(TZ)tzClose();S.ui.mode='work';S.reset={v:3,at:${k},startedAt:Date.now(),avoiding:'x',moved:{},reelOpened:false,moves:[{id:'m1',text:'One',done:false}],talk:'',helped:[],focusMins:25,focusUntil:null};REDIT=null;save();tzOpen('reset')`;
       /* plain links (Open Claude) navigate — their addresses are checked above */
-      P.g(open);const n=P.$$('#zen button, #tzmid #rreel').length;
-      for(let j=0;j<n;j++){P.g(open);const b=P.$$('#zen button, #tzmid #rreel')[j];
+      P.g(open);const n=P.$$('#zen button').length;
+      for(let j=0;j<n;j++){P.g(open);const b=P.$$('#zen button')[j];
         const before=P.g('JSON.stringify(S)')+P.w.__clip.length,html=P.$('body').innerHTML;P.click(b);await tick(70);
         if(P.g('JSON.stringify(S)')+P.w.__clip.length===before&&P.$('body').innerHTML===html)dead.push('step '+(k+1)+': '+b.textContent.trim().slice(0,30))}}
     ok(dead.length===0,'no dead buttons in the reset: '+dead.join(' | '));
@@ -1090,6 +1099,76 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`LAST_INPUT=Date.now();add('A real edit','work');save()`);
     ok(P.g('SY.dirty')===true,'a real edit still counts');
     P.g('SY=null;syncSave()');await tick(30);P.close();
+  }
+
+  /* ===================================================================== */
+  section('24. weekly mission, lines that move you, avoidance as information');
+  {
+    const st={};let P=boot(NEW,st);
+    /* last week's mission exists; this week's doesn't */
+    P.g(`S.ui.mode='work';S.goals.missions=[{id:'mold',week:tAddPer(isoWeek(),-7,'days'),text:'Ship the SOIP MX route',at:1}];save()`);
+    ok(P.g(`zSteps('work').map(s=>s.id).slice(0,3).join()`)==='w1,wad,wm','the weekly mission step comes right after the ad breakfast');
+    P.g('startZen()');
+    let guard=0;while(P.g('ZSTEPS[ZI].id')!=='wm'&&guard++<5)P.click('#zgo');
+    ok(P.$('#zname').textContent==='This week’s mission'&&P.$('#znote').textContent.includes('Write it fresh'),'work ritual: write this week’s mission, fresh');
+    ok(P.$('#zmid').textContent.includes('Last week: Ship the SOIP MX route')&&P.$('#zmission').value==='','… last week’s shown for reference, not copied in');
+    ok(P.$('#zgo').textContent==='Skip for now','… skippable');
+    P.type('#zmission','Make the LATAM switchers idea impossible to ignore');
+    ok(P.g('gMissionWeek().text')==='Make the LATAM switchers idea impossible to ignore'&&P.$('#zgo').textContent==='That is my week','saved as you type');
+    P.click('#zgo');
+    guard=0;while(P.g('ZSTEPS[ZI].id')!=='w6'&&guard++<12){if(P.g('TOPEN'))P.g('closeTriage()');P.click('#zgo')}
+    ok(P.$('#zmid .gmline')&&P.$('#zmid .gmline').textContent.includes('This week’s mission')&&P.$('#zmid .gmline').textContent.includes('LATAM switchers'),'“pick today” shows the mission on top');
+    P.g('exitZen()');
+    /* same day: a paused ritual keeps the step; a new day: it is gone until next week */
+    ok(P.g(`zSteps('work').some(s=>s.id==='wm')`),'the rest of the day, the step list stays the same (resume is safe)');
+    P.g(`S.ritual.work=[];save()`);
+    ok(!P.g(`zSteps('work').some(s=>s.id==='wm')`),'next ritual this week: no mission step — it’s written');
+    P.g(`S.goals.missions=S.goals.missions.filter(x=>x.week!==isoWeek());save()`);
+    ok(P.g(`zSteps('work').some(s=>s.id==='wm')`),'a new week (nothing written yet): it comes back');
+    P.g(`gMissionSet('Make the LATAM switchers idea impossible to ignore')`);
+    /* goals tab */
+    P.g(`S.ui.workView='goals';render()`);
+    ok(P.$('#gmission').value==='Make the LATAM switchers idea impossible to ignore'&&P.$('.gmission .seg-label').textContent.startsWith('This week’s mission'),'Goals tab: this week’s mission on top');
+    P.click('#gmhist');ok(P.$('.gmhist').textContent.includes('Ship the SOIP MX route'),'past missions, newest first');
+    P.type('#gmission','Rewritten here');ok(P.g('gMissionWeek().text')==='Rewritten here'&&P.g('S.goals.missions.length')===2,'editable there too (same week, same entry)');
+    P.type('#gmission','');ok(!P.g('gMissionWeek()')&&P.g('gMissionLatest().text')==='Ship the SOIP MX route','cleared → falls back to the latest one as “your mission”');
+    P.type('#gmission','Make the LATAM switchers idea impossible to ignore');
+    /* lines */
+    ok(P.$$('[data-gledit]').length===4,'lines that move you: listed on the Goals tab');
+    P.enter('#glineadd','Back to the drawing board. Simple.');
+    ok(P.g('S.goals.lines.length')===5,'add one');
+    P.click('[data-gledit="l2"]');P.type('#mlayer #f','You love advertising. It never drains you.');P.click('#mlayer #yes');
+    ok(P.g(`S.goals.lines.find(l=>l.id==='l2').text`)==='You love advertising. It never drains you.','edit one');
+    P.click('[data-gldel="l4"]');ok(P.g('S.goals.lines.length')===4,'remove one');P.click('.toast .undo');ok(P.g('S.goals.lines.length')===5,'… with undo');
+    /* the reset uses all of it */
+    P.g(`S.goals.lines=Array.from({length:20},(_,k)=>({id:'x'+k,text:'Line number '+k}));
+      startReset();S.reset.avoiding='The SOIP deck';S.reset.at=3;save();tzPaint(true)`);
+    ok(P.$('.rpoints').textContent.includes('This week’s mission')&&P.$('.rpoints').textContent.includes('LATAM switchers'),'talk step: this week’s mission is a talking point');
+    ok(P.g('rTemplate()').includes('My mission: Make the LATAM switchers'),'… and closes the Spark template');
+    P.click('#tzgo');P.click('#tzgo');
+    ok(P.$('#tzmid .gmline').textContent.includes('LATAM switchers'),'moves step: the mission on top');
+    ok(P.$('#tzmid').textContent.includes('What do you do with “The SOIP deck”?')&&P.$$('[data-rdecide]').map(b=>b.textContent).join('|')==='⚡ Do it now|✂️ Shrink it|🤖 Delegate to AI|✕ Not doing it','decide what to do with the avoided thing');
+    P.click('[data-rdecide="drop"]');ok(P.$('#tzmid').textContent.includes('Dropped on purpose'),'not doing it is a decision, not a failure');
+    P.click('[data-rdecide="ai"]');ok(P.g('S.reset.decision')==='ai'&&P.$('#tzmid').textContent.includes('marked for AI'),'delegate: it will go to Sort for AI');
+    ok(P.$('#rblank').getAttribute('href')===P.g('SPARK_URL')&&P.$('.rnudge').textContent.includes('Is the deck the problem?'),'nudge: deck the problem? blank page in Spark');
+    P.click('#tzgo');
+    const shown=P.$('.rline').textContent;
+    ok(/^Line number \d+$/.test(shown)&&P.g('S.reset.lineId')==='x'+shown.split(' ').pop(),'focus shows one of your lines');
+    let same=true;for(let k=0;k<8;k++){P.g('tzPaint(false)');if(P.$('.rline').textContent!==shown)same=false}
+    P.g('rBack();rNext()');if(P.$('.rline').textContent!==shown)same=false;
+    ok(same,'… the same one for the whole reset, through redraws and going back');
+    P.click('#tzgo');P.click('#tzgo');
+    const t=JSON.parse(P.g(`JSON.stringify(S.items.find(i=>i.text==='The SOIP deck'))`));
+    ok(t&&t.ai===true&&t.sorted===false&&t.mode==='work','closing the reset: the delegated thing is in Sort, marked for AI');
+    ok(P.g('S.resetLog.at(-1).decision')==='ai','… and the decision is kept in the log');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.close();
+    /* two devices seeding the default lines merge cleanly — no doubles */
+    P=boot(NEW,{});
+    const two=P.g(`(()=>{const a=JSON.parse(JSON.stringify(S.goals.lines)),b=JSON.parse(JSON.stringify(S.goals.lines));
+      return JSON.stringify(syncMerge3(undefined,{lines:a,x:1},{lines:b,x:1},''))})()`);
+    ok(JSON.parse(two).v.lines.length===4,'default lines from two devices merge into one set');
+    P.close();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
