@@ -48,6 +48,7 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
         const c=gAdd('Lead SOIP MX and the big BR Relax campaign','q');c.why='Proof that I can carry the region.';
         gAdd('Be the obvious successor if Rafa leaves','long');
         gAdd('Creative lead for LATAM, then the US','long');
+        S.goals.missions=[{id:'m0',week:tAddPer(isoWeek(),-7,'days'),text:'Ship the SOIP MX route and present it to Pedro with confidence',at:1},{id:'m1',week:isoWeek(),text:'Make the LATAM switchers idea impossible to ignore — fun first, deck later',at:2}];
         S.goals.rules.push({id:nid(),text:'Rafa is an ally. Never fight — keep bringing value.'},{id:nid(),text:'Make my value obvious to Luana and Pedro.'});
         const ws=S.items.filter(i=>i.mode==='work');ws[0].goal=a.id;ws[1].goal=c.id;
       }
@@ -67,12 +68,15 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
       ['goal-sheet',`closeSheet();if(typeof gSheet==='function'&&S.goals&&S.goals.items[0]){S.ui.mode='work';S.ui.workView='goals';render();gSheet(S.goals.items[0].id)}`],
       ...[0,1,2,3,4,5].map(k=>['step-'+k,`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='goals';render();S.goals.lastWord={date:today(),feel:'A bit lost after the holiday',close:'Lawyer email first thing, then the portfolio shortlist'};S.goals.step={at:${k},gi:0,startedAt:Date.now(),feel:'A bit lost after the holiday',ans:{},pick:S.goals.items[0].id,move:'Email the lawyer this morning',close:'',taskId:null};S.items.filter(i=>i.mode==='work').slice(0,3).forEach(i=>{i.done=true;i.doneAt=Date.now()});save();tzOpen('step')`]),
       ['step-close',`if(TZ)tzClose();render()`],
-      ...[0,1,2,3,4,5,6,7].map(k=>['reset-'+k,`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='home';render();S.reset={v:2,at:Math.min(${k},6),startedAt:Date.now(),avoiding:'The SOIP deck intro — I don’t know where to start and it feels too big',moved:{water:true,music:true},reelOpened:false,moves:[{id:'a',text:'Write one ugly headline',done:${k}===7},{id:'b',text:'List the three proof points we already have from the MX campaign',done:false},{id:'c',text:'Ask Rafa for the old deck',done:false}],talk:'Claude: the intro is just the problem in one line.',helped:['move'],focusMins:25,focusUntil:${k}===7?Date.now()+25*6e4:null};REDIT=${k}===3?'claude':null;save();tzOpen('reset')`]),
+      ...[0,1,2,3,4,5,6,7].map(k=>['reset-'+k,`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='home';render();S.reset={v:3,at:Math.min(${k},6),startedAt:Date.now(),avoiding:'The SOIP deck intro — I don’t know where to start and it feels too big',moved:{water:true,music:true},reelOpened:false,cool:'The switchers insight — imagine it live, everyone would recognise themselves',decision:'shrink',lineId:'l1',moves:[{id:'a',text:'Write one ugly headline',done:${k}===7},{id:'b',text:'List the three proof points we already have from the MX campaign',done:false},{id:'c',text:'Ask Rafa for the old deck',done:false}],talk:'Claude: the intro is just the problem in one line.',helped:['move'],focusMins:25,focusUntil:${k}===7?Date.now()+25*6e4:null};REDIT=${k}===3?'claude':null;save();tzOpen('reset')`]),
       ['reset-bar',`if(TZ)tzClose();render()`],
+      ['zen-mission',`closeSheet();if(TZ)tzClose();S.ui.mode='work';S.ui.workView='home';S.ritual.work=['wm'];render();startZen();ZI=ZSTEPS.findIndex(s=>s.id==='wm');paintZen(true)`],
+      ['zen-pick',`ZI=ZSTEPS.findIndex(s=>s.id==='w6');paintZen(true)`],
+      ['zen-close',`exitZen()`],
       ['goal-check',`closeSheet();if(typeof gCheckSheet==='function'){gCheckSheet()}`],
     ].filter(([n])=>!ONLY||n.includes(ONLY));
     for(const [name,js] of views){
-      await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step|reset-\d/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */
+      await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step|reset-\d|zen-/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */
       const r=await page.evaluate(()=>{
         const bad=[];const vw=document.documentElement.clientWidth;
         const root=document.querySelector('#mlayer .sheet')||document.querySelector('.tzen')||document.getElementById('app');
@@ -87,7 +91,7 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
         const sw=document.documentElement.scrollWidth;if(sw>vw+1)bad.push('page scrolls sideways '+sw+'>'+vw);
         return [...new Set(bad)].slice(0,6)});
       if(r.length)out.push(`${W} ${name}: ${r.join(' | ')}`);
-      if(SHOT)await page.screenshot({path:`${OUT}/${W}-${name}.png`,fullPage:!name.match(/round|move|sheet|check|step|reset-\d/)});
+      if(SHOT)await page.screenshot({path:`${OUT}/${W}-${name}.png`,fullPage:!name.match(/round|move|sheet|check|step|reset-\d|zen-/)});
     }
     await ctx.close();
   }

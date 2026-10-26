@@ -1495,15 +1495,21 @@ function drawKeys(){
 
 /* ===== zen ritual ===== */
 /* step kind is keyed off the step id — never off its wording */
-const ZKIND={wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',wpw:'weekpick',wpr:'pcheck',w8:'pnudge',w7:'paper',
+const ZKIND={wm:'mission',wk:'week',w1:'plain',wj:'spark',wad:'adcheck',w2:'dump',w4:'sort',w5:'hours',ww:'weekhours',w6:'pick',wpw:'weekpick',wpr:'pcheck',w8:'pnudge',w7:'paper',
              p0:'anchors',p1:'dump',p2:'sort',p4:'pickweek',p5:'paper'};
 const WEEKSTEP={id:'wk',name:'Choose this week'};
 /* Personal gets a separate "Choose this week" step, once a week (its whole cadence is
    weekly). Work has no separate step: choosing the week happens inside "Pick today and
    this week", alongside the backlog, against the limit set by the week-hours step. */
+/* the weekly mission: in the work ritual until this week's is written (and for the rest of the day
+   it was written in, so a paused ritual resumes on the same steps) */
+const WMISSION={id:'wm',name:'This week’s mission'};
 function zSteps(m){
   const base=RITUALS[m];
-  if(m==='work')return base;
+  if(m==='work'){
+    if(gMissionWeek()&&!(S.ritual.work||[]).includes('wm'))return base;
+    const at=base.findIndex(s=>s.id==='wad')+1;
+    return [...base.slice(0,at),WMISSION,...base.slice(at)]}
   const gated=m==='personal'&&S.week.iso===isoWeek()&&S.week[m];
   if(gated)return base;
   const sortIdx=base.findIndex(s=>ZKIND[s.id]==='sort');
@@ -1737,7 +1743,7 @@ function paintZen(isStepChange){
             <button class="zsel" ${attr}="next" data-zid="${i.id}" ${full.next?'disabled':''}>Spare</button>`;
     const back=zBacklog(m);
     dispNote=`Fill the slots — the dots show what's still open.${back.length?' Light day? The backlog is at the bottom.':''}`;
-    mid=`${zSlotMeter(m)}
+    mid=`${m==='work'?gMissionLine():''}${zSlotMeter(m)}
       ${b?`<div class="zkept">${b.real}h of real time today${b.deep===0?' · too short for a deep block (needs 90 min)':''}</div>`
         :`<div class="zkept">No time set — <button class="zlink" id="zsethours">say how much is free</button> and this will size itself.</div>`}
       ${zPlanStrip(m)}
@@ -1866,6 +1872,13 @@ function paintZen(isStepChange){
         ${n?`<div class="zkept warn">Skipped ${n} day${n===1?'':'s'} since your last personal ritual.</div>`:''}`;
     cta=done?'Next':'Skip';
   }
+  else if(kind==='mission'){
+    const mw=gMissionWeek(),past=S.goals.missions.filter(x=>x.week!==isoWeek()),last=past[past.length-1];
+    dispNote='Write it fresh — don’t copy last week’s. What are you going after this week, and why does it matter to you?';
+    mid=`<div class="zdump"><textarea id="zmission" rows="1" placeholder="Make the LATAM switchers idea impossible to ignore.">${esc(mw?mw.text:'')}</textarea></div>
+      ${last?`<div class="zkept">Last week: ${esc(last.text)}</div>`:''}`;
+    cta=mw?'That is my week':'Skip for now';
+  }
   else if(kind==='adcheck'){
     const ans=S.adCheck.date===today()?S.adCheck.answer:null;
     mid=`<div class="hrow"><button class="hbtn ${ans===true?'on':''}" id="adyes">Yes — save it in Reel ↗</button></div>`;
@@ -1961,6 +1974,9 @@ function paintZen(isStepChange){
     if(kind==='pcheck'&&!personalDoneThisWeek()&&!S.pcheck.skips.includes(today()))S.pcheck.skips.push(today());
     zenNext();
   };
+  const zm=zmidEl.querySelector('#zmission');
+  if(zm){autosize(zm);if(isStepChange)zm.focus();
+    zm.oninput=()=>{autosize(zm);gMissionSet(zm.value);document.getElementById('zgo').textContent=gMissionWeek()?'That is my week':'Skip for now'}}
   const zc=zmidEl.querySelector('#zcap');
   if(zc){autosize(zc);zc.focus();zc.addEventListener('input',()=>autosize(zc));
     zc.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();
@@ -2207,8 +2223,31 @@ function initGoals(){
   });
   g.rules=g.rules.filter(r=>r&&r.id&&typeof r.text==='string'&&r.text.trim());
   if(g.step&&(typeof g.step!=='object'||typeof g.step.at!=='number'||!g.step.ans))g.step=null;
+  /* this week's mission, written fresh each week — the history shows how it moves */
+  if(!Array.isArray(g.missions))g.missions=[];
+  g.missions=g.missions.filter(x=>x&&typeof x.week==='string'&&typeof x.text==='string'&&x.text.trim()).sort((a,b)=>a.week<b.week?-1:1);
+  g.missions.forEach(x=>{if(!x.id)x.id='m'+x.week});
+  /* lines that move you, shown on the focus clock. Fixed ids, so two devices seeding them merge cleanly */
+  if(!Array.isArray(g.lines))g.lines=G_LINES.map(([id,text])=>({id,text}));
+  g.lines=g.lines.filter(l=>l&&l.id&&typeof l.text==='string'&&l.text.trim());
 }
+const G_LINES=[['l1','If you have fun doing the work, everyone will have fun watching the work. — Jason Bagley'],
+  ['l2','You love advertising. It should never drain your energy.'],
+  ['l3','If the deck is the problem, go to a blank page.'],
+  ['l4','Leverage your passionate energy.']];
 initGoals();
+/* the mission for this week, if written; otherwise the latest one */
+const gMissionWeek=()=>S.goals.missions.find(x=>x.week===isoWeek())||null;
+const gMissionLatest=()=>gMissionWeek()||S.goals.missions[S.goals.missions.length-1]||null;
+function gMissionSet(text){
+  const w=isoWeek(),t=text.trim();let x=S.goals.missions.find(m=>m.week===w);
+  if(!t){S.goals.missions=S.goals.missions.filter(m=>m.week!==w);save();return}
+  if(x){x.text=text;x.at=Date.now()}else S.goals.missions.push({id:'m'+w,week:w,text,at:Date.now()});
+  save()}
+/* one line, shown where you decide: the work ritual's pick step, the energy reset */
+function gMissionLine(){
+  const x=gMissionLatest();if(!x)return '';
+  return `<div class="gmline"><span>◎ ${x.week===isoWeek()?'This week’s mission':'Your mission'}</span>${esc(x.text)}</div>`}
 const gById=id=>S.goals.items.find(x=>x.id===id);
 const gActive=()=>S.goals.items.filter(x=>x.state==='active');
 const gRoute=x=>G_ROUTE.find(r=>r.id===x.route)||null;
@@ -2232,7 +2271,7 @@ const gMonthEnd=k=>{const d=new Date();d.setMonth(d.getMonth()+1+k,0);return d.t
 const gMonthsOut=k=>{const d=new Date();d.setMonth(d.getMonth()+k);return d.toISOString().slice(0,10)};
 /* the work task's link to a goal, shown on the today cards */
 const gTag=i=>{const x=i.goal&&gById(i.goal);return x?`<span class="tag ggoal" title="${esc(x.title)}">◎ ${esc(x.title)}</span>`:''};
-let GLETGO=false;
+let GLETGO=false,GMHIST=false;
 function viewGoals(){
   const G=S.goals,act=gActive(),cur=gNow(),ds=gSinceCheck();
   const wins=G.items.filter(x=>x.state==='achieved').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
@@ -2250,6 +2289,13 @@ function viewGoals(){
           return `<i style="background:${c?c.color:'var(--g300)'}" title="${tShort(e.date)}"></i>`}).join('')}</span>`:''}</div></div>`};
   return `
   <div class="planhead"><h2>Goals</h2><span>step back · where you’re going · is the route working</span></div>
+  ${(()=>{const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
+    return `<div class="gheading gmission"><div class="seg-label" style="margin:0 0 6px">This week’s mission · week of ${tShort(isoWeek())}</div>
+      <textarea id="gmission" rows="1" placeholder="Write it fresh. What are you going after this week — and why does it matter to you?">${esc(mw?mw.text:'')}</textarea>
+      ${!mw&&last?`<div class="ghint" style="margin:8px 0 0">Last week: ${esc(last.text)}</div>`:''}
+      ${past.length?`<button class="zlink" id="gmhist" style="font-size:12px;margin-top:10px">Past missions — ${past.length} · ${GMHIST?'hide':'show'}</button>
+        ${GMHIST?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}`:''}
+    </div>`})()}
   <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
     <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
   <div class="gpulse">
@@ -2275,6 +2321,12 @@ function viewGoals(){
     ${G.rules.map(r=>`<div class="grule"><span class="grule-t" data-gredit="${r.id}">${esc(r.text)}</span>
       <button class="act del" data-grdel="${r.id}" title="Remove">×</button></div>`).join('')}
     <input class="snew" id="gruleadd" placeholder="Add a ground rule — ⏎" /></div>
+  <div class="grules">
+    <div class="slotlabel">Lines that move you — ${G.lines.length}</div>
+    <div class="ghint">One shows on the focus clock at the end of an energy reset.</div>
+    ${G.lines.map(l=>`<div class="grule"><span class="grule-t gline" data-gledit="${l.id}">${esc(l.text)}</span>
+      <button class="act del" data-gldel="${l.id}" title="Remove">×</button></div>`).join('')}
+    <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div>
   ${wins.length?`<div class="slotlabel">Wins — ${wins.length}</div>
     ${wins.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d" style="background:#1E8E3E;opacity:1"></span>
       <span class="t">${esc(x.title)}</span><span class="tag">${x.doneAt?tShort(x.doneAt):''}</span></div>`).join('')}`:''}
@@ -2537,6 +2589,17 @@ function wireGoals(){
   app.querySelectorAll('[data-gredit]').forEach(b=>b.onclick=()=>{const r=S.goals.rules.find(x=>x.id===b.dataset.gredit);if(!r)return;
     sheetPrompt('Ground rule','','',v=>{r.text=v;save();render()},r.text)});
   const lg=document.getElementById('gletgo');if(lg)lg.onclick=()=>{GLETGO=!GLETGO;render()};
+  const gm=document.getElementById('gmission');
+  if(gm){autosize(gm);gm.oninput=()=>{autosize(gm);gMissionSet(gm.value)}}
+  const gmh=document.getElementById('gmhist');if(gmh)gmh.onclick=()=>{GMHIST=!GMHIST;render()};
+  const la=document.getElementById('glineadd');
+  if(la)la.onkeydown=e=>{if(e.key==='Enter'){const v=la.value.trim();if(!v)return;
+    S.goals.lines.push({id:nid(),text:v});save();render();const f=document.getElementById('glineadd');if(f)f.focus()}};
+  app.querySelectorAll('[data-gldel]').forEach(b=>b.onclick=()=>{const l=S.goals.lines.find(x=>x.id===b.dataset.gldel);if(!l)return;
+    S.goals.lines=S.goals.lines.filter(x=>x!==l);save();render();
+    toastUndo('line removed',()=>{S.goals.lines.push(l);save();render()})});
+  app.querySelectorAll('[data-gledit]').forEach(b=>b.onclick=()=>{const l=S.goals.lines.find(x=>x.id===b.dataset.gledit);if(!l)return;
+    sheetPrompt('A line that moves you','','',v=>{l.text=v;save();render()},l.text)});
 }
 
 /* ===== energy reset (work mode) =====
@@ -2549,17 +2612,18 @@ function wireGoals(){
    the focus length are set right where they're used. Nothing is counted against you. */
 const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'name',name:'What are you avoiding?'},
   {id:'move',name:'Get the blood moving'},{id:'talk',name:'Talk it out — out loud'},
-  {id:'reel',name:'Remember why you save ideas'},{id:'moves',name:'What are the first 2-minute moves?'},
+  {id:'cool',name:'What’s the coolest thing about this?'},{id:'moves',name:'What are the first 2-minute moves?'},
   {id:'focus',name:'Focus'}];
 const RNOTE={close:'Everything there can wait. Close them, then tap Done.',
   name:'One line. Naming it shrinks it.',
   move:'Leave the desk. Take your phone — this follows you.',
-  talk:'Open Claude in voice and say it out loud: what’s stuck, then who you want to become.',
-  reel:'Optional. Look at what you saved — and why: you want to make work at that level one day.',
+  talk:'Open Claude in voice and say it out loud. Or write it in Spark. Avoidance is information — what is it telling you?',
+  cool:'Forget the deck. One line, like an ad breakfast note: what’s cool about it, and why it works.',
   moves:'Dump every small move you can see. Small enough to start right now. Ugly is fine.',
   focus:'Put on some music and get the first thing out of the way.'};
 const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
-const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['reel','Reel'],['moves','The brain dump']];
+const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['cool','The coolest thing'],['moves','The brain dump']];
+const RDECIDE=[['now','⚡ Do it now'],['shrink','✂️ Shrink it'],['ai','🤖 Delegate to AI'],['drop','✕ Not doing it']];
 const RMINS=[15,25,45,60];
 const RDEF={claude:'https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207',reel:REEL_URL,focus:25};
 const ROLDIDS=['close','name','move','talk','music','reel','enter'];   /* the first version's steps */
@@ -2574,12 +2638,13 @@ function initReset(){
   delete S.focus;   /* the first version's focus countdown on the home card */
   let r=S.reset;
   if(r&&(typeof r!=='object'||typeof r.at!=='number'||!r.startedAt))r=S.reset=null;
-  if(r&&r.v!==2){   /* a reset started in the first version: same step, new layout */
-    const id=ROLDIDS[r.at],map={music:'reel',enter:'moves'};
+  if(r&&r.v===2){r.v=3;r.helped=(r.helped||[]).map(k=>k==='reel'?'cool':k)}   /* v2 → v3: Reel became “the coolest thing” */
+  if(r&&r.v!==2&&r.v!==3){   /* a reset started in the first version: same step, new layout */
+    const id=ROLDIDS[r.at],map={music:'cool',reel:'cool',enter:'moves'};
     r.at=Math.max(0,RSTEPS.findIndex(s=>s.id===(map[id]||id)));
     r.moves=r.firstMove&&String(r.firstMove).trim()?[{id:nid(),text:String(r.firstMove).trim(),done:false}]:[];
     if(r.musicOn)(r.moved=r.moved||{}).music=true;
-    ['firstMove','protectedUntil','talkUntil','musicOn'].forEach(k=>delete r[k]);r.v=2}
+    ['firstMove','protectedUntil','talkUntil','musicOn'].forEach(k=>delete r[k]);r.v=3}
   if(r){
     if(!RSTEPS[r.at])r.at=0;
     r.moved=r.moved&&typeof r.moved==='object'?r.moved:{};
@@ -2587,6 +2652,8 @@ function initReset(){
     r.moves=Array.isArray(r.moves)?r.moves.filter(x=>x&&x.id&&typeof x.text==='string'):[];
     if(typeof r.avoiding!=='string')r.avoiding='';
     if(typeof r.talk!=='string')r.talk='';
+    if(typeof r.cool!=='string')r.cool='';
+    if(r.decision&&!RDECIDE.some(([k])=>k===r.decision))r.decision=null;
     if(!(r.focusMins>=1&&r.focusMins<=240))r.focusMins=c.focus;
     if(r.focusUntil!=null&&!(r.focusUntil>0))r.focusUntil=null;
   }
@@ -2609,7 +2676,7 @@ function rChime(){try{if(navigator.vibrate)navigator.vibrate([120,80,120]);if(!R
     g.gain.setValueAtTime(0.0001,t+k*.35);g.gain.exponentialRampToValueAtTime(0.25,t+k*.35+.03);g.gain.exponentialRampToValueAtTime(0.0001,t+k*.35+.6);
     o.start(t+k*.35);o.stop(t+k*.35+.65)})}catch(e){}}
 function startReset(){
-  if(!S.reset){S.reset={v:2,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,moves:[],talk:'',helped:[],
+  if(!S.reset){S.reset={v:3,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,cool:'',decision:null,moves:[],talk:'',helped:[],
     focusMins:S.resetCfg.focus,focusUntil:null};save()}
   if(ZEN)exitZen();
   REDIT=null;tzOpen('reset');
@@ -2622,7 +2689,10 @@ function rNext(){
   if(id==='focus'){
     if(!r.focusUntil){r.focusUntil=Date.now()+r.focusMins*6e4;save();rUnlock();tzPaint(false);return}
     rFinish();return}
-  r.at++;REDIT=null;save();tzPaint(true);
+  r.at++;REDIT=null;
+  if(RSTEPS[r.at].id==='focus'&&!(r.lineId&&S.goals.lines.some(l=>l.id===r.lineId))){
+    const L=S.goals.lines;r.lineId=L.length?L[Math.floor(Math.random()*L.length)].id:null}
+  save();tzPaint(true);
 }
 /* back works on every step; on the first it leaves the ritual (it keeps your place) */
 function rBack(){const r=S.reset;if(!r)return;
@@ -2632,22 +2702,26 @@ function rAddMoves(text){const r=S.reset;
   text.split('\n').map(s=>s.replace(/^[\s•\-–*·.\d)]+/,'').trim()).filter(Boolean).forEach(s=>r.moves.push({id:nid(),text:s,done:false}));save()}
 function rFinish(){
   const r=S.reset;
-  S.resetLog.push({date:today(),at:Date.now(),avoiding:r.avoiding.trim(),moves:r.moves.map(x=>x.text),
+  /* delegating the avoided thing: it lands in Sort, marked for AI */
+  if(r.decision==='ai'&&r.avoiding.trim()){const [t]=add(r.avoiding.trim(),'work');t.ai=true}
+  S.resetLog.push({date:today(),at:Date.now(),avoiding:r.avoiding.trim(),cool:r.cool.trim(),decision:r.decision||null,moves:r.moves.map(x=>x.text),
     done:r.moves.filter(x=>x.done).length,talk:r.talk.trim(),helped:r.helped.slice()});
   if(S.resetLog.length>200)S.resetLog=S.resetLog.slice(-200);
   const n=r.moves.filter(x=>x.done).length;
   S.reset=null;save();tzClose();
-  toast(n?n+(n===1?' move':' moves')+' done — you’re moving':'reset done — go');
+  toast(r.decision==='ai'&&r.avoiding.trim()?'reset done — the delegated one is in Sort for AI':n?n+(n===1?' move':' moves')+' done — you’re moving':'reset done — go');
 }
-/* what to talk about: what you named, and who you're becoming (from the Goals tab) */
-function rTalkText(){
-  const r=S.reset,h=(S.goals&&S.goals.heading||'').trim(),far=S.goals?gActive().filter(x=>x.horizon==='long').map(x=>x.title):[];
-  const L=['I want to talk this through out loud for a few minutes.'];
-  if(r.avoiding.trim())L.push('I’m stuck — avoiding: '+r.avoiding.trim()+'.');
-  if(h)L.push('Remind me who I’m becoming: '+h);
-  if(far.length)L.push('Where I’m heading: '+far.join('; ')+'.');
-  L.push('Help me see what’s really in the way, then land on a few small first moves.');
-  return L.join('\n');
+/* a template to write it out in Spark: avoidance as information, then back to the fun part */
+function rTemplate(){
+  const r=S.reset,m=gMissionLatest();
+  return ['What I’m avoiding: '+(r.avoiding.trim()||''),'',
+    'Why am I avoiding it? (fear, boredom, waiting on someone?)','','',
+    'What’s behind it?','','',
+    'Why do I care about it?','','',
+    'Kill it, shrink it, or keep it?','','',
+    'What can I do that doesn’t depend on anyone — so I know I tried everything in my power?','','',
+    'What’s the coolest thing about it? (like an ad breakfast note)','','',
+    ...(m?['My mission: '+m.text]:[])].join('\n');
 }
 /* a link you can change right where it's used */
 const rLinkRow=(key,label)=>REDIT===key
@@ -2657,6 +2731,8 @@ const rLinkRow=(key,label)=>REDIT===key
   :`<button class="zlink rlinkchange" data-redit="${key}">change ${label} link</button>`;
 function rPaint(change){
   const r=S.reset;if(!r){tzClose();return}
+  ['avoiding','talk','cool'].forEach(k=>{if(typeof r[k]!=='string')r[k]=''});   /* never trip on a field from another version */
+  if(!Array.isArray(r.moves))r.moves=[];if(!Array.isArray(r.helped))r.helped=[];if(!r.moved)r.moved={};
   const s=RSTEPS[r.at],c=S.resetCfg,now=Date.now();
   const o={dots:tzDots(RSTEPS.length,r.at),step:`Energy reset · ${r.at+1} of ${RSTEPS.length}`,name:s.name,note:RNOTE[s.id],
     back:rBack,go:rNext,cta:'Next'};
@@ -2673,27 +2749,36 @@ function rPaint(change){
       <div class="zkept">${Object.values(r.moved).filter(Boolean).length?'Good. Keep going until your body feels it.':'Tap each one as you do it.'}</div>`;
   }
   else if(s.id==='talk'){
-    const h=(S.goals&&S.goals.heading||'').trim(),far=S.goals?gActive().filter(x=>x.horizon==='long'):[];
+    const ms=gMissionLatest(),h=(S.goals&&S.goals.heading||'').trim(),far=S.goals?gActive().filter(x=>x.horizon==='long'):[];
     o.mid=`<div class="racts"><a class="rbig" id="rclaude" href="${esc(c.claude)}" target="_blank" rel="noopener">Open Claude ↗</a></div>
       <div class="rlinkrow">${rLinkRow('claude','Claude')}</div>
       <div class="rpoints">
         ${r.avoiding.trim()?`<div class="rpt"><span>What’s stuck</span>${esc(r.avoiding)}</div>`:''}
-        ${h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
+        ${ms?`<div class="rpt"><span>${ms.week===isoWeek()?'This week’s mission':'Your mission'}</span>${esc(ms.text)}</div>`
+          :h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
         ${far.length?`<div class="rpt"><span>Where you’re heading</span>${far.map(x=>esc(x.title)).join(' · ')}</div>`:''}
-        ${!r.avoiding.trim()&&!h&&!far.length?`<div class="rpt"><span>Talk about</span>What’s stuck — then who you want to become, and the work you want to be doing.</div>`:''}
+        <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone?</div>
       </div>
-      <button class="zlink" id="rtalkcopy">Copy an opener to paste into Claude</button>`;
+      <div class="rspark"><div><b>Rather write it?</b> Copy the template, paste it in Spark.</div>
+        <div class="racts" style="margin:10px 0 0"><button class="rbig ghost" id="rtpl">Copy the template</button>
+          <a class="rbig ghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
   }
-  else if(s.id==='reel'){
-    o.mid=`<div class="racts"><a class="rbig" id="rreel" href="${esc(c.reel)}" target="_blank" rel="noopener">Open Reel ↗</a></div>
-      <div class="rlinkrow">${rLinkRow('reel','Reel')}</div>
-      <div class="zkept" style="margin-top:16px">${r.reelOpened?'Why did you save them? That level is where you’re going.':'Skip it if you’re ready.'}</div>`;
-    o.cta=r.reelOpened?'Next':'Skip';
+  else if(s.id==='cool'){
+    o.mid=`${r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>The thing you were avoiding</span>${esc(r.avoiding)}</div>`:''}
+      <div class="zdump"><textarea id="rcool" rows="1" placeholder="The LATAM switchers insight — imagine it live, everyone would recognise themselves.">${esc(r.cool)}</textarea></div>
+      <div class="zkept" style="margin-top:6px">Need a spark first? <a class="zlink" id="rreel" href="${esc(c.reel)}" target="_blank" rel="noopener">Open Reel ↗</a></div>
+      <div class="rlinkrow" style="margin-top:6px">${rLinkRow('reel','Reel')}</div>`;
+    o.cta=r.cool.trim()?'Next':'Skip';
   }
   else if(s.id==='moves'){
     const p=plan('work'),deep=p.deep?byId(p.deep):null;
-    o.mid=`${deep?`<div class="rpt" style="margin-bottom:18px"><span>Today’s deep work</span>${esc(deep.text)}</div>`
-        :r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>What you were avoiding</span>${esc(r.avoiding)}</div>`:''}
+    o.mid=`${gMissionLine()}
+      ${r.avoiding.trim()?`<div class="zcarry-h">What do you do with “${esc(r.avoiding.trim().slice(0,60))}${r.avoiding.trim().length>60?'…':''}”?</div>
+        <div class="rchips">${RDECIDE.map(([k,l])=>`<button class="rchip sm ${r.decision===k?'on':''}" data-rdecide="${k}">${l}</button>`).join('')}</div>
+        ${r.decision==='ai'?`<div class="zkept">It goes to Sort, marked for AI, when you close the reset.</div>`
+          :r.decision==='drop'?`<div class="zkept">Dropped on purpose. That’s a decision, not a failure.</div>`:''}`:''}
+      ${deep?`<div class="rpt" style="margin:8px 0 18px"><span>Today’s deep work</span>${esc(deep.text)}</div>`:''}
+      <div class="rnudge">Is the deck the problem? Go to a blank page — <a class="zlink" id="rblank" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">start in Spark ↗</a></div>
       ${r.moves.length?`<div class="rmoves">${r.moves.map(x=>`<div class="rmove"><span>${esc(x.text)}</span><button class="act del" data-rmdel="${x.id}" title="Remove">×</button></div>`).join('')}</div>`:''}
       <div class="zdump"><textarea id="rmovenew" rows="1" placeholder="${r.moves.length?'Another one — ⏎':'Write one ugly headline. ⏎ for the next one'}"></textarea></div>
       <div class="zcarry-h" style="margin-top:26px">What you and Claude landed on <span class="ropt">— optional, paste it here</span></div>
@@ -2706,7 +2791,9 @@ function rPaint(change){
     const run=r.focusUntil&&r.focusUntil>now,over=r.focusUntil&&r.focusUntil<=now;
     o.name=run?'Focus':over?'Time. Nice.':'Focus';
     o.note=over?'Close the reset — or keep going while it’s flowing.':RNOTE.focus;
-    o.mid=`${!r.focusUntil?`<div class="rchips">${RMINS.map(m=>`<button class="rchip sm ${r.focusMins===m?'on':''}" data-rmins="${m}">${m} min</button>`).join('')}</div>`
+    const line=S.goals.lines.find(l=>l.id===r.lineId)||S.goals.lines[0];
+    o.mid=`${line?`<div class="rline">${esc(line.text)}</div>`:''}
+      ${!r.focusUntil?`<div class="rchips">${RMINS.map(m=>`<button class="rchip sm ${r.focusMins===m?'on':''}" data-rmins="${m}">${m} min</button>`).join('')}</div>`
         :`<div class="rclock ${over?'over':''}" ${run?`data-until="${r.focusUntil}"`:''}>${run?rLeft(r.focusUntil-now):'0:00'}</div>`}
       ${r.moves.length?`<div class="zcarry-h" style="margin-top:22px">Your moves</div>
         <div class="rmoves">${r.moves.map(x=>`<button class="rmove rcheck ${x.done?'on':''}" data-rmdone="${x.id}"><b>${x.done?'✓':''}</b><span>${esc(x.text)}</span></button>`).join('')}</div>`
@@ -2719,9 +2806,10 @@ function rPaint(change){
   const z=tzlayer.querySelector('#zen');if(z)z.classList.add('rzen');
   const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
     t.oninput=()=>{autosize(t);r[key]=t.value;save()}};
-  area('#ravoid','avoiding');area('#rtalk','talk');
+  area('#ravoid','avoiding');area('#rtalk','talk');area('#rcool','cool');
+  const tp=mid.querySelector('#rtpl');if(tp)tp.onclick=()=>tCopy(rTemplate());
+  mid.querySelectorAll('[data-rdecide]').forEach(b=>b.onclick=()=>{const k=b.dataset.rdecide;r.decision=r.decision===k?null:k;save();tzPaint(false)});
   mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];save();tzPaint(false)});
-  const tc=mid.querySelector('#rtalkcopy');if(tc)tc.onclick=()=>tCopy(rTalkText());
   const re=mid.querySelector('#rreel');if(re)re.addEventListener('click',()=>{r.reelOpened=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
   /* links edited in place */
   mid.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>{REDIT=b.dataset.redit;tzPaint(false);const f=document.getElementById('rlink');if(f)f.focus()});
