@@ -2625,13 +2625,14 @@ const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Mov
 const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['cool','The coolest thing'],['moves','The brain dump']];
 const RDECIDE=[['now','⚡ Do it now'],['shrink','✂️ Shrink it'],['ai','🤖 Delegate to AI'],['drop','✕ Not doing it']];
 const RMINS=[15,25,45,60];
-const RDEF={claude:'https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207',reel:REEL_URL,focus:25};
+const RDEF={claude:'https://claude.ai/project/01a1798f-8f85-777a-b5fb-fdf995e253f8',reel:REEL_URL,focus:25};
 const ROLDIDS=['close','name','move','talk','music','reel','enter'];   /* the first version's steps */
 const RLIVE_H=3;   /* a reset older than this no longer opens by itself */
 const rOkLink=u=>typeof u==='string'&&/^https?:\/\/\S+$/.test(u);
 function initReset(){
   const o=S.resetCfg||{},c=S.resetCfg={claude:o.claude,reel:o.reel,focus:o.focus};
-  if(c.claude==='https://claude.ai/projects')c.claude=RDEF.claude;   /* the first placeholder → your therapy-talks project */
+  /* earlier defaults (the placeholder, the first talks project) → the current project; a link you set yourself is kept */
+  if(['https://claude.ai/projects','https://claude.ai/project/01a0ef2a-a707-739c-bf11-e42eafa6b207'].includes(c.claude))c.claude=RDEF.claude;
   ['claude','reel'].forEach(k=>{if(!rOkLink(c[k]))c[k]=RDEF[k]});
   c.focus=Math.round(+c.focus);if(!(c.focus>=1&&c.focus<=240))c.focus=RDEF.focus;
   if(!Array.isArray(S.resetLog))S.resetLog=[];
