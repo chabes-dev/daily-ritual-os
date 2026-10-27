@@ -1176,6 +1176,100 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.close();
   }
 
+  section('25. lighter sync: fewer uploads and checks, nothing lost');
+  {
+    let P=boot(NEW,{});
+    /* stand-in network: count every upload and every check */
+    P.g(`window.__put=[];window.__get=[];window.__delays=[];
+      syncSeal=async(k,data)=>data;syncOpen=async(k,remote)=>JSON.parse(JSON.stringify(remote.data));
+      syncPut=async(id,etag,payload)=>{__put.push(etag);return {etag:'e'+(__put.length+1)}};
+      syncGet=async(id,have)=>{__get.push(have);return {etag:have,unchanged:true}};
+      const realLater=syncLater;syncLater=(fn,ms)=>{__delays.push(ms);realLater(fn,ms)};
+      SY={id:'x',k:'k',etag:'e1',dirty:false,h:syncHash(JSON.stringify(syncContent(S))),at:null};syncSave();SYNC_CHECKED=0`);
+    const edit=txt=>P.g(`LAST_INPUT=Date.now();add(${JSON.stringify(txt)},'work')`);
+    edit('Quiet one');
+    ok(P.g('SY.dirty')===true&&P.g('__put.length')===0&&P.g('__delays.at(-1)')===P.g('SYNC_QUIET')&&P.g('SYNC_QUIET')>=30000,'an edit waits for a quiet spell before uploading');
+    edit('Quiet two');edit('Quiet three');
+    ok(P.g('__put.length')===0&&P.g('__delays.at(-1)')===P.g('SYNC_QUIET'),'… more edits keep waiting — one upload for the whole burst');
+    P.g('SYNC_DIRTY_AT=Date.now()-SYNC_MAXWAIT+1000');edit('Quiet four');
+    ok(P.g('__delays.at(-1)')<=1000,'… but non-stop editing still uploads within a few minutes');
+    P.g('clearTimeout(SYNC_PUSH_T)');
+    P.w.dispatchEvent(new P.w.Event('blur'));await tick(30);
+    ok(P.g('__put.length')===1&&P.g('SY.dirty')===false&&P.g('SY.etag')==='e2','leaving the window uploads straight away');
+    P.w.dispatchEvent(new P.w.Event('blur'));await tick(30);
+    ok(P.g('__put.length')===1,'… and only when something is waiting');
+    edit('Hidden one');
+    Object.defineProperty(P.w.document,'hidden',{value:true,configurable:true});
+    P.w.document.dispatchEvent(new P.w.Event('visibilitychange'));await tick(30);
+    ok(P.g('__put.length')===2&&P.g('SY.dirty')===false,'switching apps uploads straight away');
+    edit('Closed one');P.w.dispatchEvent(new P.w.Event('pagehide'));await tick(30);
+    ok(P.g('__put.length')===3,'closing the tab uploads straight away');
+    Object.defineProperty(P.w.document,'hidden',{value:false,configurable:true});
+    /* an edit that is undone before the upload: nothing to send */
+    P.g(`const k=S.items.length;LAST_INPUT=Date.now();add('Oops','work');S.items=S.items.filter(i=>i.text!=='Oops');save()`);
+    ok(P.g('SY.dirty')===true,'(an edit and its undo)');
+    P.g('clearTimeout(SYNC_PUSH_T)');await P.g('syncPush()');
+    ok(P.g('__put.length')===3&&P.g('SY.dirty')===false&&P.g('SYNC_STATUS')==='idle','an edit undone before the upload sends nothing');
+    /* coming back: one cheap check, not a download */
+    P.g('__get=[];SYNC_CHECKED=0');
+    P.w.dispatchEvent(new P.w.Event('focus'));await tick(30);
+    ok(P.g('__get.length')===1&&P.g('__get[0]')===P.g('SY.etag'),'coming back checks once, saying which version this device has');
+    ok(P.g('SYNC_STATUS')==='idle'&&P.g('S.items.some(i=>i.text==="Closed one")'),'… “unchanged” leaves everything as it is');
+    P.w.dispatchEvent(new P.w.Event('focus'));P.w.dispatchEvent(new P.w.Event('focus'));
+    P.w.document.dispatchEvent(new P.w.Event('visibilitychange'));await tick(30);
+    ok(P.g('__get.length')===1,'… and clicking around right after does not check again');
+    P.g('SYNC_CHECKED=Date.now()-11000');P.w.document.dispatchEvent(new P.w.Event('visibilitychange'));await tick(30);
+    ok(P.g('__get.length')===2,'coming back to the app a little later checks again');
+    /* a running reset hands over quickly; typing inside it does not */
+    P.g('__delays=[];startReset()');
+    ok(P.g('__delays.at(-1)')===P.g('SYNC_QUICK'),'starting a reset goes up within seconds');
+    P.g('clearTimeout(SYNC_PUSH_T);SY.dirty=false;__delays=[];LAST_INPUT=Date.now();rNext()');
+    ok(P.g('S.reset.at')===1&&P.g('__delays.at(-1)')===P.g('SYNC_QUICK'),'… so does moving to the next step');
+    P.g(`clearTimeout(SYNC_PUSH_T);__delays=[];LAST_INPUT=Date.now();S.reset.talk='thinking out loud';save()`);
+    ok(P.g('__delays.at(-1)')===P.g('SYNC_QUIET'),'… typing inside the reset waits like any edit');
+    P.g('clearTimeout(SYNC_PUSH_T)');
+    ok(!/setInterval\([^\n]*sync(Pull|Push)/.test(NEW),'no timer polls the sync service');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.g('SY=null;syncSave()');await tick(30);P.close();
+
+    /* the server: “unchanged” answers, no scratch writes */
+    let src=fs.readFileSync(path.join(REPO,'api/sync.js'),'utf8')
+      .replace(/^import .*@vercel\/blob.*$/m,'const get=null,put=null;class BlobPreconditionFailedError extends Error{}');
+    const api=await import('data:text/javascript,'+encodeURIComponent(src));
+    const store={},calls=[];
+    const blob={
+      async get(p,o){calls.push(['get',p,o]);const v=store[p];if(!v)return null;
+        if(o.ifNoneMatch&&o.ifNoneMatch===v.etag)return {statusCode:304,stream:null,blob:{etag:v.etag}};
+        return {statusCode:200,stream:new Blob([v.body]).stream(),blob:{etag:v.etag}}},
+      async put(p,body,o){calls.push(['put',p,o]);const v=store[p];
+        if(o.ifMatch&&(!v||v.etag!==o.ifMatch)){const e=new Error('precondition failed');e.name='BlobPreconditionFailedError';throw e}
+        if(o.allowOverwrite===false&&v){const e=new Error('blob already exists');throw e}
+        store[p]={body,etag:'"t'+(calls.length)+'"'};return {etag:store[p].etag}}};
+    const call=async(method,query,body)=>{const out={code:0,json:null,h:{}};
+      const res={setHeader:(k,v)=>{out.h[k]=v},status(c){out.code=c;return this},json(j){out.json=j;return this}};
+      await api.handle({method,query:query||{},body},res,blob);return out};
+    const id='a'.repeat(64),doc={v:1,iv:'abc',ct:'ciphertext',savedAt:1};
+    let r=await call('PUT',{},{id,etag:null,doc});
+    ok(r.code===200&&r.json.etag,'server: first upload creates the file');
+    const et=r.json.etag;
+    r=await call('GET',{id});
+    ok(r.code===200&&r.json.ct==='ciphertext'&&r.json.etag===et,'server: a plain check returns the file');
+    r=await call('GET',{id,have:et});
+    ok(r.code===200&&r.json.unchanged===true&&r.json.etag===et&&!('ct' in r.json),'server: “I have this version” → just “unchanged”, nothing downloaded');
+    ok(calls.at(-1)[2].ifNoneMatch===et&&calls.at(-1)[2].useCache===false,'… asked of the store as a conditional read');
+    r=await call('GET',{id,have:'"old"'});
+    ok(r.code===200&&r.json.ct==='ciphertext','server: an older version gets the new file');
+    r=await call('GET',{id,have:'x'.repeat(500)});
+    ok(r.code===200&&r.json.ct==='ciphertext','server: a nonsense version is ignored');
+    r=await call('PUT',{},{id,etag:'"old"',doc:{...doc,ct:'other'}});
+    ok(r.code===409&&r.json.conflict&&r.json.current.ct==='ciphertext','server: an upload over a newer version is refused with the current one');
+    const puts=calls.filter(c=>c[0]==='put').length;
+    r=await call('GET',{selftest:'1'});
+    ok(r.code===400&&calls.filter(c=>c[0]==='put').length===puts&&!Object.keys(store).some(k=>k.startsWith('selftest')),'server: no test route that writes to storage');
+    r=await call('GET',{id:'nope'});ok(r.code===400,'server: bad ids refused');
+    r=await call('DELETE',{id});ok(r.code===405,'server: only GET and PUT');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
   process.exit(0);
