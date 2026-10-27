@@ -515,7 +515,7 @@ const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
 const SYNC_KEY='os_sync',SYNC_SALT='ritual-os/sync/v1',SYNC_ITER=310000;
 SY=(()=>{try{const v=JSON.parse(localStorage.getItem(SYNC_KEY));return v&&v.id&&v.k?v:null}catch(e){return null}})();
 let SYNC_STATUS=SY?'idle':'off',SYNC_PUSH_T=null,SYNC_BUSY=false,SYNC_N=0;
-const SYNC_QUIET=45000,SYNC_QUICK=4000,SYNC_MAXWAIT=180000;
+const SYNC_QUIET=45000,SYNC_QUICK=4000,SYNC_MAXWAIT=180000,SYNC_MAXBYTES=1900000;   /* the sync service keeps up to ~1.9 MB */
 let SYNC_CHECKED=0,SYNC_DIRTY_AT=0,SYNC_RESET_SEEN='';
 function syncLater(fn,ms){clearTimeout(SYNC_PUSH_T);SYNC_PUSH_T=setTimeout(fn,ms)}
 /* where a running reset is: handed to the other device quickly, the rest can wait */
@@ -618,6 +618,7 @@ async function syncGet(id,have){
 async function syncPut(id,etag,doc){
   const r=await fetch('/api/sync',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,etag:etag||null,doc})});
   if(r.status===409){const j=await r.json();return {conflict:true,current:j.current}}
+  if(r.status===413||r.status===507){const e=new Error('sync '+r.status);e.kind=r.status===413?'big':'full';throw e}
   if(!r.ok)throw new Error('sync '+r.status);
   return r.json();
 }
@@ -625,8 +626,11 @@ async function syncPut(id,etag,doc){
 function syncLabel(){
   if(!SY)return '☁ Sync: off';
   return SYNC_STATUS==='busy'?'☁ Syncing…':SYNC_STATUS==='pending'?'☁ Saving…':SYNC_STATUS==='offline'?'☁ Offline — will retry'
-    :SYNC_STATUS==='conflict'?'☁ Needs a choice':'☁ Synced';
+    :SYNC_STATUS==='conflict'?'☁ Needs a choice':SYNC_STATUS==='big'?'☁ Too big to sync':SYNC_STATUS==='full'?'☁ Sync storage full'
+    :syncNearlyFull()?'☁ Synced — nearly full':'☁ Synced';
 }
+function syncNearlyFull(){return !!(SY&&SY.bytes>SYNC_MAXBYTES*0.8)}
+function syncSize(n){return n>=1e6?(n/1e6).toFixed(1)+' MB':Math.max(1,Math.round(n/1e3))+' KB'}
 function syncStatus(s){SYNC_STATUS=s;const b=document.getElementById('syncbtn');
   if(b){b.textContent=syncLabel();b.className='btn sync-'+(SY?s:'off')}}
 /* called by save(): mark real edits and upload once things go quiet */
@@ -646,17 +650,18 @@ async function syncPush(force){
   if(!force&&syncHash(JSON.stringify(data))===SY.h){SY.dirty=false;syncSave();syncStatus('idle');return}   /* back to what's already up there */
   SYNC_BUSY=true;syncStatus('busy');
   try{
-    const r=await syncPut(SY.id,force&&force.etag!==undefined?force.etag:SY.etag,await syncSeal(SY.k,data));
+    const sealed=await syncSeal(SY.k,data);
+    const r=await syncPut(SY.id,force&&force.etag!==undefined?force.etag:SY.etag,sealed);
     if(r.conflict){
       SYNC_BUSY=false;
       if(!r.current){SY.etag=null;syncSave();return syncPush(true)}   /* the stored copy vanished: recreate it */
       return syncResolve(r.current);
     }
-    SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();syncBaseSet(data);
+    SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();SY.bytes=JSON.stringify(sealed).length;syncBaseSet(data);
     if(SYNC_N===n)SY.dirty=false;
     syncSave();SYNC_BUSY=false;SYNC_CHECKED=Date.now();syncStatus(SY.dirty?'pending':'idle');
     if(SY.dirty){SYNC_DIRTY_AT=Date.now();syncLater(()=>syncPush(),document.hidden?0:SYNC_QUIET)}   /* edited during the upload */
-  }catch(e){SYNC_BUSY=false;syncStatus('offline')}
+  }catch(e){SYNC_BUSY=false;syncStatus(e&&e.kind||'offline')}
 }
 /* opening the app, or coming back to it: is there something newer from another device? */
 async function syncPull(){
@@ -702,7 +707,10 @@ function syncSheet(){
   if(SY){
     sheet(`<h3>☁ Sync is on</h3>
       <p>${SYNC_STATUS==='offline'?'Can’t reach the sync service right now — your changes are safe here and will upload when you’re back online.'
+        :SYNC_STATUS==='big'?'Your data has grown past what the sync service keeps (about 1.9 MB), so the latest changes stay on this device only. They are safe here — export a backup, and ask Claude to make sync handle more.'
+        :SYNC_STATUS==='full'?'The sync service has no room for a new passphrase. Your data is safe on this device — ask Claude to clear the old sync files.'
         :`Last synced ${esc(SY.at?syncWhen(SY.at):'—')}.`} Your data is encrypted on this device before it’s uploaded.</p>
+      ${SY.bytes?`<p style="font-size:14px;color:${syncNearlyFull()?'#B3261E':'var(--ink-3)'}">Synced data: ${syncSize(SY.bytes)} of about ${syncSize(SYNC_MAXBYTES)}${syncNearlyFull()?' — nearly full. Export a backup and ask Claude to make sync handle more.':'.'}</p>`:''}
       <p style="font-size:14px;color:var(--ink-3)">To add another device, open the app there, tap ☁ Sync and type the same passphrase.</p>
       <div class="sheet-acts"><button class="btn btn-danger" id="syoff">Turn off on this device</button><span style="flex:1"></span>
         <button class="btn" id="synow">Sync now</button><button class="btn btn-hot" id="syok">Close</button></div>`,

@@ -1,0 +1,21 @@
+/* Cloudflare: the app's files plus the sync endpoint (worker/index.js), deployed from GitHub on
+   every merge to main. The files are served straight from the repo root; .assetsignore keeps
+   everything that isn't part of the app (tests, server code, config) from being published. */
+{
+  "name": "daily-ritual-os",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ritual-sync",
+      "database_id": "PENDING"
+    }
+  ],
+  "observability": { "enabled": true }
+}
