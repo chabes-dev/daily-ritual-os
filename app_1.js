@@ -509,10 +509,19 @@ const backupAge=()=>S.lastBackup?-daysTo(S.lastBackup):999;
    open on this device). The server only accepts a write if nobody else saved in between
    (etag). When both devices changed, the two are merged field by field against the last
    synced copy (os_sync_base) — only a true clash, the same thing changed two ways, asks you.
+   Pacing: edits go up after a quiet spell (or a few minutes of non-stop editing), and straight
+   away when you leave the app. The other device is checked when you come back — never on a timer.
    Local device state lives in its own key (os_sync): {id, k, etag, dirty, h, at}. */
 const SYNC_KEY='os_sync',SYNC_SALT='ritual-os/sync/v1',SYNC_ITER=310000;
 SY=(()=>{try{const v=JSON.parse(localStorage.getItem(SYNC_KEY));return v&&v.id&&v.k?v:null}catch(e){return null}})();
 let SYNC_STATUS=SY?'idle':'off',SYNC_PUSH_T=null,SYNC_BUSY=false,SYNC_N=0;
+const SYNC_QUIET=45000,SYNC_QUICK=4000,SYNC_MAXWAIT=180000;
+let SYNC_CHECKED=0,SYNC_DIRTY_AT=0,SYNC_RESET_SEEN='';
+function syncLater(fn,ms){clearTimeout(SYNC_PUSH_T);SYNC_PUSH_T=setTimeout(fn,ms)}
+/* where a running reset is: handed to the other device quickly, the rest can wait */
+function syncResetKey(){return S.reset?S.reset.at+'|'+(S.reset.focusUntil||''):''}
+/* leaving the app (hidden, closed, or another window in front): upload what's pending now */
+function syncLeave(){if(SY&&SY.dirty){clearTimeout(SYNC_PUSH_T);syncPush()}}
 /* only edits you make count — saves from timers and load-time housekeeping don't */
 ['pointerdown','keydown','input','change'].forEach(t=>document.addEventListener(t,()=>{LAST_INPUT=Date.now()},true));
 function syncSave(){try{if(SY)localStorage.setItem(SYNC_KEY,JSON.stringify(SY));else localStorage.removeItem(SYNC_KEY)}catch(e){}}
@@ -567,7 +576,7 @@ async function syncResolve(remote){
   try{
     let etag=remote.etag;
     if(!same){const r=await syncPut(SY.id,remote.etag,await syncSeal(SY.k,merged));
-      if(r.conflict){syncStatus('pending');SYNC_PUSH_T=setTimeout(()=>syncPull(),1500);return}   /* moved again meanwhile: start over */
+      if(r.conflict){syncStatus('pending');syncLater(()=>syncPull(),1500);return}   /* moved again meanwhile: start over */
       etag=r.etag}
     const changedHere=JSON.stringify(merged)!==JSON.stringify(mine);
     SY.etag=etag;SY.dirty=false;SY.at=Date.now();SY.h=syncHash(JSON.stringify(merged));syncSave();syncBaseSet(merged);
@@ -599,8 +608,9 @@ async function syncOpen(k,doc){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(doc.iv)},await syncKey(k),unb64(doc.ct));
   return JSON.parse(new TextDecoder().decode(pt));
 }
-async function syncGet(id){
-  const r=await fetch('/api/sync?id='+id,{cache:'no-store'});
+/* have = the version this device already holds: if nothing changed, the answer is just {unchanged} */
+async function syncGet(id,have){
+  const r=await fetch('/api/sync?id='+id+(have?'&have='+encodeURIComponent(have):''),{cache:'no-store'});
   if(r.status===404)return null;
   if(!r.ok)throw new Error('sync '+r.status);
   return r.json();
@@ -619,19 +629,22 @@ function syncLabel(){
 }
 function syncStatus(s){SYNC_STATUS=s;const b=document.getElementById('syncbtn');
   if(b){b.textContent=syncLabel();b.className='btn sync-'+(SY?s:'off')}}
-/* called by save(): mark real edits and push a few seconds after the last one */
+/* called by save(): mark real edits and upload once things go quiet */
 function syncDirty(){
   if(!SY)return;
   const h=syncHash(JSON.stringify(syncContent(S)));
   if(h===SY.h&&!SY.dirty)return;               /* only the open tab changed */
+  if(!SY.dirty)SYNC_DIRTY_AT=Date.now();
   SY.dirty=true;SYNC_N++;syncSave();syncStatus('pending');
-  clearTimeout(SYNC_PUSH_T);SYNC_PUSH_T=setTimeout(()=>syncPush(),4000);
+  const r=syncResetKey(),quick=r!==SYNC_RESET_SEEN;SYNC_RESET_SEEN=r;
+  syncLater(()=>syncPush(),Math.max(0,Math.min(quick?SYNC_QUICK:SYNC_QUIET,SYNC_DIRTY_AT+SYNC_MAXWAIT-Date.now())));
 }
 async function syncPush(force){
   if(!SY||SYNC_BUSY)return;
   if(!SY.dirty&&!force)return;
-  SYNC_BUSY=true;syncStatus('busy');
   const n=SYNC_N,data=syncContent(S);
+  if(!force&&syncHash(JSON.stringify(data))===SY.h){SY.dirty=false;syncSave();syncStatus('idle');return}   /* back to what's already up there */
+  SYNC_BUSY=true;syncStatus('busy');
   try{
     const r=await syncPut(SY.id,force&&force.etag!==undefined?force.etag:SY.etag,await syncSeal(SY.k,data));
     if(r.conflict){
@@ -641,8 +654,8 @@ async function syncPush(force){
     }
     SY.etag=r.etag;SY.h=syncHash(JSON.stringify(data));SY.at=Date.now();syncBaseSet(data);
     if(SYNC_N===n)SY.dirty=false;
-    syncSave();SYNC_BUSY=false;syncStatus(SY.dirty?'pending':'idle');
-    if(SY.dirty)SYNC_PUSH_T=setTimeout(()=>syncPush(),1500);
+    syncSave();SYNC_BUSY=false;SYNC_CHECKED=Date.now();syncStatus(SY.dirty?'pending':'idle');
+    if(SY.dirty){SYNC_DIRTY_AT=Date.now();syncLater(()=>syncPush(),document.hidden?0:SYNC_QUIET)}   /* edited during the upload */
   }catch(e){SYNC_BUSY=false;syncStatus('offline')}
 }
 /* opening the app, or coming back to it: is there something newer from another device? */
@@ -650,9 +663,9 @@ async function syncPull(){
   if(!SY||SYNC_BUSY)return;
   SYNC_BUSY=true;syncStatus('busy');
   try{
-    const remote=await syncGet(SY.id);SYNC_BUSY=false;
+    const remote=await syncGet(SY.id,SY.etag);SYNC_BUSY=false;SYNC_CHECKED=Date.now();
     if(!remote){SY.etag=null;syncSave();return syncPush(true)}
-    if(remote.etag===SY.etag){syncStatus(SY.dirty?'pending':'idle');if(SY.dirty)syncPush();return}
+    if(remote.unchanged||remote.etag===SY.etag){syncStatus(SY.dirty?'pending':'idle');if(SY.dirty)syncPush();return}
     if(!SY.dirty)return syncApply(remote);
     syncResolve(remote);
   }catch(e){SYNC_BUSY=false;syncStatus('offline')}
@@ -749,12 +762,16 @@ function syncSheet(){
 }
 function syncStart(){
   try{const m=sessionStorage.getItem('os_synced');if(m){sessionStorage.removeItem('os_synced');setTimeout(()=>toast(m),300)}}catch(e){}
+  SYNC_RESET_SEEN=syncResetKey();
   if(SY)syncPull();
-  document.addEventListener('visibilitychange',()=>{if(!SY)return;
-    if(document.hidden){if(SY.dirty){clearTimeout(SYNC_PUSH_T);syncPush()}}else syncPull()});
+  /* coming back: check the other device, unless this one just did */
+  const back=gap=>{if(SY&&!SYNC_BUSY&&Date.now()-SYNC_CHECKED>=gap)syncPull()};
+  document.addEventListener('visibilitychange',()=>{if(!SY)return;if(document.hidden)syncLeave();else back(10000)});
+  window.addEventListener('pagehide',syncLeave);
+  window.addEventListener('blur',syncLeave);
   window.addEventListener('online',()=>{if(SY){if(SY.dirty)syncPush();else syncPull()}});
   /* back at the desk with this tab already in front: no visibility change, so catch up on focus */
-  window.addEventListener('focus',()=>{if(SY&&!SY.dirty&&!SYNC_BUSY)syncPull()});
+  window.addEventListener('focus',()=>{if(SY&&!SY.dirty)back(30000)});
 }
 
 
@@ -2840,8 +2857,6 @@ function resetBar(){
   return `<div class="rbar"><span>⚡ Energy reset · ${run?'focus · <b data-until="'+r.focusUntil+'">'+rLeft(r.focusUntil-Date.now())+'</b> left':(r.at+1)+' of '+RSTEPS.length+' — '+esc(s.name)}</span>
     <button class="rbar-go" id="rbargo">Continue</button><button class="zlink" id="rbarend">End</button></div>`;
 }
-/* while a reset runs, the other device's progress is pulled in every so often */
-setInterval(()=>{if(S.reset&&SY&&!document.hidden&&!SY.dirty&&!SYNC_BUSY)syncPull()},20000);
 
 /* ===== town (personal mode) =====
    Personal life as a small town with departments. Two hand-started rituals do the work —

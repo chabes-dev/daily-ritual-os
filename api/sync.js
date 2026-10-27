@@ -3,18 +3,20 @@
    passphrase), and the file name is a hash the browser also derives from the passphrase —
    so this function only ever sees an unreadable blob under an anonymous name.
 
-   GET  /api/sync?id=<64 hex>          → 200 {etag, …doc} | 404 {empty:true}
+   GET  /api/sync?id=<64 hex>[&have=<etag>] → 200 {etag, …doc} | 200 {etag, unchanged:true} | 404 {empty:true}
+        have = the version the device already holds; if it is still current, nothing is downloaded.
    PUT  /api/sync  {id, etag, doc}     → 200 {etag}       | 409 {conflict:true, current}
         etag = the version this device last saw; the write only lands if the stored file
         is still that version (null = "create, there should be nothing yet"). */
-import { get, put, del, BlobPreconditionFailedError } from '@vercel/blob';
+import { get, put, BlobPreconditionFailedError } from '@vercel/blob';
 
 const ID = /^[a-f0-9]{64}$/;
 const MAX_BYTES = 3_500_000;               /* under the 4.5 MB function body limit */
 const pathOf = id => `sync/${id}.json`;
 
-async function readCurrent(blob, id) {
-  const r = await blob.get(pathOf(id), { access: 'private', useCache: false });
+async function readCurrent(blob, id, have) {
+  const r = await blob.get(pathOf(id), { access: 'private', useCache: false, ...(have ? { ifNoneMatch: have } : {}) });
+  if (r && r.statusCode === 304) return { etag: r.blob.etag || have, unchanged: true };
   if (!r || r.statusCode !== 200) return null;
   const text = await new Response(r.stream).text();
   return { etag: r.blob.etag, doc: JSON.parse(text) };
@@ -26,18 +28,11 @@ export async function handle(req, res, blob) {
   res.setHeader('Cache-Control', 'no-store');
   try {
     if (req.method === 'GET') {
-      if (req.query.selftest === '1') {          /* write → read → delete a scratch file */
-        const p = 'selftest/ping.json', body = JSON.stringify({ at: Date.now() });
-        await blob.put(p, body, { access: 'private', contentType: 'application/json', allowOverwrite: true });
-        const r = await blob.get(p, { access: 'private', useCache: false });
-        const back = r && r.statusCode === 200 ? await new Response(r.stream).text() : null;
-        await blob.del(p);
-        return res.status(200).json({ ok: back === body });
-      }
-      const id = String(req.query.id || '');
+      const id = String(req.query.id || ''), have = String(req.query.have || '');
       if (!ID.test(id)) return res.status(400).json({ error: 'bad id' });
-      const cur = await readCurrent(blob, id);
+      const cur = await readCurrent(blob, id, have && have.length < 200 ? have : null);
       if (!cur) return res.status(404).json({ empty: true });
+      if (cur.unchanged) return res.status(200).json({ etag: cur.etag, unchanged: true });
       return res.status(200).json({ etag: cur.etag, ...cur.doc });
     }
     if (req.method === 'PUT') {
@@ -69,5 +64,5 @@ export async function handle(req, res, blob) {
 }
 
 export default function handler(req, res) {
-  return handle(req, res, { get, put, del });
+  return handle(req, res, { get, put });
 }
