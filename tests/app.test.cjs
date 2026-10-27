@@ -1270,6 +1270,62 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     r=await call('DELETE',{id});ok(r.code===405,'server: only GET and PUT');
   }
 
+  section('26. Cloudflare: the sync endpoint on D1, and size warnings in the app');
+  {
+    /* D1 stand-in on Node's built-in SQLite — same SQL, same answers */
+    process.removeAllListeners('warning');
+    const {DatabaseSync}=require('node:sqlite');
+    const sql=new DatabaseSync(':memory:');let queries=0;
+    const DB={prepare(q){const st=sql.prepare(q);let args=[];const o={
+      bind(...a){args=a;return o},
+      async first(){queries++;return st.get(...args)||null},
+      async run(){queries++;if(/^\s*(CREATE|INSERT|UPDATE|DELETE)/i.test(q)){const r=st.run(...args);return {meta:{changes:Number(r.changes)}}}return {meta:{changes:0}}}};return o}};
+    const W=await import(require('url').pathToFileURL(path.join(REPO,'worker/index.js')).href);
+    const env={DB,ASSETS:{fetch:async r=>new Response('asset '+new URL(r.url).pathname)}};
+    const go=async(method,qs,body)=>{const r=await W.default.fetch(new Request('https://x.test/api/sync'+(qs||''),
+      {method,...(body?{body:JSON.stringify(body),headers:{'content-type':'application/json'}}:{})}),env);
+      const text=await r.text();let j=null;try{j=JSON.parse(text)}catch(e){}return {code:r.status,j,text}};
+    const id='e'.repeat(64),doc={v:1,iv:'abc',ct:'ciphertext',savedAt:1,device:'Mac'};
+    let r=await go('GET','?id='+id);ok(r.code===404&&r.j.empty,'cf: nothing stored yet → empty');
+    r=await go('PUT','',{id,etag:null,doc});ok(r.code===200&&r.j.etag,'cf: first upload creates the file');
+    const e1=r.j.etag;
+    r=await go('PUT','',{id,etag:null,doc});ok(r.code===409&&r.j.current.etag===e1,'cf: a second “first upload” is refused with the current copy');
+    r=await go('GET','?id='+id);ok(r.code===200&&r.j.etag===e1&&r.j.ct==='ciphertext'&&r.j.device==='Mac','cf: reading returns {etag, …doc}');
+    r=await go('GET','?id='+id+'&have='+encodeURIComponent(e1));ok(r.code===200&&r.j.unchanged&&!('ct' in r.j),'cf: “I have this version” → just “unchanged”');
+    r=await go('PUT','',{id,etag:e1,doc:{...doc,ct:'second'}});ok(r.code===200&&r.j.etag!==e1,'cf: an upload on the current version lands');
+    const e2=r.j.etag;
+    r=await go('GET','?id='+id+'&have='+encodeURIComponent(e1));ok(r.j.ct==='second'&&r.j.etag===e2,'cf: an older version gets the new file');
+    r=await go('PUT','',{id,etag:e1,doc:{...doc,ct:'stale'}});
+    ok(r.code===409&&r.j.conflict&&r.j.current.ct==='second'&&r.j.current.etag===e2,'cf: an upload over a newer version is refused with the current one');
+    /* two devices racing on the same version: exactly one wins */
+    const [a,b]=await Promise.all([go('PUT','',{id,etag:e2,doc:{...doc,ct:'A'}}),go('PUT','',{id,etag:e2,doc:{...doc,ct:'B'}})]);
+    ok([a.code,b.code].sort().join()==='200,409','cf: two devices racing — one wins, the other is told');
+    r=await go('PUT','',{id,etag:'whatever',doc:{v:1,iv:'x',ct:'A'.repeat(1900001),savedAt:1}});
+    ok(r.code===413&&r.j.tooLarge,'cf: too big is refused clearly');
+    r=await go('PUT','',{id:'nope',etag:null,doc});ok(r.code===400,'cf: bad ids refused');
+    r=await go('PUT','',{id,etag:null,doc:{v:2}});ok(r.code===400,'cf: malformed files refused');
+    const made=[];for(let k=0;k<6;k++){made.push((await go('PUT','',{id:String(k).repeat(64),etag:null,doc})).code)}
+    ok(made.filter(c=>c===200).length===4&&made.slice(4).every(c=>c===507),'cf: at most 5 files — strangers can’t fill the database ('+made.join(',')+')');
+    r=await go('DELETE','?id='+id);ok(r.code===405,'cf: only GET and PUT');
+    r=await W.default.fetch(new Request('https://x.test/index.html'),env);ok((await r.text())==='asset /index.html','cf: everything else is the app’s files');
+    /* the app: size shown, nearly full and too big are explained */
+    let P=boot(NEW,{});
+    P.g(`syncSeal=async(k,data)=>({v:1,iv:'x',ct:'y'.repeat(300000),savedAt:1});syncPut=async()=>({etag:'e9'});
+      SY={id:'x',k:'k',etag:'e1',dirty:true,h:null,at:null};syncSave()`);
+    await P.g('syncPush()');
+    P.g('syncSheet()');
+    ok(/Synced data: 3\d\d KB of about 1\.9 MB\./.test(P.$('.sheet').textContent),'the Sync sheet shows how much is synced and the limit');
+    P.g(`closeSheet();SY.bytes=1700000;syncStatus('idle')`);
+    ok(P.$('#syncbtn').textContent.includes('nearly full'),'nearly full shows on the sync button');
+    P.g('syncSheet()');ok(P.$('.sheet').textContent.includes('nearly full. Export a backup'),'… and the sheet says what to do');
+    P.g(`closeSheet();syncPut=async()=>{const r={status:413};const e=new Error('sync 413');e.kind='big';throw e};SY.dirty=true;SY.h=null`);
+    await P.g('syncPush()');
+    ok(P.g('SYNC_STATUS')==='big'&&P.$('#syncbtn').textContent.includes('Too big to sync'),'too big says so, instead of “offline”');
+    P.g('syncSheet()');ok(P.$('.sheet').textContent.includes('stay on this device only'),'… and explains your data is safe on this device');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
+    P.g('SY=null;syncSave()');await tick(30);P.close();
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
   process.exit(0);

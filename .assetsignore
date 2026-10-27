@@ -1,0 +1,14 @@
+# Only the app itself is published: index.html, app_1.js and the icons.
+.git
+.gitignore
+.vercelignore
+.assetsignore
+.wrangler
+node_modules
+api
+worker
+tests
+wrangler.jsonc
+package.json
+package-lock.json
+*.md
