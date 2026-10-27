@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "ritual-sync",
-      "database_id": "PENDING"
+      "database_id": "413d6fe3-727a-4d4e-be53-f77002d12cb4"
     }
   ],
   "observability": { "enabled": true }
