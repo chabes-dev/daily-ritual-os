@@ -88,6 +88,21 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
           if(b.width<60&&b.height>60)bad.push('squeezed '+el.className+' "'+own.slice(0,30)+'" w='+Math.round(b.width));
           if(b.right>vw+2&&cs.position!=='fixed')bad.push('off right '+el.className+' "'+own.slice(0,25)+'" right='+Math.round(b.right));
         });
+        /* buttons stacked on top of each other, or ones a click can't reach */
+        const btns=[...root.querySelectorAll('button,a')].filter(e=>{const b=e.getBoundingClientRect(),cs=getComputedStyle(e);
+          if(!(b.width>0&&b.height>0&&cs.visibility!=='hidden'&&cs.display!=='none')||e.closest('.zacts'))return false;
+          for(let v=e;v&&v.nodeType===1;v=v.parentElement)if(+getComputedStyle(v).opacity===0)return false;   /* hover menus wait invisible */
+          return true});
+        const tag=e=>(e.id||e.className)+' "'+e.textContent.trim().slice(0,18)+'"';
+        btns.forEach((e,i)=>{if(getComputedStyle(e).pointerEvents==='none')bad.push('unclickable '+tag(e));
+          const a=e.getBoundingClientRect();
+          btns.slice(i+1).forEach(f=>{if(e.contains(f)||f.contains(e))return;const b=f.getBoundingClientRect();
+            if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>4&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>4)bad.push('overlap '+tag(e)+' / '+tag(f))})});
+        /* the ritual's Next bar either sits after the content or at the window's bottom edge — never floating with content below it */
+        const zb=document.querySelector('#zen .zacts');
+        if(zb){const r=zb.getBoundingClientRect();
+          const below=[...document.querySelectorAll('#zen .zbody *')].filter(e=>!zb.contains(e)&&!e.closest('.zhint')&&e.getBoundingClientRect().top>=r.bottom+4&&e.getBoundingClientRect().height>0);
+          if(r.bottom<window.innerHeight-12&&below.length)bad.push('Next bar floats mid-screen, bottom='+Math.round(r.bottom)+' of '+window.innerHeight)}
         const sw=document.documentElement.scrollWidth;if(sw>vw+1)bad.push('page scrolls sideways '+sw+'>'+vw);
         return [...new Set(bad)].slice(0,6)});
       if(r.length)out.push(`${W} ${name}: ${r.join(' | ')}`);
