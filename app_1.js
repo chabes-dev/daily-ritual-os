@@ -2786,8 +2786,8 @@ function rPaint(change){
         <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone?</div>
       </div>
       <div class="rspark"><div><b>Rather write it?</b> Copy the template, paste it in Spark.</div>
-        <div class="racts" style="margin:10px 0 0"><button class="rbig ghost" id="rtpl">Copy the template</button>
-          <a class="rbig ghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
+        <div class="racts" style="margin:10px 0 0"><button class="rbig rghost" id="rtpl">Copy the template</button>
+          <a class="rbig rghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
   }
   else if(s.id==='cool'){
     o.mid=`${r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>The thing you were avoiding</span>${esc(r.avoiding)}</div>`:''}

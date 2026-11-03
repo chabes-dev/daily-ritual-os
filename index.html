@@ -412,7 +412,8 @@ body.coldrag .cols{scroll-snap-type:none}
 .zstep{font-family:var(--mono);font-size:14px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--hot);margin-bottom:22px}
 .zname{font-family:var(--serif);font-size:clamp(42px,6.5vw,86px);font-weight:400;line-height:1.08;letter-spacing:-.03em;margin-bottom:16px}
 .znote{font-size:20px;color:var(--ink-2);max-width:56ch;margin-bottom:40px}
-.zacts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px;position:sticky;bottom:0;
+/* sticks to the window's bottom edge: the offset cancels #zen's bottom padding (like .zbar's top) */
+.zacts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px;position:sticky;bottom:-90px;
   background:linear-gradient(to top,var(--bg) 55%,transparent);padding:22px 0 14px;z-index:4}
 .zbtn{flex:none;font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
   padding:20px 40px;border-radius:999px;background:var(--hot);color:#fff;box-shadow:var(--shadow-2);transition:.18s;
@@ -581,6 +582,7 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
   .dp{width:100%}
   /* ritual */
   #zen{padding:18px 18px 40px}
+  #zen .zacts{bottom:-40px}
   .zbody{padding:16px 0 20px}
   .zname{font-size:34px}
   .znote{font-size:17px;margin-bottom:26px}
@@ -748,8 +750,8 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
 .hometile-reset .ht-meta{color:rgba(43,22,0,.8)}
 /* sunrise: bright orange into yellow, with warm dark text on it; small text on the page uses a deep amber */
 #zen.rzen{--hot:#A84F00;--hot-2:#E07800;--hot-soft:#FFF1D6;--hot-line:#FFD68A}
-#zen.rzen .zbtn:not(.back),#zen.rzen .rbig:not(.ghost),#zen.rzen .rchip.on{background:linear-gradient(120deg,#FF9F1C,#FFC83D);border-color:#FFA51F;color:#2B1600}
-#zen.rzen .rbig.ghost{border-color:#FFB020;color:#A84F00}
+#zen.rzen .zbtn:not(.back),#zen.rzen .rbig:not(.rghost),#zen.rzen .rchip.on{background:linear-gradient(120deg,#FF9F1C,#FFC83D);border-color:#FFA51F;color:#2B1600}
+#zen.rzen .rbig.rghost{border-color:#FFB020;color:#A84F00}
 #zen.rzen .zdots i.on,#zen.rzen .zdots i.now{background:#FF9F1C}
 #zen.rzen .rpt{border-left-color:#FF9F1C}
 #zen.rzen .rclock{color:#E07800}
@@ -779,7 +781,7 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
 .ropt{text-transform:none;letter-spacing:0;font-family:var(--sans);font-weight:400}
 .rbig{display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:22px 34px;border-radius:999px;background:var(--hot);color:#fff;border:2px solid var(--hot);text-decoration:none;cursor:pointer}
-.rbig.ghost{background:var(--card);color:var(--hot)}
+.rbig.rghost{background:var(--card);color:var(--hot)}
 .racts{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
 .rchips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .rchip{font-size:18px;padding:16px 22px;border-radius:999px;border:2px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
