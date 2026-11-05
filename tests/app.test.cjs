@@ -864,7 +864,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('#tzname').textContent==='What are you avoiding?'&&!!P.$('.rhand'),'Done → 2 · name it (with a nudge to take the phone)');
     P.type('#ravoid','The SOIP deck intro');
     P.click('#tzgo');
-    ok(P.$('#tzname').textContent==='Get the blood moving'&&P.$$('[data-rmove]').map(b=>b.textContent).join('|')==='💧 Water|🙆 Stretch|🚶 Move|☀️ Sun & air|🎵 Play music','3 · move — with Play music as a check, no link');
+    ok(P.$('#tzname').textContent==='Get the blood moving'&&P.$$('[data-rmove]').map(b=>b.textContent).join('|')==='🌬️ Breathe ×3|💧 Water|🙆 Stretch|🚶 Move|☀️ Sun & air|🎵 Play music','3 · move — Breathe first, Play music as a check, no link');
     ok(!P.$('#tzmid a'),'… nothing to open');
     P.click('[data-rmove="water"]');P.click('[data-rmove="music"]');
     ok(P.g('JSON.stringify(S.reset.moved)')==='{"water":true,"music":true}','… ticks what you did');
@@ -891,7 +891,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(Q.$('#rspark').getAttribute('href')===Q.g('SPARK_URL'),'… and Spark is one tap away');
     Q.click('#rtpl');await tick(5);
     const tpl=Q.w.__clip.at(-1);
-    ok(tpl.startsWith('What I’m avoiding: The SOIP deck intro')&&tpl.includes('Why am I avoiding it?')&&tpl.includes('Why do I care about it?')&&tpl.includes('Kill it, shrink it, or keep it?')&&tpl.includes('doesn’t depend on anyone')&&tpl.includes('coolest thing'),'copy the writing template for Spark — Stacey’s questions, filled with what you named');
+    ok(tpl.includes('\nWhat I’m avoiding: The SOIP deck intro')&&tpl.includes('Why am I avoiding it?')&&tpl.includes('Why do I care about it?')&&tpl.includes('Kill it, shrink it, or keep it?')&&tpl.includes('doesn’t depend on anyone')&&tpl.includes('coolest thing'),'copy the writing template for Spark — Stacey’s questions, filled with what you named');
     ok(Q.w.__clip.at(-1).includes('avoiding: The SOIP deck intro'),'copy an opener for Claude');
     Q.click('#tzgo');
     ok(Q.$('#tzname').textContent==='What’s the coolest thing about this?'&&Q.$('#tzmid').textContent.includes('The SOIP deck intro')&&Q.$('#tzgo').textContent==='Skip','5 · the coolest thing about it — optional (Skip)');
@@ -1422,6 +1422,31 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* put back, and the deep goal tag still shows */
     const wd=P.g(`S.items.find(i=>i.text==='Write the deck').id`);P.click(`[data-unplan="${wd}"]`);
     ok(!names().includes('Write the deck')&&!P.g(`inPlan('work','${wd}')`),'Put back takes it off today');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  section('28. energy reset: the coach’s tools — one template to write in Spark, and a breath');
+  {
+    const P=boot(NEW,{});
+    P.g(`S.ui.mode='work';const [a,b]=add('Reply to Pedro\\nOld chore','work');a.done=true;a.doneAt=Date.now();b.done=true;b.doneAt=Date.now()-3*864e5;
+      const t=tAdd('Mal fuel fechar','house','inbox');tSet(t,'done');
+      S.reset={v:3,at:1,startedAt:Date.now(),avoiding:'The SOIP deck intro',moved:{},reelOpened:false,moves:[],talk:'',helped:[],focusMins:25,focusUntil:null};save();tzOpen('reset')`);
+    ok(P.$('#tznote').textContent.includes('name it, don’t judge it')&&P.$$('#tzmid textarea').length===1,'naming it stays one line — the coach’s words, no new writing step');
+    ok(P.g('RSTEPS.length')===7,'the reset keeps its 7 steps');
+    const tpl=P.g('rTemplate()');
+    ok(['Thriving','Reacting','Struggling','Unwell'].every(z=>tpl.includes('· '+z+' — '))&&tpl.includes('it’s normal to move through zones')&&tpl.includes('information, not a grade'),
+      'template: the four zones, and naming without judging');
+    ok(tpl.includes('What would I say to a friend who felt like this?')&&tpl.includes('Why would I choose those words for them?'),'template: talk to yourself like a friend');
+    ok(/DONE LIST[^\n]*\n1\. Reply to Pedro\n2\. Mal fuel fechar\n3\. \n/.test(tpl)&&!tpl.includes('Old chore'),'template: the done list starts with what you finished today, work and personal');
+    ok(tpl.includes('Why am I avoiding it?')&&tpl.includes('What I’m avoiding: The SOIP deck intro'),'template: the earlier questions are still there');
+    P.g('S.reset.at=2;save();tzPaint(true)');
+    ok(!P.$('.rbreathe'),'the breathing guide waits until you ask for it');
+    P.click('[data-rmove="breathe"]');
+    ok(P.$('.rbreathe')&&P.$('.rbreathe').textContent.includes('Two breaths in through the nose')&&P.g('S.reset.moved.breathe')===true,'Breathe ×3 shows the physiological sigh, guided by a circle');
+    P.click('[data-rmove="water"]');ok(!P.$('.rbreathe')&&P.g('S.reset.moved.breathe')===true,'… and steps aside when you move on to the next thing (still ticked)');
+    P.g('S.reset.at=3;save();tzPaint(true)');
+    ok(P.$('.rq').textContent.includes('What would I say to a friend who felt like this?')&&P.$('.rspark').textContent.includes('done list'),'talk step: the friend question, and the template says what’s in it');
+    P.click('#rtpl');await tick(30);ok(P.w.__clip.at(-1)===P.g('rTemplate()'),'Copy the template copies all of it');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 

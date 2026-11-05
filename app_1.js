@@ -2668,13 +2668,14 @@ const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'name',name:'What ar
   {id:'cool',name:'What’s the coolest thing about this?'},{id:'moves',name:'What are the first 2-minute moves?'},
   {id:'focus',name:'Focus'}];
 const RNOTE={close:'Everything there can wait. Close them, then tap Done.',
-  name:'One line. Naming it shrinks it.',
+  name:'One line. Naming it shrinks it — name it, don’t judge it. It’s information, not a grade.',
   move:'Leave the desk. Take your phone — this follows you.',
   talk:'Open Claude in voice and say it out loud. Or write it in Spark. Avoidance is information — what is it telling you?',
   cool:'Forget the deck. One line, like an ad breakfast note: what’s cool about it, and why it works.',
   moves:'Dump every small move you can see. Small enough to start right now. Ugly is fine.',
   focus:'Put on some music and get the first thing out of the way.'};
-const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
+const RMOVE=[['breathe','🌬️ Breathe ×3'],['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
+let RBREATHE=false;   /* the breathing guide shows right after you tap Breathe, until you tap something else */
 const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['cool','The coolest thing'],['moves','The brain dump']];
 const RDECIDE=[['now','⚡ Do it now'],['shrink','✂️ Shrink it'],['ai','🤖 Delegate to AI'],['drop','✕ Not doing it']];
 const RMINS=[15,25,45,60];
@@ -2766,15 +2767,32 @@ function rFinish(){
   toast(r.decision==='ai'&&r.avoiding.trim()?'reset done — the delegated one is in Sort for AI':n?n+(n===1?' move':' moves')+' done — you’re moving':'reset done — go');
 }
 /* a template to write it out in Spark: avoidance as information, then back to the fun part */
+const RZONES=[['Thriving','calm, focused, sleeping well, enjoying things'],['Reacting','stressed, irritable, tired, harder to focus'],
+  ['Struggling','anxious or low most days, pulling away, hard to keep up'],['Unwell','hard to get through the day, feeling hopeless, needs support now']];
+/* what got done today, work and personal — the start of the done list */
+function rDoneToday(){
+  const d=new Date().toDateString(),on=ts=>ts&&new Date(ts).toDateString()===d;
+  return [...S.items.filter(i=>i.done&&on(i.doneAt)).map(i=>i.text),
+    ...((S.town&&S.town.items)||[]).filter(i=>i.state==='done'&&on(i.doneAt)).map(i=>i.title)]}
+/* everything the reset asks you to write, as one page for Spark — no extra steps in the ritual */
 function rTemplate(){
-  const r=S.reset,m=gMissionLatest();
-  return ['What I’m avoiding: '+(r.avoiding.trim()||''),'',
+  const r=S.reset,m=gMissionLatest(),done=rDoneToday().slice(0,3);
+  return ['ENERGY RESET — '+new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}),'',
+    'WHERE I AM — name it, don’t judge it',
+    ...RZONES.map(([z,d])=>'· '+z+' — '+d),
+    'I’m in the ________ zone right now, and it’s normal to move through zones. It’s information, not a grade.','','',
+    'What I’m avoiding: '+(r.avoiding.trim()||''),'',
     'Why am I avoiding it? (fear, boredom, waiting on someone?)','','',
     'What’s behind it?','','',
     'Why do I care about it?','','',
     'Kill it, shrink it, or keep it?','','',
     'What can I do that doesn’t depend on anyone — so I know I tried everything in my power?','','',
+    'TALK TO MYSELF LIKE A FRIEND',
+    'What would I say to a friend who felt like this?','','',
+    'Why would I choose those words for them? (Hard times are normal, and they don’t deserve to feel bad. Neither do I.)','','',
     'What’s the coolest thing about it? (like an ad breakfast note)','','',
+    'DONE LIST — three things I did get done today, small ones count',
+    ...[0,1,2].map(k=>(k+1)+'. '+(done[k]||'')),'',
     ...(m?['My mission: '+m.text]:[])].join('\n');
 }
 /* a link you can change right where it's used */
@@ -2800,6 +2818,7 @@ function rPaint(change){
   }
   else if(s.id==='move'){
     o.mid=`<div class="rchips">${RMOVE.map(([k,l])=>`<button class="rchip ${r.moved[k]?'on':''}" data-rmove="${k}">${l}</button>`).join('')}</div>
+      ${RBREATHE?`<div class="rbreathe"><i></i><span><b>Two breaths in through the nose — then one long, slow breath out.</b> Three times. Follow the circle.</span></div>`:''}
       <div class="zkept">${Object.values(r.moved).filter(Boolean).length?'Good. Keep going until your body feels it.':'Tap each one as you do it.'}</div>`;
   }
   else if(s.id==='talk'){
@@ -2811,9 +2830,9 @@ function rPaint(change){
         ${ms?`<div class="rpt"><span>${ms.week===isoWeek()?'This week’s mission':'Your mission'}</span>${esc(ms.text)}</div>`
           :h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
         ${far.length?`<div class="rpt"><span>Where you’re heading</span>${far.map(x=>esc(x.title)).join(' · ')}</div>`:''}
-        <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone?</div>
+        <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone? · What would I say to a friend who felt like this?</div>
       </div>
-      <div class="rspark"><div><b>Rather write it?</b> Copy the template, paste it in Spark.</div>
+      <div class="rspark"><div><b>Rather write it?</b> Copy the template — your zone, the questions, a friend’s words and today’s done list — and paste it in Spark.</div>
         <div class="racts" style="margin:10px 0 0"><button class="rbig rghost" id="rtpl">Copy the template</button>
           <a class="rbig rghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
   }
@@ -2863,7 +2882,7 @@ function rPaint(change){
   area('#ravoid','avoiding');area('#rtalk','talk');area('#rcool','cool');
   const tp=mid.querySelector('#rtpl');if(tp)tp.onclick=()=>tCopy(rTemplate());
   mid.querySelectorAll('[data-rdecide]').forEach(b=>b.onclick=()=>{const k=b.dataset.rdecide;r.decision=r.decision===k?null:k;save();tzPaint(false)});
-  mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];save();tzPaint(false)});
+  mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];RBREATHE=k==='breathe'&&r.moved[k];save();tzPaint(false)});
   const re=mid.querySelector('#rreel');if(re)re.addEventListener('click',()=>{r.reelOpened=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
   /* links edited in place */
   mid.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>{REDIT=b.dataset.redit;tzPaint(false);const f=document.getElementById('rlink');if(f)f.focus()});
