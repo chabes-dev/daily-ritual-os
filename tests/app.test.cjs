@@ -608,9 +608,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click(`#mlayer [data-dgoal="${soip}"]`);
     ok(P.g(`byId('${tid}').goal`)===soip,'task linked to a goal');
     P.click('#mlayer #dclose');
-    ok(P.$('.deep .ggoal')&&P.$('.deep .ggoal').textContent.includes('Lead SOIP MX'),'the deep card shows which goal it moves');
+    ok(P.$('.qrow .ggoal')&&P.$('.qrow .ggoal').textContent.includes('Lead SOIP MX'),'today’s queue shows which goal the deep task moves');
     P.g(`openDetail('${tid}')`);P.click('#mlayer [data-dgoal=""]');P.click('#mlayer #dclose');
-    ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.deep .ggoal'),'… and can be unlinked');
+    ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.qrow .ggoal'),'… and can be unlinked');
     P.g(`byId('${tid}').goal='${soip}';save()`);
 
     /* on purpose, currently: what's on the board right now */
@@ -723,7 +723,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* ids differ between runs, so compare structure: strip ids, then text and markup must match */
     const A=snap(PRETOWN_HOME_REF),B=snap(NEW);
     const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
-    for(const [n] of views)ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])));
+    /* work today became a queue in this change — compared again once the live version has it */
+    for(const [n] of views){if(n==='work today'&&!A[n].includes('qrow'))continue;ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
     ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
     ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
     ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');
@@ -1325,6 +1326,103 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g('syncSheet()');ok(P.$('.sheet').textContent.includes('stay on this device only'),'… and explains your data is safe on this device');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
     P.g('SY=null;syncSave()');await tick(30);P.close();
+  }
+
+  section('27. honest answers, the almanac within reach, and Today as a queue');
+  {
+    let P=boot(NEW,{});
+    /* work ritual · ad breakfast */
+    P.g(`S.ui.mode='work';save();render();startZen();ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);
+    ok(P.$('#zgo').textContent==='✓ Had it'&&P.$('#adyes').textContent.includes('save one in Reel')&&P.$('#adno').textContent==='Not today','ad breakfast: ✓ Had it, save one in Reel, Not today — no Skip');
+    P.click('#zgo');ok(P.g('S.adCheck.answer')==='had'&&P.g('ZSTEPS[ZI].id')!=='wad','“Had it” counts as done and moves on');
+    P.g(`ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);P.click('#adno');
+    ok(P.g('S.adCheck.answer')==='not'&&P.g('ZSTEPS[ZI].id')!=='wad','“Not today” is a quiet answer that moves on');
+    P.g(`ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);P.click('#adyes');
+    ok(P.g('S.adCheck.answer')==='saved'&&P.w.__opened.includes(P.g('REEL_URL')),'“save one in Reel” opens Reel');
+    P.g('exitZen()');
+    /* personal · today's move · journal */
+    P.g(`S.ui.mode='personal';save();render();startMove()`);
+    ok(P.$('#tzgo').textContent==='✓ Done'&&P.$('#tzsparkno').textContent==='Not today','journal step: ✓ Done (wrote already), Open Spark, Not today');
+    P.click('#tzgo');ok(P.g('S.town.move.step')===1,'Done moves on');
+    P.g(`S.town.move.step=0;save();tzPaint(true)`);P.click('#tzsparkno');ok(P.g('S.town.move.step')===1,'Not today moves on too');
+    P.g('tzClose();S.town.move=null;save()');
+    /* personal · weekly round · brain dump */
+    P.g(`S.town.round={step:1,startedAt:Date.now()};save();tzOpen('round')`);
+    ok(P.$('#tzgo').textContent==='Nothing to add','brain dump with an empty head: “Nothing to add”, not Skip');
+    P.g('tzClose();S.town.round=null;save()');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+
+    /* the almanac: from a task, from the map, and due on Today */
+    P=boot(NEW,{});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='map';save();render()`);
+    P.click('#tcycnew');
+    ok(P.$$('#mlayer [data-tcdp]').length===P.g('TOWN_DEPTS.length'),'+ Recurring asks for the department');
+    P.type('#tcti','Check the fridge');P.click('#mlayer #tcok');
+    ok(P.g('S.town.cycles.length')===0,'… and won’t save without one');
+    P.click('#mlayer [data-tcdp="kitchen"]');P.g(`document.querySelector('#tcti').value='Check the fridge';document.querySelector('#tcti').dispatchEvent(new Event('input'))`);
+    P.click('#mlayer [data-tcu="weeks"]');P.type('#tcn','1');P.click('#mlayer #tcok');
+    const fr=JSON.parse(P.g(`JSON.stringify(S.town.cycles.find(c=>c.title==='Check the fridge'))`));
+    ok(fr&&fr.dept==='kitchen'&&fr.unit==='weeks'&&fr.n===1&&fr.type==='interval','a weekly fridge check, counted from last done');
+    /* a task with a deadline becomes a yearly same-date cycle, and stays the current instance */
+    const lic=P.g(`(()=>{const i=tAdd('Licenciamento do carro','treasury','inbox');i.due=tAddPer(today(),20,'days');save();return i.id})()`);
+    P.g(`tItemSheet('${lic}')`);
+    ok(P.$('#mlayer #trep').textContent.includes('Make it repeat'),'every personal task offers ↻ Make it repeat');
+    P.click('#mlayer #trep');
+    ok(P.$('#mlayer #tcti').value==='Licenciamento do carro'&&P.$('#mlayer [data-tctype="fixed"]').classList.contains('on')&&!P.$('#mlayer [data-tcdp]'),
+      '… the cycle form starts with its name, “same date each time”, and its department known');
+    P.click('#mlayer #tcok');
+    const lc=JSON.parse(P.g(`JSON.stringify(S.town.cycles.find(c=>c.title==='Licenciamento do carro'))`));
+    ok(lc&&lc.type==='fixed'&&lc.unit==='years'&&lc.nextDue===P.g(`byId2=tById('${lic}').due`)&&P.g(`tById('${lic}').cycle`)===lc.id&&lc.itemId===P.g(`'${lic}'`),
+      '… yearly on the deadline, and the task is this year’s instance');
+    P.g(`tSet(tById('${lic}'),'done')`);
+    ok(P.g(`tCyc('${lc.id}').nextDue`)===P.g(`tAddPer('${lc.nextDue}',1,'years')`),'finishing the task rolls it to next year');
+    P.g(`tItemSheet('${lic}')`);ok(P.$('#mlayer #trep').textContent.includes('every year'),'a repeating task shows how it repeats');P.g('closeSheet()');
+    /* due on Today */
+    P.g(`S.ui.townView='today';render()`);
+    ok(P.$('.tcycdue')&&P.$('.tcycdue').textContent.includes('Check the fridge'),'a cycle that is due shows on Today, not only in the round');
+    P.click(`[data-tcycdid="${fr.id}"]`);
+    const fr2=JSON.parse(P.g(`JSON.stringify(tCyc('${fr.id}'))`));
+    ok(fr2.lastDone===P.g('today()')&&fr2.nextDue===P.g(`tAddPer(today(),1,'weeks')`)&&!P.$('.tcycdue'),'“did it” rolls it a week on and clears it from Today');
+    ok(P.g(`S.town.items.some(i=>i.cycle==='${fr.id}'&&i.state==='done')`),'… and it lands in the done log like any finished task');
+    P.g(`tCyc('${fr.id}').nextDue=today();save();render()`);P.click(`[data-tcycon="${fr.id}"]`);
+    ok(P.g(`S.town.items.some(i=>i.cycle==='${fr.id}'&&i.state==='week'&&tIsToday(i))`)&&!P.$('.tcycdue'),'“+ today” puts it on today’s list');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+
+    /* Today as a queue */
+    P=boot(NEW,{});
+    P.g(`S.hours.work=8;S.hours.date=today();const m=add('Write the deck\\nReply to Pedro\\nResearch prompts\\nBook the room','work');
+      m.forEach(i=>{i.sorted=true;i.lane='important'});assign('work','deep',m[0].id,true);assign('work','batch',m[1].id,true);
+      assign('work','buffer',m[2].id,true);assign('work','next',m[3].id,true);S.ui.mode='work';S.ui.workView='today';save();render()`);
+    const names=()=>P.$$('.qrow .qt').map(e=>e.textContent);
+    ok(names().join('|')==='Write the deck|Reply to Pedro|Research prompts|Book the room','the queue starts in the paper’s order: deep, batch, AI, spare');
+    ok(P.$('.qrow.now .qn').textContent==='Now'&&P.$$('.qrow .qk').map(e=>e.textContent).join('|')==='Deep|Batch|AI|Spare','the first is “Now”; each row says its kind');
+    ok(!P.$('.slot.empty')&&!P.$('.deep.empty'),'no empty slot cards');
+    P.click(`.qrow:nth-child(3) [data-qup]`);
+    ok(names().join('|')==='Write the deck|Research prompts|Reply to Pedro|Book the room','↑ moves a task earlier');
+    P.click(`.qrow:nth-child(1) [data-qdown]`);
+    ok(names()[0]==='Research prompts'&&P.$('.qrow.now .qt').textContent==='Research prompts','↓ moves one later — the new first is Now');
+    ok(P.g(`planText('work')`)==='DELEGATE TO AI / Research prompts\nDEEP / Write the deck\nBATCH / Reply to Pedro\nSPARE / Book the room','Copy today → paper follows your order');
+    ok(P.$('.qrow:first-child [data-qup]').disabled&&P.$('.qrow:last-child [data-qdown]').disabled,'the ends can’t move further');
+    /* adding and finishing keep the order */
+    P.g(`const [x]=add('Late add','work');x.sorted=true;x.lane='batch';assign('work','next',x.id)`);
+    ok(names().at(-1)==='Late add','a new pick joins the end of the queue');
+    const rp=P.g(`S.items.find(i=>i.text==='Research prompts').id`);
+    P.g(`finish('${rp}',document.querySelector('[data-done="${rp}"]'))`);
+    ok(P.$('.qrow.done')&&P.$('.qrow.done').dataset.q===rp,'the row strikes through and fades as it finishes');
+    await tick(1500);
+    ok(P.g(`S.items.find(i=>i.id==='${rp}').done`)===true&&names()[0]==='Write the deck','✓ Done finishes it and the next one becomes Now');
+    /* the room left: small targets, not empty cards */
+    ok(P.$$('.qroom[data-slotdrop]').map(e=>e.dataset.slotdrop).join(',')==='batch,buffer','room shows only what’s still open — here a batch and an AI slot');
+    P.g(`S.hours.work=2;save();render()`);
+    ok(P.$('.qroomline').textContent.includes('no deep today'),'a short day says there’s no deep room, in one line');
+    /* an empty board is one line; adding opens the full board */
+    P.g(`S.items.filter(i=>i.mode==='work'&&!inPlan('work',i.id)).forEach(i=>i.done=true);save();render()`);
+    ok(P.$('.qboard-empty')&&!P.$('.restgrid'),'an empty board is one line, not four empty columns');
+    P.click('.qboard-empty [data-addto]');ok(P.$('.restgrid')&&P.$('#comp'),'… its ＋ opens the board with the add box');
+    /* put back, and the deep goal tag still shows */
+    const wd=P.g(`S.items.find(i=>i.text==='Write the deck').id`);P.click(`[data-unplan="${wd}"]`);
+    ok(!names().includes('Write the deck')&&!P.g(`inPlan('work','${wd}')`),'Put back takes it off today');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -74,6 +74,10 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
       ['zen-pick',`ZI=ZSTEPS.findIndex(s=>s.id==='w6');paintZen(true)`],
       ['zen-close',`exitZen()`],
       ['goal-check',`closeSheet();if(typeof gCheckSheet==='function'){gCheckSheet()}`],
+      ['cyc-new',`closeSheet();if(TZ)tzClose();S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='map';render();tCycSheet(null)`],
+      ['item-repeat',`closeSheet();tItemSheet(S.town.items.find(i=>tOpen(i)).id)`],
+      ['town-today-due',`closeSheet();S.town.cycles.forEach(c=>{c.nextDue=tAddPer(today(),-2,'days');c.itemId=null});S.ui.townView='today';render()`],
+      ['work-today-queue',`closeSheet();S.ui.mode='work';S.ui.workView='today';render()`],
     ].filter(([n])=>!ONLY||n.includes(ONLY));
     for(const [name,js] of views){
       await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step|reset-\d|zen-/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */

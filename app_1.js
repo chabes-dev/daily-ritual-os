@@ -356,13 +356,26 @@ function suggestDeep(m){
   for(const g of order){const l=pool.filter(i=>i[GKEY[m]]===g&&!i.quick).sort(byOrd);if(l.length)return l[0]}
   return pool.sort(byOrd)[0]||null;
 }
+/* work's Today as one queue: deep, batch, AI and spare picks in the order you choose (↑↓ or drag).
+   The kind stays a label — capacity still comes from the day's hours. Unordered picks follow in
+   the paper's order: deep, batch, AI, spare. */
+const QKIND={deep:{name:'Deep',paper:'DEEP',color:'var(--hot)'},batch:{name:'Batch',paper:'BATCH',color:'#B06000'},
+  buffer:{name:'AI',paper:'DELEGATE TO AI',color:'#A142F4'},next:{name:'Spare',paper:'SPARE',color:'#5F6368'}};
+function queueOf(m){
+  const p=plan(m),def=[...(p.deep?[[p.deep,'deep']]:[]),...p.batch.map(id=>[id,'batch']),...p.buffer.map(id=>[id,'buffer']),...p.next.map(id=>[id,'next'])];
+  const ord=p.order||[],at=id=>{const k=ord.indexOf(id);return k<0?1e6:k};
+  return def.map(([id,slot],k)=>({id,slot,k})).sort((a,b)=>at(a.id)-at(b.id)||a.k-b.k);
+}
+function queueMove(m,id,dir){
+  const q=queueOf(m).map(x=>x.id),k=q.indexOf(id),j=k+dir;if(k<0||j<0||j>=q.length)return;
+  [q[k],q[j]]=[q[j],q[k]];S.plan[m].order=q;save();render()}
 function planText(m){
   const p=plan(m),L=[];
-  if(m==='personal')p.deep.forEach(id=>L.push('DEEP / '+byId(id).text));
-  else if(p.deep)L.push('DEEP / '+byId(p.deep).text);
-  p.batch.forEach(id=>L.push('BATCH / '+byId(id).text));
-  p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
-  p.next.forEach(id=>L.push('SPARE / '+byId(id).text));
+  if(m==='personal'){p.deep.forEach(id=>L.push('DEEP / '+byId(id).text));
+    p.batch.forEach(id=>L.push('BATCH / '+byId(id).text));
+    p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
+    p.next.forEach(id=>L.push('SPARE / '+byId(id).text))}
+  else queueOf(m).forEach(x=>L.push(QKIND[x.slot].paper+' / '+byId(x.id).text));
   if(m==='work'){
     const pp=personalPick();
     if(pp)L.push('PERSONAL / '+pp.title);
@@ -427,7 +440,7 @@ function markDeepHit(m){S.streak[m].hitToday=true;save()}
 function unmarkDeepHit(m){S.streak[m].hitToday=false;save()}
 function finish(id,el){
   const i=byId(id);if(!i)return;
-  const box=el.closest('.card')||el.closest('.deep')||el.closest('.slot');
+  const box=el.closest('.card')||el.closest('.deep')||el.closest('.slot')||el.closest('.qrow');
   if(box){
     box.classList.add('done');box.querySelectorAll('button').forEach(b=>b.disabled=true);
     setTimeout(()=>{const h=box.offsetHeight;box.style.height=h+'px';box.offsetHeight;box.classList.add('collapse');
@@ -1157,6 +1170,13 @@ function viewToday(){
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
   const streak=S.streak[m];
   const pp=personalPick();
+  const q=queueOf(m);
+  /* empty capacity, as small targets instead of empty cards */
+  const open=(slot,n,label)=>n>0?`<span class="qroom" data-slotdrop="${slot}">${label}</span>`:'';
+  const room=[!caps.deep?'<span class="qroom-n">no deep today — not enough time</span>':open('deep',p.deep?0:1,'Deep'),
+    open('batch',caps.batch-p.batch.length,(caps.batch-p.batch.length)+' batch'),
+    open('buffer',caps.buffer-p.buffer.length,(caps.buffer-p.buffer.length)+' to AI'),
+    open('next',2-p.next.length,(2-p.next.length)+' spare')].filter(Boolean);
 
   return `
   <div class="daybar">
@@ -1171,38 +1191,25 @@ function viewToday(){
   ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
     <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
 
-  <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
-    ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
-  ${dp?deepCard(dp):`<div class="deep empty" data-slotdrop="deep">
-      <div class="emptynote">${caps.deep?(TOUCH?'Nothing chosen yet. Tap a task below and choose Deep.':'Nothing chosen yet. Drag one up here.'):'Your day is too short for a deep block.'}</div>
-      ${sug?`<div class="suggest"><span class="txt">Suggested: ${esc(sug.text)}</span>
-        <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
-    </div>`}
-
   ${fireCard(m)}
 
-  <div class="slotlabel">Delegate to AI — ${p.buffer.length} of ${caps.buffer}</div>
-  <div class="slots b2" data-slotdrop="buffer">
-    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">open</div>`).join('')}
+  <div class="slotlabel">Up next — ${q.length}
+    ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
+  <div class="queue">
+    ${q.length?q.map((x,n)=>queueRow(x,n,n===q.length-1)).join('')
+      :`<div class="qempty">Nothing picked for today yet — the ritual does it in a minute, or pick from the board below.</div>`}
   </div>
-
-  <div class="secondary">
-    <div class="slotlabel secondary-head">Also today, if it goes well</div>
-    <div class="slotlabel sub">Batch — ${p.batch.length} of ${caps.batch}</div>
-    <div class="slots ${caps.batch>=3?'b3':caps.batch===2?'b2':'b1'}" data-slotdrop="batch">
-      ${caps.batch===0?`<div class="slot empty">no room today</div>`
-        :Array.from({length:caps.batch}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">${TOUCH?'open':'drop a batch task'}</div>`).join('')}
-    </div>
-
-    <div class="slotlabel sub">Spare — ${p.next.length} of 2</div>
-    <div class="slots b2" data-slotdrop="next">
-      ${[0,1].map(k=>p.next[k]?slotCard(byId(p.next[k]),'next'):`<div class="slot empty next">spare</div>`).join('')}
-    </div>
-  </div>
+  <div class="qroomline"><span class="qroom-l">Room</span>${room.join('')||'<span class="qroom-n">full — today is set</span>'}
+    ${room.some(r=>r.includes('data-slotdrop'))?`<span class="qroom-n">${TOUCH?'· use Deep · Batch · AI · Spare on a task below':'· drag a task onto one'}</span>`:''}</div>
+  ${sug?`<div class="suggest qsug"><span class="txt">Suggested deep: ${esc(sug.text)}</span>
+    <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
 
   <div class="rest">
     <h3>Also on the board — ${rest.length}</h3>
-    <div class="restgrid">${GROUPS[m].filter(g=>!PARKED[m].includes(g.id)).map(g=>{
+    ${!rest.length&&!String(S.ui.composer||'').startsWith('board:')
+      ?`<div class="qboard-empty"><span>Nothing else on the board.</span>${GROUPS[m].filter(g=>!PARKED[m].includes(g.id))
+          .map(g=>`<button class="addbtn" data-addto="board:${g.id}" style="color:${g.color}">＋ ${esc(g.name)}</button>`).join('')}</div>`
+      :`<div class="restgrid">${GROUPS[m].filter(g=>!PARKED[m].includes(g.id)).map(g=>{
         const list=rest.filter(i=>i[GKEY[m]]===g.id);
         const quiet=quietDays(m,g.id);
         return `<div class="restgroup zone" data-drop="${g.id}" data-bucket="board">
@@ -1214,8 +1221,26 @@ function viewToday(){
             ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
                 <div class="hint">⏎ add · esc close</div></div>`
             :`<button class="addbtn" data-addto="board:${g.id}">＋ Add</button>`}
-        </div>`}).join('')}</div>
+        </div>`}).join('')}</div>`}
   </div>`;
+}
+/* one row of today's queue; the first is "Now", bigger, with its buttons always showing */
+function queueRow(x,n,last){
+  const i=byId(x.id),g=groupOf(i),l=i.due?dueLabel(i.due):null,K=QKIND[x.slot];
+  return `<div class="qrow ${n===0?'now':''}" draggable="true" data-id="${i.id}" data-q="${i.id}" style="${styleFor(i)}">
+    <span class="qn">${n===0?'Now':n+1}</span>
+    <div class="qmain" data-open="${i.id}"><div class="qt">${esc(i.text)}</div>
+      <div class="qmeta"><span class="qk" style="color:${K.color}">${K.name}</span>
+        ${g?`<span class="dot" style="color:${g.color}"><b></b>${esc(g.name)}</span>`:''}
+        ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
+        ${i.star?`<span class="tag" style="color:${C.purple}">★ deep</span>`:''}${gTag(i)}
+        ${!hasVerb(i.text)?`<span class="tag noverb" data-text="${i.id}">no verb — name the action</span>`:''}</div></div>
+    <div class="qacts">
+      <span class="qmore">${x.slot!=='deep'?`<button class="act" data-todeep="${i.id}">Deep</button>`:''}
+        <button class="act" data-open2="${i.id}">Edit</button><button class="act" data-unplan="${i.id}">Put back</button></span>
+      <button class="qmv" data-qup="${i.id}" title="Earlier" ${n===0?'disabled':''}>↑</button>
+      <button class="qmv" data-qdown="${i.id}" title="Later" ${last?'disabled':''}>↓</button>
+      <button class="btn ${n===0?'btn-hot':''} qdone" data-done="${i.id}">✓ Done</button></div></div>`;
 }
 function viewWeekThis(){
   const m='personal',p=personalPlan(),caps=personalCaps();
@@ -4180,7 +4205,7 @@ function wire(){
     c.addEventListener('dragend',()=>{c.classList.remove('drag');dropPh();
       document.body.classList.remove('dragging');
       const db=document.getElementById('dropbar');if(db)db.classList.remove('hot');
-      app.querySelectorAll('.zone,.slot,.deep,.slots').forEach(z=>z.classList.remove('over'))})});
+      app.querySelectorAll('.zone,.slot,.deep,.slots,.qrow,.qroom').forEach(z=>z.classList.remove('over'))})});
   const dbar=document.getElementById('dropbar');
   if(dbar){
     dbar.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();dbar.classList.add('hot')});
@@ -4200,6 +4225,19 @@ function wire(){
     z.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();z.classList.remove('over');
       const id=dragId||e.dataTransfer.getData('text/plain');dropPh();
       if(id)assign(m,z.dataset.slotdrop,id)})});
+
+  /* today's queue: ↑↓, or drop a row on another to take its place */
+  app.querySelectorAll('[data-qup]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qup,-1)});
+  app.querySelectorAll('[data-qdown]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qdown,1)});
+  app.querySelectorAll('.qrow').forEach(r=>{
+    r.addEventListener('dragover',e=>{e.preventDefault();r.classList.add('over')});
+    r.addEventListener('dragleave',e=>{if(!r.contains(e.relatedTarget))r.classList.remove('over')});
+    r.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();r.classList.remove('over');
+      const id=dragId||e.dataTransfer.getData('text/plain');dropPh();if(!id||id===r.dataset.q)return;
+      const qq=queueOf(m).map(x=>x.id);
+      if(!qq.includes(id)){toast('drop it on a Room chip — Deep, batch, AI or spare');return}
+      qq.splice(qq.indexOf(id),1);qq.splice(queueOf(m).findIndex(x=>x.id===r.dataset.q),0,id);
+      S.plan[m].order=qq;save();render()})});
 
   /* columns */
   app.querySelectorAll('.zone').forEach(zone=>{
