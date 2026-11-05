@@ -32,7 +32,7 @@ const ZNOTE={
   wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
-  wad:'Had one worth keeping? Yes opens Reel to save it. Otherwise, skip.',
+  wad:'Had it? Mark it. Found one worth keeping — save it in Reel on the way.',
   w8:'Work is done. Before you close, point at one personal thing for today — so a week of work days does not quietly swallow it.',
   w7:'Copy it down. Then close this and go and do it.',
   p1:'Health, money, family, the future — one line each. Anything sitting in TickTick counts too.',
@@ -356,13 +356,26 @@ function suggestDeep(m){
   for(const g of order){const l=pool.filter(i=>i[GKEY[m]]===g&&!i.quick).sort(byOrd);if(l.length)return l[0]}
   return pool.sort(byOrd)[0]||null;
 }
+/* work's Today as one queue: deep, batch, AI and spare picks in the order you choose (↑↓ or drag).
+   The kind stays a label — capacity still comes from the day's hours. Unordered picks follow in
+   the paper's order: deep, batch, AI, spare. */
+const QKIND={deep:{name:'Deep',paper:'DEEP',color:'var(--hot)'},batch:{name:'Batch',paper:'BATCH',color:'#B06000'},
+  buffer:{name:'AI',paper:'DELEGATE TO AI',color:'#A142F4'},next:{name:'Spare',paper:'SPARE',color:'#5F6368'}};
+function queueOf(m){
+  const p=plan(m),def=[...(p.deep?[[p.deep,'deep']]:[]),...p.batch.map(id=>[id,'batch']),...p.buffer.map(id=>[id,'buffer']),...p.next.map(id=>[id,'next'])];
+  const ord=p.order||[],at=id=>{const k=ord.indexOf(id);return k<0?1e6:k};
+  return def.map(([id,slot],k)=>({id,slot,k})).sort((a,b)=>at(a.id)-at(b.id)||a.k-b.k);
+}
+function queueMove(m,id,dir){
+  const q=queueOf(m).map(x=>x.id),k=q.indexOf(id),j=k+dir;if(k<0||j<0||j>=q.length)return;
+  [q[k],q[j]]=[q[j],q[k]];S.plan[m].order=q;save();render()}
 function planText(m){
   const p=plan(m),L=[];
-  if(m==='personal')p.deep.forEach(id=>L.push('DEEP / '+byId(id).text));
-  else if(p.deep)L.push('DEEP / '+byId(p.deep).text);
-  p.batch.forEach(id=>L.push('BATCH / '+byId(id).text));
-  p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
-  p.next.forEach(id=>L.push('SPARE / '+byId(id).text));
+  if(m==='personal'){p.deep.forEach(id=>L.push('DEEP / '+byId(id).text));
+    p.batch.forEach(id=>L.push('BATCH / '+byId(id).text));
+    p.buffer.forEach(id=>L.push('DELEGATE TO AI / '+byId(id).text));
+    p.next.forEach(id=>L.push('SPARE / '+byId(id).text))}
+  else queueOf(m).forEach(x=>L.push(QKIND[x.slot].paper+' / '+byId(x.id).text));
   if(m==='work'){
     const pp=personalPick();
     if(pp)L.push('PERSONAL / '+pp.title);
@@ -427,7 +440,7 @@ function markDeepHit(m){S.streak[m].hitToday=true;save()}
 function unmarkDeepHit(m){S.streak[m].hitToday=false;save()}
 function finish(id,el){
   const i=byId(id);if(!i)return;
-  const box=el.closest('.card')||el.closest('.deep')||el.closest('.slot');
+  const box=el.closest('.card')||el.closest('.deep')||el.closest('.slot')||el.closest('.qrow');
   if(box){
     box.classList.add('done');box.querySelectorAll('button').forEach(b=>b.disabled=true);
     setTimeout(()=>{const h=box.offsetHeight;box.style.height=h+'px';box.offsetHeight;box.classList.add('collapse');
@@ -1157,6 +1170,13 @@ function viewToday(){
   const dp=p.deep?byId(p.deep):null,sug=!dp&&caps.deep?suggestDeep(m):null;
   const streak=S.streak[m];
   const pp=personalPick();
+  const q=queueOf(m);
+  /* empty capacity, as small targets instead of empty cards */
+  const open=(slot,n,label)=>n>0?`<span class="qroom" data-slotdrop="${slot}">${label}</span>`:'';
+  const room=[!caps.deep?'<span class="qroom-n">no deep today — not enough time</span>':open('deep',p.deep?0:1,'Deep'),
+    open('batch',caps.batch-p.batch.length,(caps.batch-p.batch.length)+' batch'),
+    open('buffer',caps.buffer-p.buffer.length,(caps.buffer-p.buffer.length)+' to AI'),
+    open('next',2-p.next.length,(2-p.next.length)+' spare')].filter(Boolean);
 
   return `
   <div class="daybar">
@@ -1171,38 +1191,25 @@ function viewToday(){
   ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
     <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
 
-  <div class="slotlabel"><b>Deep</b> — ${caps.deep?'the one thing':'no room today'}
-    ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
-  ${dp?deepCard(dp):`<div class="deep empty" data-slotdrop="deep">
-      <div class="emptynote">${caps.deep?(TOUCH?'Nothing chosen yet. Tap a task below and choose Deep.':'Nothing chosen yet. Drag one up here.'):'Your day is too short for a deep block.'}</div>
-      ${sug?`<div class="suggest"><span class="txt">Suggested: ${esc(sug.text)}</span>
-        <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
-    </div>`}
-
   ${fireCard(m)}
 
-  <div class="slotlabel">Delegate to AI — ${p.buffer.length} of ${caps.buffer}</div>
-  <div class="slots b2" data-slotdrop="buffer">
-    ${[0,1].map(k=>p.buffer[k]?slotCard(byId(p.buffer[k]),'buffer'):`<div class="slot empty buffer">open</div>`).join('')}
+  <div class="slotlabel">Up next — ${q.length}
+    ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
+  <div class="queue">
+    ${q.length?q.map((x,n)=>queueRow(x,n,n===q.length-1)).join('')
+      :`<div class="qempty">Nothing picked for today yet — the ritual does it in a minute, or pick from the board below.</div>`}
   </div>
-
-  <div class="secondary">
-    <div class="slotlabel secondary-head">Also today, if it goes well</div>
-    <div class="slotlabel sub">Batch — ${p.batch.length} of ${caps.batch}</div>
-    <div class="slots ${caps.batch>=3?'b3':caps.batch===2?'b2':'b1'}" data-slotdrop="batch">
-      ${caps.batch===0?`<div class="slot empty">no room today</div>`
-        :Array.from({length:caps.batch}).map((_,k)=>p.batch[k]?slotCard(byId(p.batch[k]),'batch'):`<div class="slot empty">${TOUCH?'open':'drop a batch task'}</div>`).join('')}
-    </div>
-
-    <div class="slotlabel sub">Spare — ${p.next.length} of 2</div>
-    <div class="slots b2" data-slotdrop="next">
-      ${[0,1].map(k=>p.next[k]?slotCard(byId(p.next[k]),'next'):`<div class="slot empty next">spare</div>`).join('')}
-    </div>
-  </div>
+  <div class="qroomline"><span class="qroom-l">Room</span>${room.join('')||'<span class="qroom-n">full — today is set</span>'}
+    ${room.some(r=>r.includes('data-slotdrop'))?`<span class="qroom-n">${TOUCH?'· use Deep · Batch · AI · Spare on a task below':'· drag a task onto one'}</span>`:''}</div>
+  ${sug?`<div class="suggest qsug"><span class="txt">Suggested deep: ${esc(sug.text)}</span>
+    <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
 
   <div class="rest">
     <h3>Also on the board — ${rest.length}</h3>
-    <div class="restgrid">${GROUPS[m].filter(g=>!PARKED[m].includes(g.id)).map(g=>{
+    ${!rest.length&&!String(S.ui.composer||'').startsWith('board:')
+      ?`<div class="qboard-empty"><span>Nothing else on the board.</span>${GROUPS[m].filter(g=>!PARKED[m].includes(g.id))
+          .map(g=>`<button class="addbtn" data-addto="board:${g.id}" style="color:${g.color}">＋ ${esc(g.name)}</button>`).join('')}</div>`
+      :`<div class="restgrid">${GROUPS[m].filter(g=>!PARKED[m].includes(g.id)).map(g=>{
         const list=rest.filter(i=>i[GKEY[m]]===g.id);
         const quiet=quietDays(m,g.id);
         return `<div class="restgroup zone" data-drop="${g.id}" data-bucket="board">
@@ -1214,8 +1221,26 @@ function viewToday(){
             ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
                 <div class="hint">⏎ add · esc close</div></div>`
             :`<button class="addbtn" data-addto="board:${g.id}">＋ Add</button>`}
-        </div>`}).join('')}</div>
+        </div>`}).join('')}</div>`}
   </div>`;
+}
+/* one row of today's queue; the first is "Now", bigger, with its buttons always showing */
+function queueRow(x,n,last){
+  const i=byId(x.id),g=groupOf(i),l=i.due?dueLabel(i.due):null,K=QKIND[x.slot];
+  return `<div class="qrow ${n===0?'now':''}" draggable="true" data-id="${i.id}" data-q="${i.id}" style="${styleFor(i)}">
+    <span class="qn">${n===0?'Now':n+1}</span>
+    <div class="qmain" data-open="${i.id}"><div class="qt">${esc(i.text)}</div>
+      <div class="qmeta"><span class="qk" style="color:${K.color}">${K.name}</span>
+        ${g?`<span class="dot" style="color:${g.color}"><b></b>${esc(g.name)}</span>`:''}
+        ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
+        ${i.star?`<span class="tag" style="color:${C.purple}">★ deep</span>`:''}${gTag(i)}
+        ${!hasVerb(i.text)?`<span class="tag noverb" data-text="${i.id}">no verb — name the action</span>`:''}</div></div>
+    <div class="qacts">
+      <span class="qmore">${x.slot!=='deep'?`<button class="act" data-todeep="${i.id}">Deep</button>`:''}
+        <button class="act" data-open2="${i.id}">Edit</button><button class="act" data-unplan="${i.id}">Put back</button></span>
+      <button class="qmv" data-qup="${i.id}" title="Earlier" ${n===0?'disabled':''}>↑</button>
+      <button class="qmv" data-qdown="${i.id}" title="Later" ${last?'disabled':''}>↓</button>
+      <button class="btn ${n===0?'btn-hot':''} qdone" data-done="${i.id}">✓ Done</button></div></div>`;
 }
 function viewWeekThis(){
   const m='personal',p=personalPlan(),caps=personalCaps();
@@ -1906,8 +1931,9 @@ function paintZen(isStepChange){
   }
   else if(kind==='adcheck'){
     const ans=S.adCheck.date===today()?S.adCheck.answer:null;
-    mid=`<div class="hrow"><button class="hbtn ${ans===true?'on':''}" id="adyes">Yes — save it in Reel ↗</button></div>`;
-    cta='Skip';
+    mid=`<div class="hrow"><button class="hbtn ${ans===true||ans==='saved'?'on':''}" id="adyes">Had it — save one in Reel ↗</button>
+      <button class="hbtn ${ans==='not'?'on':''}" id="adno">Not today</button></div>`;
+    cta='✓ Had it';
   }
   else{ mid=''; cta='Done'; }
 
@@ -1943,7 +1969,9 @@ function paintZen(isStepChange){
     if(S.personal.anchors.length>=1)return;
     S.personal.anchors.push({id:nid(),text:v});save();paintZen(false)}};
   const ady=zmidEl.querySelector('#adyes');
-  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();window.open(REEL_URL,'_blank');zenNext()};
+  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:'saved'};save();window.open(REEL_URL,'_blank');zenNext()};
+  const adn=zmidEl.querySelector('#adno');
+  if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:'not'};save();zenNext()};
   const pcy=zmidEl.querySelector('#pcyes');
   if(pcy)pcy.onclick=()=>{S.pcheck={doneWeek:isoWeek(),skips:[]};save();zenNext()};
   const pcn=zmidEl.querySelector('#pcno');
@@ -1995,7 +2023,7 @@ function paintZen(isStepChange){
 
   document.getElementById('zgo').onclick=()=>{
     if(kind==='sort'&&nRaw){openTriage();return}   /* stays inside the ritual */
-    if(kind==='adcheck')S.adCheck={date:today(),answer:false};
+    if(kind==='adcheck')S.adCheck={date:today(),answer:'had'};
     if(kind==='pcheck'&&!personalDoneThisWeek()&&!S.pcheck.skips.includes(today()))S.pcheck.skips.push(today());
     zenNext();
   };
@@ -2635,19 +2663,17 @@ function wireGoals(){
    and follows you to the phone: its state lives in S.reset (synced, unlike S.ui), and opening the
    app anywhere while a reset is running drops you back on the same step. Links (Claude, Reel) and
    the focus length are set right where they're used. Nothing is counted against you. */
-const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'name',name:'What are you avoiding?'},
-  {id:'move',name:'Get the blood moving'},{id:'talk',name:'Talk it out — out loud'},
-  {id:'cool',name:'What’s the coolest thing about this?'},{id:'moves',name:'What are the first 2-minute moves?'},
-  {id:'focus',name:'Focus'}];
+/* the writing (what you're avoiding, the coolest thing, the first moves…) lives in Spark's own template */
+const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'move',name:'Get the blood moving'},
+  {id:'talk',name:'Talk it out — out loud'},{id:'spark',name:'Write it down in Spark'},{id:'focus',name:'Focus'}];
+const RV3IDS=['close','name','move','talk','cool','moves','focus'],RV3TO4={name:'move',cool:'spark',moves:'spark'};
 const RNOTE={close:'Everything there can wait. Close them, then tap Done.',
-  name:'One line. Naming it shrinks it.',
   move:'Leave the desk. Take your phone — this follows you.',
-  talk:'Open Claude in voice and say it out loud. Or write it in Spark. Avoidance is information — what is it telling you?',
-  cool:'Forget the deck. One line, like an ad breakfast note: what’s cool about it, and why it works.',
-  moves:'Dump every small move you can see. Small enough to start right now. Ugly is fine.',
+  talk:'Open Claude in voice and say it out loud. Avoidance is information — what is it telling you?',
+  spark:'Your template is waiting in Spark — name it without judging it, what you’re avoiding, the coolest thing, the first 2-minute moves. Write it, or skip and keep going.',
   focus:'Put on some music and get the first thing out of the way.'};
-const RMOVE=[['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
-const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['cool','The coolest thing'],['moves','The brain dump']];
+const RMOVE=[['breathe','🌬️ Breathe ×3'],['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
+let RBREATHE=false;   /* the breathing guide shows right after you tap Breathe, until you tap something else */
 const RDECIDE=[['now','⚡ Do it now'],['shrink','✂️ Shrink it'],['ai','🤖 Delegate to AI'],['drop','✕ Not doing it']];
 const RMINS=[15,25,45,60];
 const RDEF={claude:'https://claude.ai/project/01a1798f-8f85-777a-b5fb-fdf995e253f8',reel:REEL_URL,focus:25};
@@ -2665,12 +2691,13 @@ function initReset(){
   let r=S.reset;
   if(r&&(typeof r!=='object'||typeof r.at!=='number'||!r.startedAt))r=S.reset=null;
   if(r&&r.v===2){r.v=3;r.helped=(r.helped||[]).map(k=>k==='reel'?'cool':k)}   /* v2 → v3: Reel became “the coolest thing” */
-  if(r&&r.v!==2&&r.v!==3){   /* a reset started in the first version: same step, new layout */
+  if(r&&r.v!==2&&r.v!==3&&r.v!==4){   /* a reset started in the first version: same step, new layout */
     const id=ROLDIDS[r.at],map={music:'cool',reel:'cool',enter:'moves'};
-    r.at=Math.max(0,RSTEPS.findIndex(s=>s.id===(map[id]||id)));
+    r.at=Math.max(0,RV3IDS.indexOf(map[id]||id));
     r.moves=r.firstMove&&String(r.firstMove).trim()?[{id:nid(),text:String(r.firstMove).trim(),done:false}]:[];
     if(r.musicOn)(r.moved=r.moved||{}).music=true;
     ['firstMove','protectedUntil','talkUntil','musicOn'].forEach(k=>delete r[k]);r.v=3}
+  if(r&&r.v===3){const id=RV3IDS[r.at];r.at=Math.max(0,RSTEPS.findIndex(s=>s.id===(RV3TO4[id]||id)));r.v=4}   /* v3 → v4: the writing moved to Spark */
   if(r){
     if(!RSTEPS[r.at])r.at=0;
     r.moved=r.moved&&typeof r.moved==='object'?r.moved:{};
@@ -2702,7 +2729,7 @@ function rChime(){try{if(navigator.vibrate)navigator.vibrate([120,80,120]);if(!R
     g.gain.setValueAtTime(0.0001,t+k*.35);g.gain.exponentialRampToValueAtTime(0.25,t+k*.35+.03);g.gain.exponentialRampToValueAtTime(0.0001,t+k*.35+.6);
     o.start(t+k*.35);o.stop(t+k*.35+.65)})}catch(e){}}
 function startReset(){
-  if(!S.reset){S.reset={v:3,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,cool:'',decision:null,moves:[],talk:'',helped:[],
+  if(!S.reset){S.reset={v:4,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,cool:'',decision:null,moves:[],talk:'',helped:[],
     focusMins:S.resetCfg.focus,focusUntil:null};save()}
   if(ZEN)exitZen();
   REDIT=null;tzOpen('reset');
@@ -2711,7 +2738,6 @@ function endReset(){S.reset=null;save();if(TZ==='reset')tzClose();else render()}
 function rNext(){
   const r=S.reset;if(!r)return;
   const id=RSTEPS[r.at].id;
-  if(id==='moves'){const t=document.getElementById('rmovenew');if(t&&t.value.trim())rAddMoves(t.value)}   /* a move typed but not ⏎’d still counts */
   if(id==='focus'){
     if(!r.focusUntil){r.focusUntil=Date.now()+r.focusMins*6e4;save();rUnlock();tzPaint(false);return}
     rFinish();return}
@@ -2724,30 +2750,16 @@ function rNext(){
 function rBack(){const r=S.reset;if(!r)return;
   if(r.at===0){tzPause();return}
   r.at--;REDIT=null;save();tzPaint(true)}
-function rAddMoves(text){const r=S.reset;
-  text.split('\n').map(s=>s.replace(/^[\s•\-–*·.\d)]+/,'').trim()).filter(Boolean).forEach(s=>r.moves.push({id:nid(),text:s,done:false}));save()}
 function rFinish(){
   const r=S.reset;
   /* delegating the avoided thing: it lands in Sort, marked for AI */
   if(r.decision==='ai'&&r.avoiding.trim()){const [t]=add(r.avoiding.trim(),'work');t.ai=true}
   S.resetLog.push({date:today(),at:Date.now(),avoiding:r.avoiding.trim(),cool:r.cool.trim(),decision:r.decision||null,moves:r.moves.map(x=>x.text),
-    done:r.moves.filter(x=>x.done).length,talk:r.talk.trim(),helped:r.helped.slice()});
+    done:r.moves.filter(x=>x.done).length,talk:r.talk.trim(),helped:r.helped.slice(),wrote:!!r.wrote});
   if(S.resetLog.length>200)S.resetLog=S.resetLog.slice(-200);
   const n=r.moves.filter(x=>x.done).length;
   S.reset=null;save();tzClose();
   toast(r.decision==='ai'&&r.avoiding.trim()?'reset done — the delegated one is in Sort for AI':n?n+(n===1?' move':' moves')+' done — you’re moving':'reset done — go');
-}
-/* a template to write it out in Spark: avoidance as information, then back to the fun part */
-function rTemplate(){
-  const r=S.reset,m=gMissionLatest();
-  return ['What I’m avoiding: '+(r.avoiding.trim()||''),'',
-    'Why am I avoiding it? (fear, boredom, waiting on someone?)','','',
-    'What’s behind it?','','',
-    'Why do I care about it?','','',
-    'Kill it, shrink it, or keep it?','','',
-    'What can I do that doesn’t depend on anyone — so I know I tried everything in my power?','','',
-    'What’s the coolest thing about it? (like an ad breakfast note)','','',
-    ...(m?['My mission: '+m.text]:[])].join('\n');
 }
 /* a link you can change right where it's used */
 const rLinkRow=(key,label)=>REDIT===key
@@ -2763,15 +2775,12 @@ function rPaint(change){
   const o={dots:tzDots(RSTEPS.length,r.at),step:`Energy reset · ${r.at+1} of ${RSTEPS.length}`,name:s.name,note:RNOTE[s.id],
     back:rBack,go:rNext,cta:'Next'};
   if(s.id==='close'){
-    o.mid='';o.cta='Done';
+    o.mid=TOUCH?'':`<div class="rhand">📱 Next you get up. Take your phone and open the app there — this reset will be waiting on the next step.</div>`;o.cta='Done';
     o.hint='⏎ for Done · ← leaves the ritual (it keeps your place)';
-  }
-  else if(s.id==='name'){
-    o.mid=`<div class="zdump"><textarea id="ravoid" rows="1" placeholder="The SOIP deck intro. I don’t know where to start.">${esc(r.avoiding)}</textarea></div>
-      ${TOUCH?'':`<div class="rhand">📱 Next you get up. Take your phone and open the app there — this reset will be waiting on the next step.</div>`}`;
   }
   else if(s.id==='move'){
     o.mid=`<div class="rchips">${RMOVE.map(([k,l])=>`<button class="rchip ${r.moved[k]?'on':''}" data-rmove="${k}">${l}</button>`).join('')}</div>
+      ${RBREATHE?`<div class="rbreathe"><i></i><span><b>Two breaths in through the nose — then one long, slow breath out.</b> Three times. Follow the circle.</span></div>`:''}
       <div class="zkept">${Object.values(r.moved).filter(Boolean).length?'Good. Keep going until your body feels it.':'Tap each one as you do it.'}</div>`;
   }
   else if(s.id==='talk'){
@@ -2783,35 +2792,14 @@ function rPaint(change){
         ${ms?`<div class="rpt"><span>${ms.week===isoWeek()?'This week’s mission':'Your mission'}</span>${esc(ms.text)}</div>`
           :h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
         ${far.length?`<div class="rpt"><span>Where you’re heading</span>${far.map(x=>esc(x.title)).join(' · ')}</div>`:''}
-        <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone?</div>
-      </div>
-      <div class="rspark"><div><b>Rather write it?</b> Copy the template, paste it in Spark.</div>
-        <div class="racts" style="margin:10px 0 0"><button class="rbig rghost" id="rtpl">Copy the template</button>
-          <a class="rbig rghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
+        <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone? · What would I say to a friend who felt like this?</div>
+      </div>`;
   }
-  else if(s.id==='cool'){
-    o.mid=`${r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>The thing you were avoiding</span>${esc(r.avoiding)}</div>`:''}
-      <div class="zdump"><textarea id="rcool" rows="1" placeholder="The LATAM switchers insight — imagine it live, everyone would recognise themselves.">${esc(r.cool)}</textarea></div>
-      <div class="zkept" style="margin-top:6px">Need a spark first? <a class="zlink" id="rreel" href="${esc(c.reel)}" target="_blank" rel="noopener">Open Reel ↗</a></div>
-      <div class="rlinkrow" style="margin-top:6px">${rLinkRow('reel','Reel')}</div>`;
-    o.cta=r.cool.trim()?'Next':'Skip';
-  }
-  else if(s.id==='moves'){
-    const p=plan('work'),deep=p.deep?byId(p.deep):null;
-    o.mid=`${gMissionLine()}
-      ${r.avoiding.trim()?`<div class="zcarry-h">What do you do with “${esc(r.avoiding.trim().slice(0,60))}${r.avoiding.trim().length>60?'…':''}”?</div>
-        <div class="rchips">${RDECIDE.map(([k,l])=>`<button class="rchip sm ${r.decision===k?'on':''}" data-rdecide="${k}">${l}</button>`).join('')}</div>
-        ${r.decision==='ai'?`<div class="zkept">It goes to Sort, marked for AI, when you close the reset.</div>`
-          :r.decision==='drop'?`<div class="zkept">Dropped on purpose. That’s a decision, not a failure.</div>`:''}`:''}
-      ${deep?`<div class="rpt" style="margin:8px 0 18px"><span>Today’s deep work</span>${esc(deep.text)}</div>`:''}
-      <div class="rnudge">Is the deck the problem? Go to a blank page — <a class="zlink" id="rblank" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">start in Spark ↗</a></div>
-      ${r.moves.length?`<div class="rmoves">${r.moves.map(x=>`<div class="rmove"><span>${esc(x.text)}</span><button class="act del" data-rmdel="${x.id}" title="Remove">×</button></div>`).join('')}</div>`:''}
-      <div class="zdump"><textarea id="rmovenew" rows="1" placeholder="${r.moves.length?'Another one — ⏎':'Write one ugly headline. ⏎ for the next one'}"></textarea></div>
-      <div class="zcarry-h" style="margin-top:26px">What you and Claude landed on <span class="ropt">— optional, paste it here</span></div>
-      <textarea class="tai" id="rtalk" rows="3" placeholder="Paste the summary from Claude">${esc(r.talk)}</textarea>
-      <div class="zcarry-h" style="margin-top:26px">What helped most? <span class="ropt">— optional</span></div>
-      <div class="rchips">${RHELP.map(([k,l])=>`<button class="rchip sm ${r.helped.includes(k)?'on':''}" data-rhelp="${k}">${l}</button>`).join('')}</div>`;
-    o.hint='⏎ in the box adds a move · Next when you’re done dumping';
+  else if(s.id==='spark'){
+    o.mid=`${gMissionLine()}<div class="racts"><a class="rbig" id="rsparkgo" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div>
+      <div class="zkept">${r.wrote?'Back from Spark? Press Done writing.':'Opens in a new tab — the reset waits right here.'}</div>`;
+    o.cta=r.wrote?'Done writing':'Skip';
+    o.hint=r.wrote?'⏎ when you’re done · Pause keeps your place':'Skip if you’d rather not write today — it’s fine';
   }
   else if(s.id==='focus'){
     const run=r.focusUntil&&r.focusUntil>now,over=r.focusUntil&&r.focusUntil<=now;
@@ -2826,17 +2814,12 @@ function rPaint(change){
         :`<div class="zkept">Start with the ugliest version. Polish later.</div>`}
       ${r.focusUntil?`<div style="margin-top:18px"><button class="zlink" id="rfocusreset">restart the clock</button></div>`:''}`;
     o.cta=!r.focusUntil?`Start ${r.focusMins} min`:'Close the reset';
-    o.hint=!r.focusUntil?'⏎ starts the clock · the ritual stays open while it runs':'tick your moves as you go · Pause keeps your place';
+    o.hint=!r.focusUntil?'⏎ starts the clock · the ritual stays open while it runs':r.moves.length?'tick your moves as you go · Pause keeps your place':'Pause keeps your place';
   }
   const mid=tzFrame(o,change);
   const z=tzlayer.querySelector('#zen');if(z)z.classList.add('rzen');
-  const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
-    t.oninput=()=>{autosize(t);r[key]=t.value;save()}};
-  area('#ravoid','avoiding');area('#rtalk','talk');area('#rcool','cool');
-  const tp=mid.querySelector('#rtpl');if(tp)tp.onclick=()=>tCopy(rTemplate());
-  mid.querySelectorAll('[data-rdecide]').forEach(b=>b.onclick=()=>{const k=b.dataset.rdecide;r.decision=r.decision===k?null:k;save();tzPaint(false)});
-  mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];save();tzPaint(false)});
-  const re=mid.querySelector('#rreel');if(re)re.addEventListener('click',()=>{r.reelOpened=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
+  const sg=mid.querySelector('#rsparkgo');if(sg)sg.addEventListener('click',()=>{r.wrote=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
+  mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];RBREATHE=k==='breathe'&&r.moved[k];save();tzPaint(false)});
   /* links edited in place */
   mid.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>{REDIT=b.dataset.redit;tzPaint(false);const f=document.getElementById('rlink');if(f)f.focus()});
   const lk=mid.querySelector('#rlink');
@@ -2845,14 +2828,6 @@ function rPaint(change){
     mid.querySelector('#rlinksave').onclick=go;
     lk.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go()}if(e.key==='Escape'){e.stopPropagation();REDIT=null;tzPaint(false)}};
     mid.querySelector('#rlinkx').onclick=()=>{REDIT=null;tzPaint(false)}}
-  /* the brain dump: ⏎ adds, a pasted list adds them all */
-  const nm=mid.querySelector('#rmovenew');
-  if(nm){autosize(nm);if(change)nm.focus();nm.oninput=()=>autosize(nm);
-    nm.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!nm.value.trim())return;rAddMoves(nm.value);tzPaint(false);
-      const f=document.getElementById('rmovenew');if(f)f.focus()}}}
-  mid.querySelectorAll('[data-rmdel]').forEach(b=>b.onclick=()=>{r.moves=r.moves.filter(x=>x.id!==b.dataset.rmdel);save();tzPaint(false)});
-  mid.querySelectorAll('[data-rhelp]').forEach(b=>b.onclick=()=>{const k=b.dataset.rhelp;
-    r.helped=r.helped.includes(k)?r.helped.filter(x=>x!==k):[...r.helped,k];save();tzPaint(false)});
   /* focus */
   mid.querySelectorAll('[data-rmins]').forEach(b=>b.onclick=()=>{r.focusMins=+b.dataset.rmins;c.focus=r.focusMins;save();tzPaint(false)});
   mid.querySelectorAll('[data-rmdone]').forEach(b=>b.onclick=()=>{const x=r.moves.find(m=>m.id===b.dataset.rmdone);if(x){x.done=!x.done;save();tzPaint(false)}});
@@ -3070,6 +3045,14 @@ const tCycItem=c=>{const i=c.itemId?tById(c.itemId):null;return i&&tOpen(i)?i:nu
 const tCycDue=c=>!c.retired&&!!c.nextDue&&!tCycItem(c)&&daysTo(c.nextDue)<=c.lead;
 const tCycSort=(a,b)=>a.nextDue<b.nextDue?-1:a.nextDue>b.nextDue?1:0;
 const tCycComing=dept=>S.town.cycles.filter(c=>c.dept===dept&&tCycDue(c)).sort(tCycSort);
+/* due today or overdue, nothing in motion — these also show on Today, not only in the round */
+const tCycToday=()=>S.town.cycles.filter(c=>!c.retired&&c.nextDue&&!tCycItem(c)&&daysTo(c.nextDue)<=0).sort(tCycSort);
+/* "did it" from Today: an item is planted and closed at once, so the done log and the roll-forward
+   work exactly as when it comes through the round */
+function tCycDidIt(c){
+  const i=tCycPlant(c);tSet(i,'done');tRefresh();
+  toastUndo('done — next '+tDay(c.nextDue),()=>{tSet(i,'inbox');S.town.items=S.town.items.filter(x=>x.id!==i.id);c.itemId=null;save();tRefresh()})}
+function tCycToToday(c){const i=tCycPlant(c);tSet(i,'week');i.today=today();save();tRefresh();toast('on today')}
 function tCycEvery(c){
   const u=TCYC_UNITS.find(x=>x.id===c.unit)||TCYC_UNITS[2],e='every '+(c.n>1?c.n+' '+u.id:u.one);
   return e+(c.type==='fixed'?' · same date':' since last done')}
@@ -3115,9 +3098,13 @@ function tCycDropSheet(c,pick,due){
   box.querySelector('#tcret').onclick=()=>{closeSheet();pick('retire')};
 }
 /* add or edit. Quick by default — title, who, how it repeats; lead time and notes fold away */
-function tCycSheet(dept,id){
+function tCycSheet(dept,id,from){
   const orig=id?tCyc(id):null;if(id&&!orig)return;
-  const f=orig?Object.assign({},orig):{title:'',who:'',type:'interval',n:6,unit:'months',lead:TCYC_LEAD,lastDone:null,nextDue:today(),on:null,notes:'',dept};
+  const f=orig?Object.assign({},orig):{title:'',who:'',type:'interval',n:6,unit:'months',lead:TCYC_LEAD,lastDone:null,nextDue:today(),on:null,notes:'',dept:dept||null};
+  /* made from a task: its name and department carry over; a task with a deadline repeats on that date */
+  if(from){f.title=from.title;f.dept=f.dept||from.dept||null;f.notes=from.notes||'';
+    if(from.due){f.type='fixed';f.n=1;f.unit='years';f.nextDue=from.due}}
+  const askDept=!orig&&!f.dept;
   let more=false,dueSet=false,timing=false;
   const whos=[...new Set(S.town.cycles.map(c=>(c.who||'').trim()).filter(Boolean))].sort();
   /* interval cycles count from the last time it was done; with no last date it's due now */
@@ -3127,6 +3114,8 @@ function tCycSheet(dept,id){
     const units=f.type==='fixed'?['months','years']:TCYC_UNITS.map(u=>u.id);
     box.innerHTML=`<h3>${orig?'Edit cycle':'New cycle'}${orig&&orig.retired?' · retired':''}</h3>
       <input class="field" id="tcti" placeholder="Dentist checkup" value="${esc(f.title)}" />
+      ${askDept?`<div class="seg-label" style="margin:18px 0 10px">Department</div>
+        <div class="chips">${TOWN_DEPTS.map(d=>`<button class="chip ${f.dept===d.id?'on':''}" data-tcdp="${d.id}" style="color:${d.color}"><b></b>${d.name}</button>`).join('')}</div>`:''}
       <div class="tcform"><span class="tcl">Who</span>
         <input class="field tcwho" id="tcwho" placeholder="Léo, Luna, me… one cycle each" value="${esc(f.who||'')}" /></div>
       ${whos.length?`<div class="dates tcwhos">${whos.map(w=>`<button class="dbtn ${f.who===w?'on':''}" data-tcw="${esc(w)}">${esc(w)}</button>`).join('')}</div>`:''}
@@ -3180,13 +3169,17 @@ function tCycSheet(dept,id){
     q('#tcok').onclick=()=>{
       const title=f.title.trim();if(!title){q('#tcti').focus();toast('give it a name');return}
       if(!f.nextDue){toast('pick the date');return}
+      if(!f.dept){toast('pick a department');return}
       const c=orig||{id:nid(),created:Date.now(),itemId:null,retired:false};
       /* a fixed cycle steps from its anchor; a new date or period re-anchors it */
       const on=f.type==='fixed'?(!orig||timing||orig.type!=='fixed'||!orig.on?f.nextDue:orig.on):null;
       Object.assign(c,{title,who:(f.who||'').trim(),type:f.type,n:f.n,unit:f.unit,lead:f.lead,
         lastDone:f.lastDone||null,nextDue:f.nextDue,on,notes:f.notes||'',dept:f.dept});
       if(!orig)S.town.cycles.push(c);
-      save();closeSheet();tRefresh();toast(orig?'✓ saved':'in the almanac');
+      /* the task it was made from becomes this round's instance: finishing it rolls the cycle on */
+      const it=from&&tById(from.id);
+      if(it&&!orig&&tOpen(it)){it.cycle=c.id;c.itemId=it.id;it.due=c.nextDue;if(!it.dept)it.dept=c.dept}
+      save();closeSheet();tRefresh();toast(orig?'✓ saved':'in the almanac — it repeats '+tCycEvery(c).replace(' · same date','').replace(' since last done',''));
     };
     const del=q('#tcdel');
     if(del)del.onclick=()=>sheetConfirm('Delete this cycle?',tCycName(orig)+' — anything it already put on your list stays there.','Delete',()=>{
@@ -3351,6 +3344,10 @@ function tItemSheet(id){
       ${i.state==='week'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Today</div>
         <div class="chips"><button class="chip ${tIsToday(i)?'on':''}" data-ttoday="${i.id}" style="color:var(--hot)"><b></b>${tIsToday(i)?'On today':'Put it on today'}</button></div></div>`:''}
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Deadline</div><div class="dates">${dateChips(i)}</div></div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Repeats</div>
+        ${tCycOf(i)?`<div class="dates"><button class="dbtn on" id="trep">↻ ${esc(tCycEvery(tCycOf(i)))}</button></div>`
+          :`<div class="dates"><button class="dbtn" id="trep">↻ Make it repeat</button></div>
+            <div class="zkept" style="margin:8px 0 0">For things that come back — the car licence every year, the fridge every week.</div>`}</div>
       ${i.state==='waiting'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Waiting on</div>
         <input class="sinput" id="twho2" placeholder="Who has it?" value="${esc(w.who||'')}" style="width:100%" />
         <div class="zkept" style="margin:12px 0 10px">since ${w.since?tShort(w.since):'—'} · check back ${w.checkBack?dueLabel(w.checkBack).t:'— not set'}</div>
@@ -3377,6 +3374,8 @@ function tItemSheet(id){
     const cb=box.querySelector('#tcb2');if(cb)cb.onclick=()=>tPush(i,draw);
     const ins=box.querySelector('#tins2');if(ins)ins.oninput=()=>{i.instr=ins.value;save()};
     const nt=box.querySelector('#tnotes');nt.oninput=()=>{i.notes=nt.value;save()};
+    const rp=box.querySelector('#trep');
+    if(rp)rp.onclick=()=>{const c=tCycOf(i);closeSheet();if(c)tCycSheet(c.dept,c.id);else tCycSheet(i.dept,null,i)};
     box.querySelector('#tok').onclick=()=>closeSheet();
     const dn=box.querySelector('#tdone');
     if(dn)dn.onclick=()=>{const was=i.state;tSet(i,'done');SHEET_CLOSE=null;closeSheet();tRefresh();
@@ -3488,7 +3487,13 @@ function tViewToday(){
       ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
       ${tSizeLabel(i)?`<span class="tag">${tSizeLabel(i)}</span>`:''}
       <button class="tlink" data-ttoday="${i.id}">+ today</button></div>`};
+  const cyc=tCycToday();
   return `${tBackLink()}<div class="planhead"><h2>Today</h2><span>${tDay(today())}${mins?' · '+TOWN_TIMES.find(x=>x.v===mins).name+' free':''}</span></div>
+    ${cyc.length?`<div class="tcycdue"><div class="slotlabel" style="margin:0 0 10px">↻ Due from the almanac — ${cyc.length}</div>
+      ${cyc.map(c=>{const d=TOWN_DEPTS.find(x=>x.id===c.dept),late=-daysTo(c.nextDue);
+        return `<div class="tmini" style="cursor:default"><span class="d" style="background:${d?d.color:C.grey}"></span>
+          <span class="t">${esc(tCycName(c))}</span><span class="tag" style="color:${late>0?C.red:'var(--ink-3)'}">${late>0?late+'d late':'today'}</span>
+          <button class="tlink" data-tcycdid="${c.id}">✓ did it</button><button class="tlink" data-tcycon="${c.id}">+ today</button></div>`}).join('')}</div>`:''}
     <div class="tplatewrap">
       ${L.length||mins?tMeter(mins,L):''}
       ${day.length?`<div class="tplate">${day.map(i=>tCard(i,'today')).join('')}</div>`:''}
@@ -3593,7 +3598,8 @@ function tViewWaiting(){
     ${!groups.length&&!wife.length?`<div class="empty"><h3>Nothing out.</h3><p>When the round hands something to someone, it shows up here.</p></div>`:''}`;
 }
 function tViewMap(){
-  return `${tBackLink()}<div class="planhead"><h2>Town map</h2><span>in round order · tap a department</span></div>
+  return `${tBackLink()}<div class="planhead"><h2>Town map</h2><span>in round order · tap a department</span>
+    <button class="btn" id="tcycnew" style="margin-left:auto">↻ + Recurring</button></div>
     <div class="tmap">${TOWN_DEPTS.map(d=>{
       const L=S.town.items.filter(i=>i.dept===d.id),c=st=>L.filter(i=>i.state===st).length,p=tPulse(d.id),lv=S.town.depts[d.id].lastVisit;
       const costly=L.filter(i=>tOpen(i)&&i.stakes===3).length,soon=tCycComing(d.id).length;
@@ -3696,6 +3702,9 @@ function wireTown(){
     tAdd(v,S.ui.townDept,'inbox');render();toast('in the inbox');const d2=document.getElementById('tdadd');if(d2)d2.focus()}};
   app.querySelectorAll('[data-tcyc]').forEach(b=>b.onclick=()=>tCycSheet(S.ui.townDept,b.dataset.tcyc));
   const ca=document.getElementById('tcycadd');if(ca)ca.onclick=()=>tCycSheet(S.ui.townDept);
+  const cn=document.getElementById('tcycnew');if(cn)cn.onclick=()=>tCycSheet(null);
+  app.querySelectorAll('[data-tcycdid]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycdid);if(c)tCycDidIt(c)});
+  app.querySelectorAll('[data-tcycon]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycon);if(c)tCycToToday(c)});
   const cr=document.getElementById('tcycret');if(cr)cr.onclick=()=>{TCYCRET=!TCYCRET;render()};
   const rf=document.getElementById('tref');
   if(rf){autosize(rf);rf.oninput=()=>{autosize(rf);S.town.depts[S.ui.townDept].ref=rf.value;save()}}
@@ -3831,7 +3840,7 @@ function tzRound(change){
       <div class="zkept">${n?n+' in the inbox, waiting to be sorted':'Nothing in the inbox yet.'}</div>
       ${TZJUST.length?`<div class="zcarry"><div class="zcarry-h">Just added — ${TZJUST.length}</div>
         <div class="zcarry-l">${TZJUST.map(t=>`<span class="zci" style="--cc:var(--hot)">${esc(t)}</span>`).join('')}</div></div>`:''}`;
-    o.cta=TZJUST.length?'Done dumping':'Skip';
+    o.cta=TZJUST.length?'Done dumping':'Nothing to add';
     o.hint='⏎ keeps a line · then press '+o.cta;
   }
   else if(st.id==='sort'){
@@ -3980,9 +3989,9 @@ function tzMove(change){
     back:mv.step>0?()=>{mv.step--;save();tzPaint(true)}:null,
     go:()=>{mv.step++;save();tzPaint(true)}};
   if(st.id==='spark'){
-    o.mid=`<div class="hrow"><button class="hbtn" id="tzspark">Open Spark ↗</button></div>
-      <div class="zkept">Opens in a new tab. Come back here when you’re done.</div>`;
-    o.cta='Skip';
+    o.mid=`<div class="hrow"><button class="hbtn" id="tzspark">Open Spark ↗</button><button class="hbtn" id="tzsparkno">Not today</button></div>
+      <div class="zkept">Opens in a new tab. Come back here when you’re done — or press Done if you already wrote today.</div>`;
+    o.cta='✓ Done';
   }
   else if(st.id==='time'){
     o.mid=`<div class="hrow">${TOWN_TIMES.map(t=>`<button class="hbtn ${mv.mins===t.v?'on':''}" data-tmins="${t.v}">${t.name}</button>`).join('')}</div>
@@ -4022,6 +4031,7 @@ function tzMove(change){
     o.cta='Close — go do it';o.go=()=>tMoveEnd('today is set — it’s in the Today tab',true);
   }
   const mid=tzFrame(o,change);
+  const spn=mid.querySelector('#tzsparkno');if(spn)spn.onclick=()=>o.go();
   const sp=mid.querySelector('#tzspark');
   if(sp)sp.onclick=()=>{window.open(SPARK_URL,'_blank');mv.step++;save();tzPaint(true)};
   mid.querySelectorAll('[data-tmins]').forEach(b=>b.onclick=()=>{mv.mins=+b.dataset.tmins;
@@ -4142,7 +4152,7 @@ function wire(){
     c.addEventListener('dragend',()=>{c.classList.remove('drag');dropPh();
       document.body.classList.remove('dragging');
       const db=document.getElementById('dropbar');if(db)db.classList.remove('hot');
-      app.querySelectorAll('.zone,.slot,.deep,.slots').forEach(z=>z.classList.remove('over'))})});
+      app.querySelectorAll('.zone,.slot,.deep,.slots,.qrow,.qroom').forEach(z=>z.classList.remove('over'))})});
   const dbar=document.getElementById('dropbar');
   if(dbar){
     dbar.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();dbar.classList.add('hot')});
@@ -4162,6 +4172,19 @@ function wire(){
     z.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();z.classList.remove('over');
       const id=dragId||e.dataTransfer.getData('text/plain');dropPh();
       if(id)assign(m,z.dataset.slotdrop,id)})});
+
+  /* today's queue: ↑↓, or drop a row on another to take its place */
+  app.querySelectorAll('[data-qup]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qup,-1)});
+  app.querySelectorAll('[data-qdown]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qdown,1)});
+  app.querySelectorAll('.qrow').forEach(r=>{
+    r.addEventListener('dragover',e=>{e.preventDefault();r.classList.add('over')});
+    r.addEventListener('dragleave',e=>{if(!r.contains(e.relatedTarget))r.classList.remove('over')});
+    r.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();r.classList.remove('over');
+      const id=dragId||e.dataTransfer.getData('text/plain');dropPh();if(!id||id===r.dataset.q)return;
+      const qq=queueOf(m).map(x=>x.id);
+      if(!qq.includes(id)){toast('drop it on a Room chip — Deep, batch, AI or spare');return}
+      qq.splice(qq.indexOf(id),1);qq.splice(queueOf(m).findIndex(x=>x.id===r.dataset.q),0,id);
+      S.plan[m].order=qq;save();render()})});
 
   /* columns */
   app.querySelectorAll('.zone').forEach(zone=>{

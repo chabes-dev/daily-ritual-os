@@ -58,6 +58,7 @@ function intended(root){
   root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
   root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
   root.querySelectorAll('.rbar').forEach(e=>e.remove());
+  root.querySelectorAll('#tcycnew,.tcycdue').forEach(e=>e.remove());                 /* + Recurring, almanac due on Today */
   root.querySelectorAll('#hometile-ritual .ht-meta').forEach(e=>e.textContent=e.textContent.replace(/of \d+ steps/,'of N steps'));   /* the weekly mission step */
   return root}
 
@@ -607,9 +608,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click(`#mlayer [data-dgoal="${soip}"]`);
     ok(P.g(`byId('${tid}').goal`)===soip,'task linked to a goal');
     P.click('#mlayer #dclose');
-    ok(P.$('.deep .ggoal')&&P.$('.deep .ggoal').textContent.includes('Lead SOIP MX'),'the deep card shows which goal it moves');
+    ok(P.$('.qrow .ggoal')&&P.$('.qrow .ggoal').textContent.includes('Lead SOIP MX'),'today’s queue shows which goal the deep task moves');
     P.g(`openDetail('${tid}')`);P.click('#mlayer [data-dgoal=""]');P.click('#mlayer #dclose');
-    ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.deep .ggoal'),'… and can be unlinked');
+    ok(P.g(`byId('${tid}').goal`)===undefined&&!P.$('.qrow .ggoal'),'… and can be unlinked');
     P.g(`byId('${tid}').goal='${soip}';save()`);
 
     /* on purpose, currently: what's on the board right now */
@@ -722,7 +723,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* ids differ between runs, so compare structure: strip ids, then text and markup must match */
     const A=snap(PRETOWN_HOME_REF),B=snap(NEW);
     const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
-    for(const [n] of views)ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])));
+    /* work today became a queue in this change — compared again once the live version has it */
+    for(const [n] of views){if(n==='work today'&&!A[n].includes('qrow'))continue;ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
     ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
     ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
     ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');
@@ -854,15 +856,13 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const zenBefore=P.g('JSON.stringify(S.ritual)');
     P.click('#hometile-reset');
     ok(P.g('TZ')==='reset'&&P.$('#zen').classList.contains('rzen')&&P.$('#tzname').textContent==='Close email and Webex','1 · close email and Webex');
-    ok(P.$('#tzgo').textContent==='Done'&&P.$('#tzmid').textContent.trim()===''&&!P.$('[data-until]'),'… only a Done button — no timer, no settings');
+    ok(P.$('#tzgo').textContent==='Done'&&!P.$('#tzmid button,#tzmid input,#tzmid a,#tzmid textarea')&&!P.$('[data-until]'),'… only a Done button — no timer, no settings');
     ok(!!P.$('#tzback'),'… and a way back (out of the ritual)');
     P.click('#tzback');ok(!P.g('TZ')&&P.g('S.reset.at')===0,'back on step 1 leaves the ritual, keeping its place');
     P.click('#hometile-reset');
+    ok(!!P.$('.rhand'),'… with a nudge to take the phone for what comes next');
     P.click('#tzgo');
-    ok(P.$('#tzname').textContent==='What are you avoiding?'&&!!P.$('.rhand'),'Done → 2 · name it (with a nudge to take the phone)');
-    P.type('#ravoid','The SOIP deck intro');
-    P.click('#tzgo');
-    ok(P.$('#tzname').textContent==='Get the blood moving'&&P.$$('[data-rmove]').map(b=>b.textContent).join('|')==='💧 Water|🙆 Stretch|🚶 Move|☀️ Sun & air|🎵 Play music','3 · move — with Play music as a check, no link');
+    ok(P.$('#tzname').textContent==='Get the blood moving'&&P.$$('[data-rmove]').map(b=>b.textContent).join('|')==='🌬️ Breathe ×3|💧 Water|🙆 Stretch|🚶 Move|☀️ Sun & air|🎵 Play music','Done → 2 · move — Breathe first, Play music as a check, no link');
     ok(!P.$('#tzmid a'),'… nothing to open');
     P.click('[data-rmove="water"]');P.click('[data-rmove="music"]');
     ok(P.g('JSON.stringify(S.reset.moved)')==='{"water":true,"music":true}','… ticks what you did');
@@ -873,10 +873,10 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     let Q=boot(NEW,phone,{touch:true});
     ok(Q.g('TZ')==='reset'&&Q.$('#tzname').textContent==='Get the blood moving'&&Q.$$('[data-rmove].on').length===2,'phone: opening the app lands back on the same step');
     Q.click('#tzgo');
-    ok(Q.$('#tzname').textContent.startsWith('Talk it out')&&Q.$('#rclaude').getAttribute('href')===CLAUDE,'4 · talk it out — Open Claude goes to your project');
+    ok(Q.$('#tzname').textContent.startsWith('Talk it out')&&Q.$('#rclaude').getAttribute('href')===CLAUDE,'3 · talk it out — Open Claude goes to your project');
     ok(!Q.$('[data-until]')&&!Q.$('#rtalkgo'),'… no timer');
     const pts=Q.$('.rpoints').textContent;
-    ok(pts.includes('The SOIP deck intro')&&pts.includes('creative engine LATAM')&&pts.includes('Creative lead for LATAM')&&!pts.includes('File EB1'),'talking points from what you named and your Goals');
+    ok(pts.includes('creative engine LATAM')&&pts.includes('Creative lead for LATAM')&&!pts.includes('File EB1'),'talking points from your Goals');
     /* the link is changed right here, not in a pop-up */
     Q.click('[data-redit="claude"]');
     ok(!!Q.$('#tzmid #rlink')&&!Q.$('#mlayer .sheet'),'change the Claude link in place — no pop-up');
@@ -886,41 +886,22 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/new1'&&Q.$('#rclaude').getAttribute('href')==='https://claude.ai/project/new1'&&!Q.$('#rlink'),'saved, used at once');
     Q.click('[data-redit="claude"]');Q.click('#rlinkx');ok(!Q.$('#rlink'),'cancel closes it');
     ok(Q.$('.rpt.rq').textContent.includes('Kill it, shrink it, or keep it?'),'Stacey’s questions are on screen to say out loud');
-    ok(Q.$('#rspark').getAttribute('href')===Q.g('SPARK_URL'),'… and Spark is one tap away');
-    Q.click('#rtpl');await tick(5);
-    const tpl=Q.w.__clip.at(-1);
-    ok(tpl.startsWith('What I’m avoiding: The SOIP deck intro')&&tpl.includes('Why am I avoiding it?')&&tpl.includes('Why do I care about it?')&&tpl.includes('Kill it, shrink it, or keep it?')&&tpl.includes('doesn’t depend on anyone')&&tpl.includes('coolest thing'),'copy the writing template for Spark — Stacey’s questions, filled with what you named');
-    ok(Q.w.__clip.at(-1).includes('avoiding: The SOIP deck intro'),'copy an opener for Claude');
+    ok(!Q.$('#rtpl')&&!Q.$('#tzmid textarea'),'nothing to write or copy here — the writing happens in Spark');
     Q.click('#tzgo');
-    ok(Q.$('#tzname').textContent==='What’s the coolest thing about this?'&&Q.$('#tzmid').textContent.includes('The SOIP deck intro')&&Q.$('#tzgo').textContent==='Skip','5 · the coolest thing about it — optional (Skip)');
-    ok(Q.$('#tznote').textContent.includes('ad breakfast')&&Q.$('#rreel').href===Q.g('REEL_URL'),'… written like an ad breakfast note, with Reel there if you need a spark');
-    ok(!!Q.$('[data-redit="reel"]'),'… its link can be changed here too');
-    Q.type('#rcool','The switchers insight — imagine it live, everyone would see themselves');
-    ok(Q.g('S.reset.cool').startsWith('The switchers')&&Q.$('#tzgo').textContent==='Skip','… saved as you type');
-    Q.g('tzPaint(false)');ok(Q.$('#tzgo').textContent==='Next','… Next once written');
-    Q.click('#tzgo');
-    ok(Q.$('#tzname').textContent==='What are the first 2-minute moves?'&&Q.$('.rpt').textContent.includes('Write the SOIP deck intro'),'6 · moves, with today’s deep work');
-    ok(Q.$('#rmovenew').getAttribute('placeholder').startsWith('Write one ugly headline'),'… “write one ugly headline” to get going');
-    ok(Q.$('#tzgo').textContent==='Next','… the button is Next, not a timer');
-    Q.enter('#rmovenew','Write one ugly headline');
-    Q.enter('#rmovenew','• List the 3 proof points\n- Ask Rafa for the old deck\n\n');
-    ok(Q.g('JSON.stringify(S.reset.moves.map(x=>x.text))')==='["Write one ugly headline","List the 3 proof points","Ask Rafa for the old deck"]','brain dump: ⏎ adds one, a pasted list adds them all');
-    Q.click(`[data-rmdel="${Q.g('S.reset.moves[1].id')}"]`);ok(Q.g('S.reset.moves.length')===2,'× removes one');
-    Q.type('#rtalk','Claude: the intro is just the problem in one line. Start there.');
-    ok(Q.g('S.reset.talk').startsWith('Claude: the intro'),'paste what you and Claude landed on');
-    Q.click('[data-rhelp="move"]');
-    Q.type('#rmovenew','Typed but not entered');
+    ok(Q.$('#tzname').textContent==='Write it down in Spark'&&Q.$('#rsparkgo').getAttribute('href')===Q.g('SPARK_URL')&&Q.$('#tzgo').textContent==='Skip','4 · write it down in Spark — or Skip');
+    ok(Q.$('#tznote').textContent.includes('template is waiting in Spark'),'… your template is waiting over there');
+    Q.click('#rsparkgo');await tick(80);
+    ok(Q.g('S.reset.wrote')===true&&Q.$('#tzgo').textContent==='Done writing','back from Spark: Done writing');
     /* pause on the phone, finish back at the desk */
     Q.click('#tzexit');
-    ok(!Q.g('TZ')&&Q.$('.rbar')&&Q.$('.rbar').textContent.includes('6 of 7'),'Pause: the bar keeps it one tap away');
+    ok(!Q.g('TZ')&&Q.$('.rbar')&&Q.$('.rbar').textContent.includes('4 of 5'),'Pause: the bar keeps it one tap away');
     const back={};Object.keys(phone).forEach(k=>back[k]=phone[k]);
     const bd=JSON.parse(back.os_v3);bd.ui={mode:'work',workView:'today',sawHome:true,open:{}};back.os_v3=JSON.stringify(bd);
     Q.close();
     P=boot(NEW,back);
-    ok(P.g('TZ')==='reset'&&P.$('#tzname').textContent==='What are the first 2-minute moves?'&&P.$$('.rmove').length===2,'back at the desk: same step, same moves');
-    P.type('#rmovenew','Typed but not entered');P.click('#tzgo');
-    ok(P.g('S.reset.moves.length')===3,'a move typed but not ⏎’d still counts when you tap Next');
-    ok(P.$('#tzname').textContent==='Focus'&&P.$('#tzgo').textContent==='Start 25 min'&&P.$('#tznote').textContent.includes('music'),'7 · focus: start 25 min, put on some music');
+    ok(P.g('TZ')==='reset'&&P.$('#tzname').textContent==='Write it down in Spark'&&P.$('#tzgo').textContent==='Done writing','back at the desk: same step');
+    P.click('#tzgo');
+    ok(P.$('#tzname').textContent==='Focus'&&P.$('#tzgo').textContent==='Start 25 min'&&P.$('#tznote').textContent.includes('music'),'5 · focus: start 25 min, put on some music');
     ok(P.$$('[data-rmins]').map(b=>b.textContent).join()==='15 min,25 min,45 min,60 min','… pick another length here');
     P.click('[data-rmins="45"]');ok(P.$('#tzgo').textContent==='Start 45 min'&&P.g('S.resetCfg.focus')===45,'… remembered for next time');
     P.click('[data-rmins="25"]');
@@ -928,17 +909,15 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const fu=P.g('S.reset.focusUntil');
     ok(Math.abs(fu-(Date.now()+25*6e4))<5000&&P.g('TZ')==='reset'&&P.$('.rclock[data-until]'),'the clock runs inside the ritual — it stays open');
     ok(P.$('#tzgo').textContent==='Close the reset','… and can be closed when you’re done');
-    P.click(`[data-rmdone="${P.g('S.reset.moves[0].id')}"]`);
-    ok(P.$$('.rmove.rcheck.on').length===1,'tick moves off while the clock runs');
     /* the clock follows the reset to the other device, and runs out on screen */
     P.g(`S.reset.focusUntil=Date.now()+700;save();tzPaint(false)`);await tick(1800);
     ok(P.$('#tzname').textContent==='Time. Nice.'&&P.$('.rclock.over'),'when time is up it says so, still in the ritual');
-    P.click('#tzback');ok(P.$('#tzname').textContent==='What are the first 2-minute moves?','back works from the last step too');
+    P.click('#tzback');ok(P.$('#tzname').textContent==='Write it down in Spark','back works from the last step too');
     P.click('#tzgo');P.click('#tzgo');
     ok(!P.g('TZ')&&P.g('S.reset')===null,'Done closes the reset');
     const log=JSON.parse(P.g('JSON.stringify(S.resetLog)'));
-    ok(log.length===1&&log[0].moves.length===3&&log[0].done===1&&log[0].talk.startsWith('Claude:')&&log[0].helped.join()==='move'&&log[0].cool.startsWith('The switchers'),'kept quietly: moves, what you did, the summary, the coolest thing, what helped');
-    ok(P.$$('.toast').some(t=>t.textContent.includes('1 move done')),'toast');
+    ok(log.length===1&&log[0].wrote===true&&log[0].date===P.g('today()'),'kept quietly: the day, and that you went to write');
+    ok(P.$$('.toast').some(t=>t.textContent.includes('reset done')),'toast: '+P.$$('.toast').map(t=>t.textContent).join(' | '));
     P.g(`S.ui.workView='home';render()`);
     ok(P.$('#hometile-reset').textContent.includes('Stuck? Reset')&&!P.$('#hometile-reset [data-until]'),'home card is back to itself — no countdown in it');
     ok(!/\d+ resets?/i.test(P.$('#app').textContent),'no count of resets anywhere');
@@ -954,11 +933,11 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
       ok(Q.g('S.resetCfg.claude')==='https://claude.ai/project/mine','a link you set yourself is never overwritten');Q.close()}
     /* every step can go back */
     P=boot(NEW,{});
-    for(let k=1;k<7;k++){P.g(`if(TZ)tzClose();S.ui.mode='work';startReset();S.reset.at=${k};save();tzPaint(true)`);P.click('#tzback');
+    for(let k=1;k<5;k++){P.g(`if(TZ)tzClose();S.ui.mode='work';startReset();S.reset.at=${k};save();tzPaint(true)`);P.click('#tzback');
       ok(P.g('S.reset.at')===k-1,'back from step '+(k+1))}
     P.g('endReset()');
     /* a running focus clock shows in the bar when the ritual is paused */
-    P.g(`startReset();S.reset.at=6;S.reset.focusUntil=Date.now()+5*6e4;save();tzPause();render()`);
+    P.g(`startReset();S.reset.at=4;S.reset.focusUntil=Date.now()+5*6e4;save();tzPause();render()`);
     ok(P.$('.rbar').textContent.includes('focus')&&P.$('.rbar [data-until]'),'paused during focus: the bar shows the clock');
     P.click('#rbargo');ok(P.g('TZ')==='reset'&&P.$('.rclock[data-until]'),'Continue goes straight back to the clock');
     P.click('#rfocusreset');ok(P.g('S.reset.focusUntil')===null&&P.$('#tzgo').textContent.startsWith('Start'),'the clock can be restarted');
@@ -971,9 +950,13 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`S.reset={at:4,startedAt:Date.now(),avoiding:'x',moved:{water:true},protectedUntil:Date.now(),talkUntil:Date.now(),musicOn:true,reelOpened:false,firstMove:'Old first move',helped:[]};
       S.resetCfg={claude:'https://claude.ai/projects',music:'https://youtube.com/x',reel:'https://reel.app',protect:60,talk:10,focus:30};S.focus={until:Date.now()+9e5};save()`);P.close();
     P=boot(NEW,v1);
-    ok(P.$('#tzname').textContent==='What’s the coolest thing about this?'&&P.g('S.reset.moved.music')===true&&P.g('S.reset.moves[0].text')==='Old first move'&&P.g('S.reset.v')===3,'an old reset on the soundtrack step lands on the coolest-thing step, nothing lost');
+    ok(P.$('#tzname').textContent==='Write it down in Spark'&&P.g('S.reset.moved.music')===true&&P.g('S.reset.moves[0].text')==='Old first move'&&P.g('S.reset.v')===4,'an old reset on the soundtrack step lands on the Spark step, nothing lost');
     ok(P.g('JSON.stringify(S.resetCfg)')===JSON.stringify({claude:CLAUDE,reel:'https://reel.app',focus:30})&&P.g("'focus' in S")===false,'old settings tidied: links kept, timers gone');
     P.g('tzClose()');P.close();
+    /* a reset in progress on the previous 7 steps lands on the same moment in the 5 */
+    for(const [at,want] of [[0,'Close email and Webex'],[1,'Get the blood moving'],[3,'Talk it out — out loud'],[4,'Write it down in Spark'],[5,'Write it down in Spark'],[6,'Focus']]){
+      const s={};P=boot(NEW,s);P.g(`S.reset={v:3,at:${at},startedAt:Date.now(),avoiding:'x',moved:{},moves:[],talk:'',helped:[],focusMins:25,focusUntil:null};save()`);P.close();
+      P=boot(NEW,s);ok(P.$('#tzname').textContent===want&&P.g('S.reset.v')===4,'old step '+(at+1)+' of 7 → '+want);P.g('if(TZ)tzClose()');P.close()}
     /* damaged state is repaired, never fatal */
     const bad={};P=boot(NEW,bad);P.g(`S.reset={at:99,startedAt:Date.now(),v:2};S.resetCfg={claude:'javascript:alert(1)',focus:'x'};save()`);P.close();
     P=boot(NEW,bad);
@@ -988,9 +971,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.key('Escape');ok(!P.g('TZ')&&!!P.g('S.reset'),'Escape pauses');
     P.click('#rbarend');P.click('#mlayer #yes');ok(P.g('S.reset')===null&&!P.$('.rbar'),'End clears it');
     P.g(`S.ui.workView='home';render();startZen()`);P.g('startReset()');ok(!P.g('ZEN')&&P.g('TZ')==='reset','starting a reset steps out of the work ritual');
-    P.g('S.reset.at=1;save();tzPaint(true)');
-    P.key('Enter',P.$('#ravoid'));ok(P.g('S.reset.at')===1,'Enter inside the box does not skip');
-    P.key('Enter');ok(P.g('S.reset.at')===2,'Enter outside moves on');
+    P.g('S.reset.at=2;save();tzPaint(true)');P.click('[data-redit="claude"]');
+    P.key('Enter',P.$('#rlink'));ok(P.g('S.reset.at')===2,'Enter inside the link box does not skip');
+    P.g('REDIT=null;tzPaint(false)');P.key('Enter');ok(P.g('S.reset.at')===3,'Enter outside moves on');
     P.g('endReset()');
     P.g(`window.__pulled=0;syncPull=()=>{__pulled++};SY={id:'x',k:null,etag:'e',dirty:false}`);
     P.w.dispatchEvent(new P.w.Event('focus'));
@@ -1001,8 +984,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* every button responds, on a phone */
     P=boot(NEW,{},{touch:true});
     const dead=[];
-    for(let k=0;k<7;k++){
-      const open=`if(TZ)tzClose();S.ui.mode='work';S.reset={v:3,at:${k},startedAt:Date.now(),avoiding:'x',moved:{},reelOpened:false,moves:[{id:'m1',text:'One',done:false}],talk:'',helped:[],focusMins:25,focusUntil:null};REDIT=null;save();tzOpen('reset')`;
+    for(let k=0;k<5;k++){
+      const open=`if(TZ)tzClose();S.ui.mode='work';S.reset={v:4,at:${k},startedAt:Date.now(),avoiding:'x',moved:{},reelOpened:false,moves:[{id:'m1',text:'One',done:false}],talk:'',helped:[],focusMins:25,focusUntil:null};REDIT=null;save();tzOpen('reset')`;
       /* plain links (Open Claude) navigate — their addresses are checked above */
       P.g(open);const n=P.$$('#zen button').length;
       for(let j=0;j<n;j++){P.g(open);const b=P.$$('#zen button')[j];
@@ -1147,15 +1130,10 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click('[data-gldel="l4"]');ok(P.g('S.goals.lines.length')===4,'remove one');P.click('.toast .undo');ok(P.g('S.goals.lines.length')===5,'… with undo');
     /* the reset uses all of it */
     P.g(`S.goals.lines=Array.from({length:20},(_,k)=>({id:'x'+k,text:'Line number '+k}));
-      startReset();S.reset.avoiding='The SOIP deck';S.reset.at=3;save();tzPaint(true)`);
+      startReset();S.reset.at=2;save();tzPaint(true)`);
     ok(P.$('.rpoints').textContent.includes('This week’s mission')&&P.$('.rpoints').textContent.includes('LATAM switchers'),'talk step: this week’s mission is a talking point');
-    ok(P.g('rTemplate()').includes('My mission: Make the LATAM switchers'),'… and closes the Spark template');
-    P.click('#tzgo');P.click('#tzgo');
-    ok(P.$('#tzmid .gmline').textContent.includes('LATAM switchers'),'moves step: the mission on top');
-    ok(P.$('#tzmid').textContent.includes('What do you do with “The SOIP deck”?')&&P.$$('[data-rdecide]').map(b=>b.textContent).join('|')==='⚡ Do it now|✂️ Shrink it|🤖 Delegate to AI|✕ Not doing it','decide what to do with the avoided thing');
-    P.click('[data-rdecide="drop"]');ok(P.$('#tzmid').textContent.includes('Dropped on purpose'),'not doing it is a decision, not a failure');
-    P.click('[data-rdecide="ai"]');ok(P.g('S.reset.decision')==='ai'&&P.$('#tzmid').textContent.includes('marked for AI'),'delegate: it will go to Sort for AI');
-    ok(P.$('#rblank').getAttribute('href')===P.g('SPARK_URL')&&P.$('.rnudge').textContent.includes('Is the deck the problem?'),'nudge: deck the problem? blank page in Spark');
+    P.click('#tzgo');
+    ok(P.$('#tzmid .gmline').textContent.includes('LATAM switchers'),'Spark step: the mission on top');
     P.click('#tzgo');
     const shown=P.$('.rline').textContent;
     ok(/^Line number \d+$/.test(shown)&&P.g('S.reset.lineId')==='x'+shown.split(' ').pop(),'focus shows one of your lines');
@@ -1163,9 +1141,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g('rBack();rNext()');if(P.$('.rline').textContent!==shown)same=false;
     ok(same,'… the same one for the whole reset, through redraws and going back');
     P.click('#tzgo');P.click('#tzgo');
-    const t=JSON.parse(P.g(`JSON.stringify(S.items.find(i=>i.text==='The SOIP deck'))`));
-    ok(t&&t.ai===true&&t.sorted===false&&t.mode==='work','closing the reset: the delegated thing is in Sort, marked for AI');
-    ok(P.g('S.resetLog.at(-1).decision')==='ai','… and the decision is kept in the log');
+    ok(!P.g('TZ')&&P.g('S.reset')===null&&P.g('S.resetLog.length')===1,'start the clock, close the reset');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
     P.close();
     /* two devices seeding the default lines merge cleanly — no doubles */
@@ -1324,6 +1300,125 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g('syncSheet()');ok(P.$('.sheet').textContent.includes('stay on this device only'),'… and explains your data is safe on this device');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));
     P.g('SY=null;syncSave()');await tick(30);P.close();
+  }
+
+  section('27. honest answers, the almanac within reach, and Today as a queue');
+  {
+    let P=boot(NEW,{});
+    /* work ritual · ad breakfast */
+    P.g(`S.ui.mode='work';save();render();startZen();ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);
+    ok(P.$('#zgo').textContent==='✓ Had it'&&P.$('#adyes').textContent.includes('save one in Reel')&&P.$('#adno').textContent==='Not today','ad breakfast: ✓ Had it, save one in Reel, Not today — no Skip');
+    P.click('#zgo');ok(P.g('S.adCheck.answer')==='had'&&P.g('ZSTEPS[ZI].id')!=='wad','“Had it” counts as done and moves on');
+    P.g(`ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);P.click('#adno');
+    ok(P.g('S.adCheck.answer')==='not'&&P.g('ZSTEPS[ZI].id')!=='wad','“Not today” is a quiet answer that moves on');
+    P.g(`ZI=ZSTEPS.findIndex(s=>s.id==='wad');paintZen(true)`);P.click('#adyes');
+    ok(P.g('S.adCheck.answer')==='saved'&&P.w.__opened.includes(P.g('REEL_URL')),'“save one in Reel” opens Reel');
+    P.g('exitZen()');
+    /* personal · today's move · journal */
+    P.g(`S.ui.mode='personal';save();render();startMove()`);
+    ok(P.$('#tzgo').textContent==='✓ Done'&&P.$('#tzsparkno').textContent==='Not today','journal step: ✓ Done (wrote already), Open Spark, Not today');
+    P.click('#tzgo');ok(P.g('S.town.move.step')===1,'Done moves on');
+    P.g(`S.town.move.step=0;save();tzPaint(true)`);P.click('#tzsparkno');ok(P.g('S.town.move.step')===1,'Not today moves on too');
+    P.g('tzClose();S.town.move=null;save()');
+    /* personal · weekly round · brain dump */
+    P.g(`S.town.round={step:1,startedAt:Date.now()};save();tzOpen('round')`);
+    ok(P.$('#tzgo').textContent==='Nothing to add','brain dump with an empty head: “Nothing to add”, not Skip');
+    P.g('tzClose();S.town.round=null;save()');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+
+    /* the almanac: from a task, from the map, and due on Today */
+    P=boot(NEW,{});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='map';save();render()`);
+    P.click('#tcycnew');
+    ok(P.$$('#mlayer [data-tcdp]').length===P.g('TOWN_DEPTS.length'),'+ Recurring asks for the department');
+    P.type('#tcti','Check the fridge');P.click('#mlayer #tcok');
+    ok(P.g('S.town.cycles.length')===0,'… and won’t save without one');
+    P.click('#mlayer [data-tcdp="kitchen"]');P.g(`document.querySelector('#tcti').value='Check the fridge';document.querySelector('#tcti').dispatchEvent(new Event('input'))`);
+    P.click('#mlayer [data-tcu="weeks"]');P.type('#tcn','1');P.click('#mlayer #tcok');
+    const fr=JSON.parse(P.g(`JSON.stringify(S.town.cycles.find(c=>c.title==='Check the fridge'))`));
+    ok(fr&&fr.dept==='kitchen'&&fr.unit==='weeks'&&fr.n===1&&fr.type==='interval','a weekly fridge check, counted from last done');
+    /* a task with a deadline becomes a yearly same-date cycle, and stays the current instance */
+    const lic=P.g(`(()=>{const i=tAdd('Licenciamento do carro','treasury','inbox');i.due=tAddPer(today(),20,'days');save();return i.id})()`);
+    P.g(`tItemSheet('${lic}')`);
+    ok(P.$('#mlayer #trep').textContent.includes('Make it repeat'),'every personal task offers ↻ Make it repeat');
+    P.click('#mlayer #trep');
+    ok(P.$('#mlayer #tcti').value==='Licenciamento do carro'&&P.$('#mlayer [data-tctype="fixed"]').classList.contains('on')&&!P.$('#mlayer [data-tcdp]'),
+      '… the cycle form starts with its name, “same date each time”, and its department known');
+    P.click('#mlayer #tcok');
+    const lc=JSON.parse(P.g(`JSON.stringify(S.town.cycles.find(c=>c.title==='Licenciamento do carro'))`));
+    ok(lc&&lc.type==='fixed'&&lc.unit==='years'&&lc.nextDue===P.g(`byId2=tById('${lic}').due`)&&P.g(`tById('${lic}').cycle`)===lc.id&&lc.itemId===P.g(`'${lic}'`),
+      '… yearly on the deadline, and the task is this year’s instance');
+    P.g(`tSet(tById('${lic}'),'done')`);
+    ok(P.g(`tCyc('${lc.id}').nextDue`)===P.g(`tAddPer('${lc.nextDue}',1,'years')`),'finishing the task rolls it to next year');
+    P.g(`tItemSheet('${lic}')`);ok(P.$('#mlayer #trep').textContent.includes('every year'),'a repeating task shows how it repeats');P.g('closeSheet()');
+    /* due on Today */
+    P.g(`S.ui.townView='today';render()`);
+    ok(P.$('.tcycdue')&&P.$('.tcycdue').textContent.includes('Check the fridge'),'a cycle that is due shows on Today, not only in the round');
+    P.click(`[data-tcycdid="${fr.id}"]`);
+    const fr2=JSON.parse(P.g(`JSON.stringify(tCyc('${fr.id}'))`));
+    ok(fr2.lastDone===P.g('today()')&&fr2.nextDue===P.g(`tAddPer(today(),1,'weeks')`)&&!P.$('.tcycdue'),'“did it” rolls it a week on and clears it from Today');
+    ok(P.g(`S.town.items.some(i=>i.cycle==='${fr.id}'&&i.state==='done')`),'… and it lands in the done log like any finished task');
+    P.g(`tCyc('${fr.id}').nextDue=today();save();render()`);P.click(`[data-tcycon="${fr.id}"]`);
+    ok(P.g(`S.town.items.some(i=>i.cycle==='${fr.id}'&&i.state==='week'&&tIsToday(i))`)&&!P.$('.tcycdue'),'“+ today” puts it on today’s list');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+
+    /* Today as a queue */
+    P=boot(NEW,{});
+    P.g(`S.hours.work=8;S.hours.date=today();const m=add('Write the deck\\nReply to Pedro\\nResearch prompts\\nBook the room','work');
+      m.forEach(i=>{i.sorted=true;i.lane='important'});assign('work','deep',m[0].id,true);assign('work','batch',m[1].id,true);
+      assign('work','buffer',m[2].id,true);assign('work','next',m[3].id,true);S.ui.mode='work';S.ui.workView='today';save();render()`);
+    const names=()=>P.$$('.qrow .qt').map(e=>e.textContent);
+    ok(names().join('|')==='Write the deck|Reply to Pedro|Research prompts|Book the room','the queue starts in the paper’s order: deep, batch, AI, spare');
+    ok(P.$('.qrow.now .qn').textContent==='Now'&&P.$$('.qrow .qk').map(e=>e.textContent).join('|')==='Deep|Batch|AI|Spare','the first is “Now”; each row says its kind');
+    ok(!P.$('.slot.empty')&&!P.$('.deep.empty'),'no empty slot cards');
+    P.click(`.qrow:nth-child(3) [data-qup]`);
+    ok(names().join('|')==='Write the deck|Research prompts|Reply to Pedro|Book the room','↑ moves a task earlier');
+    P.click(`.qrow:nth-child(1) [data-qdown]`);
+    ok(names()[0]==='Research prompts'&&P.$('.qrow.now .qt').textContent==='Research prompts','↓ moves one later — the new first is Now');
+    ok(P.g(`planText('work')`)==='DELEGATE TO AI / Research prompts\nDEEP / Write the deck\nBATCH / Reply to Pedro\nSPARE / Book the room','Copy today → paper follows your order');
+    ok(P.$('.qrow:first-child [data-qup]').disabled&&P.$('.qrow:last-child [data-qdown]').disabled,'the ends can’t move further');
+    /* adding and finishing keep the order */
+    P.g(`const [x]=add('Late add','work');x.sorted=true;x.lane='batch';assign('work','next',x.id)`);
+    ok(names().at(-1)==='Late add','a new pick joins the end of the queue');
+    const rp=P.g(`S.items.find(i=>i.text==='Research prompts').id`);
+    P.g(`finish('${rp}',document.querySelector('[data-done="${rp}"]'))`);
+    ok(P.$('.qrow.done')&&P.$('.qrow.done').dataset.q===rp,'the row strikes through and fades as it finishes');
+    await tick(1500);
+    ok(P.g(`S.items.find(i=>i.id==='${rp}').done`)===true&&names()[0]==='Write the deck','✓ Done finishes it and the next one becomes Now');
+    /* the room left: small targets, not empty cards */
+    ok(P.$$('.qroom[data-slotdrop]').map(e=>e.dataset.slotdrop).join(',')==='batch,buffer','room shows only what’s still open — here a batch and an AI slot');
+    P.g(`S.hours.work=2;save();render()`);
+    ok(P.$('.qroomline').textContent.includes('no deep today'),'a short day says there’s no deep room, in one line');
+    /* an empty board is one line; adding opens the full board */
+    P.g(`S.items.filter(i=>i.mode==='work'&&!inPlan('work',i.id)).forEach(i=>i.done=true);save();render()`);
+    ok(P.$('.qboard-empty')&&!P.$('.restgrid'),'an empty board is one line, not four empty columns');
+    P.click('.qboard-empty [data-addto]');ok(P.$('.restgrid')&&P.$('#comp'),'… its ＋ opens the board with the add box');
+    /* put back, and the deep goal tag still shows */
+    const wd=P.g(`S.items.find(i=>i.text==='Write the deck').id`);P.click(`[data-unplan="${wd}"]`);
+    ok(!names().includes('Write the deck')&&!P.g(`inPlan('work','${wd}')`),'Put back takes it off today');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  section('28. energy reset: writing lives in Spark; the ritual keeps the doing, and a breath');
+  {
+    const P=boot(NEW,{});
+    ok(P.g(`RSTEPS.map(s=>s.id).join()`)==='close,move,talk,spark,focus','five steps: close, move, talk, write in Spark, focus');
+    ok(P.g(`typeof rTemplate`)==='undefined','no copy-and-paste template — Spark has its own');
+    P.g(`S.ui.mode='work';startReset()`);
+    const boxes=[];for(let k=0;k<5;k++){P.g(`S.reset.at=${k};save();tzPaint(true)`);boxes.push(P.$$('#tzmid textarea').length)}
+    ok(boxes.every(n=>n===0),'nothing to write inside the reset — no avoiding, coolest thing or moves boxes');
+    P.g('S.reset.at=1;save();tzPaint(true)');
+    ok(!P.$('.rbreathe'),'the breathing guide waits until you ask for it');
+    P.click('[data-rmove="breathe"]');
+    ok(P.$('.rbreathe')&&P.$('.rbreathe').textContent.includes('Two breaths in through the nose')&&P.g('S.reset.moved.breathe')===true,'Breathe ×3 shows the physiological sigh, guided by a circle');
+    P.click('[data-rmove="water"]');ok(!P.$('.rbreathe')&&P.g('S.reset.moved.breathe')===true,'… and steps aside when you move on to the next thing (still ticked)');
+    P.g('S.reset.at=2;save();tzPaint(true)');
+    ok(P.$('.rq').textContent.includes('What would I say to a friend who felt like this?'),'talk step: the friend question, to say out loud');
+    P.g('S.reset.at=3;save();tzPaint(true)');
+    ok(P.$('#tzgo').textContent==='Skip','Spark step: Skip moves on if you’d rather not write');
+    P.click('#tzgo');ok(P.g('S.reset.at')===4&&!P.g('S.reset.wrote'),'… straight to focus');
+    P.g('endReset()');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
