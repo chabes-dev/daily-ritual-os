@@ -2663,20 +2663,17 @@ function wireGoals(){
    and follows you to the phone: its state lives in S.reset (synced, unlike S.ui), and opening the
    app anywhere while a reset is running drops you back on the same step. Links (Claude, Reel) and
    the focus length are set right where they're used. Nothing is counted against you. */
-const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'name',name:'What are you avoiding?'},
-  {id:'move',name:'Get the blood moving'},{id:'talk',name:'Talk it out — out loud'},
-  {id:'cool',name:'What’s the coolest thing about this?'},{id:'moves',name:'What are the first 2-minute moves?'},
-  {id:'focus',name:'Focus'}];
+/* the writing (what you're avoiding, the coolest thing, the first moves…) lives in Spark's own template */
+const RSTEPS=[{id:'close',name:'Close email and Webex'},{id:'move',name:'Get the blood moving'},
+  {id:'talk',name:'Talk it out — out loud'},{id:'spark',name:'Write it down in Spark'},{id:'focus',name:'Focus'}];
+const RV3IDS=['close','name','move','talk','cool','moves','focus'],RV3TO4={name:'move',cool:'spark',moves:'spark'};
 const RNOTE={close:'Everything there can wait. Close them, then tap Done.',
-  name:'One line. Naming it shrinks it — name it, don’t judge it. It’s information, not a grade.',
   move:'Leave the desk. Take your phone — this follows you.',
-  talk:'Open Claude in voice and say it out loud. Or write it in Spark. Avoidance is information — what is it telling you?',
-  cool:'Forget the deck. One line, like an ad breakfast note: what’s cool about it, and why it works.',
-  moves:'Dump every small move you can see. Small enough to start right now. Ugly is fine.',
+  talk:'Open Claude in voice and say it out loud. Avoidance is information — what is it telling you?',
+  spark:'Your template is waiting in Spark — name it without judging it, what you’re avoiding, the coolest thing, the first 2-minute moves. Write it, or skip and keep going.',
   focus:'Put on some music and get the first thing out of the way.'};
 const RMOVE=[['breathe','🌬️ Breathe ×3'],['water','💧 Water'],['stretch','🙆 Stretch'],['move','🚶 Move'],['sun','☀️ Sun & air'],['music','🎵 Play music']];
 let RBREATHE=false;   /* the breathing guide shows right after you tap Breathe, until you tap something else */
-const RHELP=[['name','Naming it'],['move','Moving'],['talk','Talking it out'],['cool','The coolest thing'],['moves','The brain dump']];
 const RDECIDE=[['now','⚡ Do it now'],['shrink','✂️ Shrink it'],['ai','🤖 Delegate to AI'],['drop','✕ Not doing it']];
 const RMINS=[15,25,45,60];
 const RDEF={claude:'https://claude.ai/project/01a1798f-8f85-777a-b5fb-fdf995e253f8',reel:REEL_URL,focus:25};
@@ -2694,12 +2691,13 @@ function initReset(){
   let r=S.reset;
   if(r&&(typeof r!=='object'||typeof r.at!=='number'||!r.startedAt))r=S.reset=null;
   if(r&&r.v===2){r.v=3;r.helped=(r.helped||[]).map(k=>k==='reel'?'cool':k)}   /* v2 → v3: Reel became “the coolest thing” */
-  if(r&&r.v!==2&&r.v!==3){   /* a reset started in the first version: same step, new layout */
+  if(r&&r.v!==2&&r.v!==3&&r.v!==4){   /* a reset started in the first version: same step, new layout */
     const id=ROLDIDS[r.at],map={music:'cool',reel:'cool',enter:'moves'};
-    r.at=Math.max(0,RSTEPS.findIndex(s=>s.id===(map[id]||id)));
+    r.at=Math.max(0,RV3IDS.indexOf(map[id]||id));
     r.moves=r.firstMove&&String(r.firstMove).trim()?[{id:nid(),text:String(r.firstMove).trim(),done:false}]:[];
     if(r.musicOn)(r.moved=r.moved||{}).music=true;
     ['firstMove','protectedUntil','talkUntil','musicOn'].forEach(k=>delete r[k]);r.v=3}
+  if(r&&r.v===3){const id=RV3IDS[r.at];r.at=Math.max(0,RSTEPS.findIndex(s=>s.id===(RV3TO4[id]||id)));r.v=4}   /* v3 → v4: the writing moved to Spark */
   if(r){
     if(!RSTEPS[r.at])r.at=0;
     r.moved=r.moved&&typeof r.moved==='object'?r.moved:{};
@@ -2731,7 +2729,7 @@ function rChime(){try{if(navigator.vibrate)navigator.vibrate([120,80,120]);if(!R
     g.gain.setValueAtTime(0.0001,t+k*.35);g.gain.exponentialRampToValueAtTime(0.25,t+k*.35+.03);g.gain.exponentialRampToValueAtTime(0.0001,t+k*.35+.6);
     o.start(t+k*.35);o.stop(t+k*.35+.65)})}catch(e){}}
 function startReset(){
-  if(!S.reset){S.reset={v:3,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,cool:'',decision:null,moves:[],talk:'',helped:[],
+  if(!S.reset){S.reset={v:4,at:0,startedAt:Date.now(),avoiding:'',moved:{},reelOpened:false,cool:'',decision:null,moves:[],talk:'',helped:[],
     focusMins:S.resetCfg.focus,focusUntil:null};save()}
   if(ZEN)exitZen();
   REDIT=null;tzOpen('reset');
@@ -2740,7 +2738,6 @@ function endReset(){S.reset=null;save();if(TZ==='reset')tzClose();else render()}
 function rNext(){
   const r=S.reset;if(!r)return;
   const id=RSTEPS[r.at].id;
-  if(id==='moves'){const t=document.getElementById('rmovenew');if(t&&t.value.trim())rAddMoves(t.value)}   /* a move typed but not ⏎’d still counts */
   if(id==='focus'){
     if(!r.focusUntil){r.focusUntil=Date.now()+r.focusMins*6e4;save();rUnlock();tzPaint(false);return}
     rFinish();return}
@@ -2753,47 +2750,16 @@ function rNext(){
 function rBack(){const r=S.reset;if(!r)return;
   if(r.at===0){tzPause();return}
   r.at--;REDIT=null;save();tzPaint(true)}
-function rAddMoves(text){const r=S.reset;
-  text.split('\n').map(s=>s.replace(/^[\s•\-–*·.\d)]+/,'').trim()).filter(Boolean).forEach(s=>r.moves.push({id:nid(),text:s,done:false}));save()}
 function rFinish(){
   const r=S.reset;
   /* delegating the avoided thing: it lands in Sort, marked for AI */
   if(r.decision==='ai'&&r.avoiding.trim()){const [t]=add(r.avoiding.trim(),'work');t.ai=true}
   S.resetLog.push({date:today(),at:Date.now(),avoiding:r.avoiding.trim(),cool:r.cool.trim(),decision:r.decision||null,moves:r.moves.map(x=>x.text),
-    done:r.moves.filter(x=>x.done).length,talk:r.talk.trim(),helped:r.helped.slice()});
+    done:r.moves.filter(x=>x.done).length,talk:r.talk.trim(),helped:r.helped.slice(),wrote:!!r.wrote});
   if(S.resetLog.length>200)S.resetLog=S.resetLog.slice(-200);
   const n=r.moves.filter(x=>x.done).length;
   S.reset=null;save();tzClose();
   toast(r.decision==='ai'&&r.avoiding.trim()?'reset done — the delegated one is in Sort for AI':n?n+(n===1?' move':' moves')+' done — you’re moving':'reset done — go');
-}
-/* a template to write it out in Spark: avoidance as information, then back to the fun part */
-const RZONES=[['Thriving','calm, focused, sleeping well, enjoying things'],['Reacting','stressed, irritable, tired, harder to focus'],
-  ['Struggling','anxious or low most days, pulling away, hard to keep up'],['Unwell','hard to get through the day, feeling hopeless, needs support now']];
-/* what got done today, work and personal — the start of the done list */
-function rDoneToday(){
-  const d=new Date().toDateString(),on=ts=>ts&&new Date(ts).toDateString()===d;
-  return [...S.items.filter(i=>i.done&&on(i.doneAt)).map(i=>i.text),
-    ...((S.town&&S.town.items)||[]).filter(i=>i.state==='done'&&on(i.doneAt)).map(i=>i.title)]}
-/* everything the reset asks you to write, as one page for Spark — no extra steps in the ritual */
-function rTemplate(){
-  const r=S.reset,m=gMissionLatest(),done=rDoneToday().slice(0,3);
-  return ['ENERGY RESET — '+new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}),'',
-    'WHERE I AM — name it, don’t judge it',
-    ...RZONES.map(([z,d])=>'· '+z+' — '+d),
-    'I’m in the ________ zone right now, and it’s normal to move through zones. It’s information, not a grade.','','',
-    'What I’m avoiding: '+(r.avoiding.trim()||''),'',
-    'Why am I avoiding it? (fear, boredom, waiting on someone?)','','',
-    'What’s behind it?','','',
-    'Why do I care about it?','','',
-    'Kill it, shrink it, or keep it?','','',
-    'What can I do that doesn’t depend on anyone — so I know I tried everything in my power?','','',
-    'TALK TO MYSELF LIKE A FRIEND',
-    'What would I say to a friend who felt like this?','','',
-    'Why would I choose those words for them? (Hard times are normal, and they don’t deserve to feel bad. Neither do I.)','','',
-    'What’s the coolest thing about it? (like an ad breakfast note)','','',
-    'DONE LIST — three things I did get done today, small ones count',
-    ...[0,1,2].map(k=>(k+1)+'. '+(done[k]||'')),'',
-    ...(m?['My mission: '+m.text]:[])].join('\n');
 }
 /* a link you can change right where it's used */
 const rLinkRow=(key,label)=>REDIT===key
@@ -2809,12 +2775,8 @@ function rPaint(change){
   const o={dots:tzDots(RSTEPS.length,r.at),step:`Energy reset · ${r.at+1} of ${RSTEPS.length}`,name:s.name,note:RNOTE[s.id],
     back:rBack,go:rNext,cta:'Next'};
   if(s.id==='close'){
-    o.mid='';o.cta='Done';
+    o.mid=TOUCH?'':`<div class="rhand">📱 Next you get up. Take your phone and open the app there — this reset will be waiting on the next step.</div>`;o.cta='Done';
     o.hint='⏎ for Done · ← leaves the ritual (it keeps your place)';
-  }
-  else if(s.id==='name'){
-    o.mid=`<div class="zdump"><textarea id="ravoid" rows="1" placeholder="The SOIP deck intro. I don’t know where to start.">${esc(r.avoiding)}</textarea></div>
-      ${TOUCH?'':`<div class="rhand">📱 Next you get up. Take your phone and open the app there — this reset will be waiting on the next step.</div>`}`;
   }
   else if(s.id==='move'){
     o.mid=`<div class="rchips">${RMOVE.map(([k,l])=>`<button class="rchip ${r.moved[k]?'on':''}" data-rmove="${k}">${l}</button>`).join('')}</div>
@@ -2831,34 +2793,13 @@ function rPaint(change){
           :h?`<div class="rpt"><span>Who you’re becoming</span>${esc(h)}</div>`:''}
         ${far.length?`<div class="rpt"><span>Where you’re heading</span>${far.map(x=>esc(x.title)).join(' · ')}</div>`:''}
         <div class="rpt rq"><span>Ask yourself</span>Why am I avoiding it? · Why do I care? · Kill it, shrink it, or keep it? · What can I do that doesn’t depend on anyone? · What would I say to a friend who felt like this?</div>
-      </div>
-      <div class="rspark"><div><b>Rather write it?</b> Copy the template — your zone, the questions, a friend’s words and today’s done list — and paste it in Spark.</div>
-        <div class="racts" style="margin:10px 0 0"><button class="rbig rghost" id="rtpl">Copy the template</button>
-          <a class="rbig rghost" id="rspark" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div></div>`;
+      </div>`;
   }
-  else if(s.id==='cool'){
-    o.mid=`${r.avoiding.trim()?`<div class="rpt" style="margin-bottom:18px"><span>The thing you were avoiding</span>${esc(r.avoiding)}</div>`:''}
-      <div class="zdump"><textarea id="rcool" rows="1" placeholder="The LATAM switchers insight — imagine it live, everyone would recognise themselves.">${esc(r.cool)}</textarea></div>
-      <div class="zkept" style="margin-top:6px">Need a spark first? <a class="zlink" id="rreel" href="${esc(c.reel)}" target="_blank" rel="noopener">Open Reel ↗</a></div>
-      <div class="rlinkrow" style="margin-top:6px">${rLinkRow('reel','Reel')}</div>`;
-    o.cta=r.cool.trim()?'Next':'Skip';
-  }
-  else if(s.id==='moves'){
-    const p=plan('work'),deep=p.deep?byId(p.deep):null;
-    o.mid=`${gMissionLine()}
-      ${r.avoiding.trim()?`<div class="zcarry-h">What do you do with “${esc(r.avoiding.trim().slice(0,60))}${r.avoiding.trim().length>60?'…':''}”?</div>
-        <div class="rchips">${RDECIDE.map(([k,l])=>`<button class="rchip sm ${r.decision===k?'on':''}" data-rdecide="${k}">${l}</button>`).join('')}</div>
-        ${r.decision==='ai'?`<div class="zkept">It goes to Sort, marked for AI, when you close the reset.</div>`
-          :r.decision==='drop'?`<div class="zkept">Dropped on purpose. That’s a decision, not a failure.</div>`:''}`:''}
-      ${deep?`<div class="rpt" style="margin:8px 0 18px"><span>Today’s deep work</span>${esc(deep.text)}</div>`:''}
-      <div class="rnudge">Is the deck the problem? Go to a blank page — <a class="zlink" id="rblank" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">start in Spark ↗</a></div>
-      ${r.moves.length?`<div class="rmoves">${r.moves.map(x=>`<div class="rmove"><span>${esc(x.text)}</span><button class="act del" data-rmdel="${x.id}" title="Remove">×</button></div>`).join('')}</div>`:''}
-      <div class="zdump"><textarea id="rmovenew" rows="1" placeholder="${r.moves.length?'Another one — ⏎':'Write one ugly headline. ⏎ for the next one'}"></textarea></div>
-      <div class="zcarry-h" style="margin-top:26px">What you and Claude landed on <span class="ropt">— optional, paste it here</span></div>
-      <textarea class="tai" id="rtalk" rows="3" placeholder="Paste the summary from Claude">${esc(r.talk)}</textarea>
-      <div class="zcarry-h" style="margin-top:26px">What helped most? <span class="ropt">— optional</span></div>
-      <div class="rchips">${RHELP.map(([k,l])=>`<button class="rchip sm ${r.helped.includes(k)?'on':''}" data-rhelp="${k}">${l}</button>`).join('')}</div>`;
-    o.hint='⏎ in the box adds a move · Next when you’re done dumping';
+  else if(s.id==='spark'){
+    o.mid=`${gMissionLine()}<div class="racts"><a class="rbig" id="rsparkgo" href="${esc(SPARK_URL)}" target="_blank" rel="noopener">Open Spark ↗</a></div>
+      <div class="zkept">${r.wrote?'Back from Spark? Press Done writing.':'Opens in a new tab — the reset waits right here.'}</div>`;
+    o.cta=r.wrote?'Done writing':'Skip';
+    o.hint=r.wrote?'⏎ when you’re done · Pause keeps your place':'Skip if you’d rather not write today — it’s fine';
   }
   else if(s.id==='focus'){
     const run=r.focusUntil&&r.focusUntil>now,over=r.focusUntil&&r.focusUntil<=now;
@@ -2873,17 +2814,12 @@ function rPaint(change){
         :`<div class="zkept">Start with the ugliest version. Polish later.</div>`}
       ${r.focusUntil?`<div style="margin-top:18px"><button class="zlink" id="rfocusreset">restart the clock</button></div>`:''}`;
     o.cta=!r.focusUntil?`Start ${r.focusMins} min`:'Close the reset';
-    o.hint=!r.focusUntil?'⏎ starts the clock · the ritual stays open while it runs':'tick your moves as you go · Pause keeps your place';
+    o.hint=!r.focusUntil?'⏎ starts the clock · the ritual stays open while it runs':r.moves.length?'tick your moves as you go · Pause keeps your place':'Pause keeps your place';
   }
   const mid=tzFrame(o,change);
   const z=tzlayer.querySelector('#zen');if(z)z.classList.add('rzen');
-  const area=(sel,key)=>{const t=mid.querySelector(sel);if(!t)return;autosize(t);if(change)t.focus();
-    t.oninput=()=>{autosize(t);r[key]=t.value;save()}};
-  area('#ravoid','avoiding');area('#rtalk','talk');area('#rcool','cool');
-  const tp=mid.querySelector('#rtpl');if(tp)tp.onclick=()=>tCopy(rTemplate());
-  mid.querySelectorAll('[data-rdecide]').forEach(b=>b.onclick=()=>{const k=b.dataset.rdecide;r.decision=r.decision===k?null:k;save();tzPaint(false)});
+  const sg=mid.querySelector('#rsparkgo');if(sg)sg.addEventListener('click',()=>{r.wrote=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
   mid.querySelectorAll('[data-rmove]').forEach(b=>b.onclick=()=>{const k=b.dataset.rmove;r.moved[k]=!r.moved[k];RBREATHE=k==='breathe'&&r.moved[k];save();tzPaint(false)});
-  const re=mid.querySelector('#rreel');if(re)re.addEventListener('click',()=>{r.reelOpened=true;save();setTimeout(()=>{if(TZ==='reset')tzPaint(false)},50)});
   /* links edited in place */
   mid.querySelectorAll('[data-redit]').forEach(b=>b.onclick=()=>{REDIT=b.dataset.redit;tzPaint(false);const f=document.getElementById('rlink');if(f)f.focus()});
   const lk=mid.querySelector('#rlink');
@@ -2892,14 +2828,6 @@ function rPaint(change){
     mid.querySelector('#rlinksave').onclick=go;
     lk.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go()}if(e.key==='Escape'){e.stopPropagation();REDIT=null;tzPaint(false)}};
     mid.querySelector('#rlinkx').onclick=()=>{REDIT=null;tzPaint(false)}}
-  /* the brain dump: ⏎ adds, a pasted list adds them all */
-  const nm=mid.querySelector('#rmovenew');
-  if(nm){autosize(nm);if(change)nm.focus();nm.oninput=()=>autosize(nm);
-    nm.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!nm.value.trim())return;rAddMoves(nm.value);tzPaint(false);
-      const f=document.getElementById('rmovenew');if(f)f.focus()}}}
-  mid.querySelectorAll('[data-rmdel]').forEach(b=>b.onclick=()=>{r.moves=r.moves.filter(x=>x.id!==b.dataset.rmdel);save();tzPaint(false)});
-  mid.querySelectorAll('[data-rhelp]').forEach(b=>b.onclick=()=>{const k=b.dataset.rhelp;
-    r.helped=r.helped.includes(k)?r.helped.filter(x=>x!==k):[...r.helped,k];save();tzPaint(false)});
   /* focus */
   mid.querySelectorAll('[data-rmins]').forEach(b=>b.onclick=()=>{r.focusMins=+b.dataset.rmins;c.focus=r.focusMins;save();tzPaint(false)});
   mid.querySelectorAll('[data-rmdone]').forEach(b=>b.onclick=()=>{const x=r.moves.find(m=>m.id===b.dataset.rmdone);if(x){x.done=!x.done;save();tzPaint(false)}});
