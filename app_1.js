@@ -3073,6 +3073,14 @@ const tCycItem=c=>{const i=c.itemId?tById(c.itemId):null;return i&&tOpen(i)?i:nu
 const tCycDue=c=>!c.retired&&!!c.nextDue&&!tCycItem(c)&&daysTo(c.nextDue)<=c.lead;
 const tCycSort=(a,b)=>a.nextDue<b.nextDue?-1:a.nextDue>b.nextDue?1:0;
 const tCycComing=dept=>S.town.cycles.filter(c=>c.dept===dept&&tCycDue(c)).sort(tCycSort);
+/* due today or overdue, nothing in motion — these also show on Today, not only in the round */
+const tCycToday=()=>S.town.cycles.filter(c=>!c.retired&&c.nextDue&&!tCycItem(c)&&daysTo(c.nextDue)<=0).sort(tCycSort);
+/* "did it" from Today: an item is planted and closed at once, so the done log and the roll-forward
+   work exactly as when it comes through the round */
+function tCycDidIt(c){
+  const i=tCycPlant(c);tSet(i,'done');tRefresh();
+  toastUndo('done — next '+tDay(c.nextDue),()=>{tSet(i,'inbox');S.town.items=S.town.items.filter(x=>x.id!==i.id);c.itemId=null;save();tRefresh()})}
+function tCycToToday(c){const i=tCycPlant(c);tSet(i,'week');i.today=today();save();tRefresh();toast('on today')}
 function tCycEvery(c){
   const u=TCYC_UNITS.find(x=>x.id===c.unit)||TCYC_UNITS[2],e='every '+(c.n>1?c.n+' '+u.id:u.one);
   return e+(c.type==='fixed'?' · same date':' since last done')}
@@ -3118,9 +3126,13 @@ function tCycDropSheet(c,pick,due){
   box.querySelector('#tcret').onclick=()=>{closeSheet();pick('retire')};
 }
 /* add or edit. Quick by default — title, who, how it repeats; lead time and notes fold away */
-function tCycSheet(dept,id){
+function tCycSheet(dept,id,from){
   const orig=id?tCyc(id):null;if(id&&!orig)return;
-  const f=orig?Object.assign({},orig):{title:'',who:'',type:'interval',n:6,unit:'months',lead:TCYC_LEAD,lastDone:null,nextDue:today(),on:null,notes:'',dept};
+  const f=orig?Object.assign({},orig):{title:'',who:'',type:'interval',n:6,unit:'months',lead:TCYC_LEAD,lastDone:null,nextDue:today(),on:null,notes:'',dept:dept||null};
+  /* made from a task: its name and department carry over; a task with a deadline repeats on that date */
+  if(from){f.title=from.title;f.dept=f.dept||from.dept||null;f.notes=from.notes||'';
+    if(from.due){f.type='fixed';f.n=1;f.unit='years';f.nextDue=from.due}}
+  const askDept=!orig&&!f.dept;
   let more=false,dueSet=false,timing=false;
   const whos=[...new Set(S.town.cycles.map(c=>(c.who||'').trim()).filter(Boolean))].sort();
   /* interval cycles count from the last time it was done; with no last date it's due now */
@@ -3130,6 +3142,8 @@ function tCycSheet(dept,id){
     const units=f.type==='fixed'?['months','years']:TCYC_UNITS.map(u=>u.id);
     box.innerHTML=`<h3>${orig?'Edit cycle':'New cycle'}${orig&&orig.retired?' · retired':''}</h3>
       <input class="field" id="tcti" placeholder="Dentist checkup" value="${esc(f.title)}" />
+      ${askDept?`<div class="seg-label" style="margin:18px 0 10px">Department</div>
+        <div class="chips">${TOWN_DEPTS.map(d=>`<button class="chip ${f.dept===d.id?'on':''}" data-tcdp="${d.id}" style="color:${d.color}"><b></b>${d.name}</button>`).join('')}</div>`:''}
       <div class="tcform"><span class="tcl">Who</span>
         <input class="field tcwho" id="tcwho" placeholder="Léo, Luna, me… one cycle each" value="${esc(f.who||'')}" /></div>
       ${whos.length?`<div class="dates tcwhos">${whos.map(w=>`<button class="dbtn ${f.who===w?'on':''}" data-tcw="${esc(w)}">${esc(w)}</button>`).join('')}</div>`:''}
@@ -3183,13 +3197,17 @@ function tCycSheet(dept,id){
     q('#tcok').onclick=()=>{
       const title=f.title.trim();if(!title){q('#tcti').focus();toast('give it a name');return}
       if(!f.nextDue){toast('pick the date');return}
+      if(!f.dept){toast('pick a department');return}
       const c=orig||{id:nid(),created:Date.now(),itemId:null,retired:false};
       /* a fixed cycle steps from its anchor; a new date or period re-anchors it */
       const on=f.type==='fixed'?(!orig||timing||orig.type!=='fixed'||!orig.on?f.nextDue:orig.on):null;
       Object.assign(c,{title,who:(f.who||'').trim(),type:f.type,n:f.n,unit:f.unit,lead:f.lead,
         lastDone:f.lastDone||null,nextDue:f.nextDue,on,notes:f.notes||'',dept:f.dept});
       if(!orig)S.town.cycles.push(c);
-      save();closeSheet();tRefresh();toast(orig?'✓ saved':'in the almanac');
+      /* the task it was made from becomes this round's instance: finishing it rolls the cycle on */
+      const it=from&&tById(from.id);
+      if(it&&!orig&&tOpen(it)){it.cycle=c.id;c.itemId=it.id;it.due=c.nextDue;if(!it.dept)it.dept=c.dept}
+      save();closeSheet();tRefresh();toast(orig?'✓ saved':'in the almanac — it repeats '+tCycEvery(c).replace(' · same date','').replace(' since last done',''));
     };
     const del=q('#tcdel');
     if(del)del.onclick=()=>sheetConfirm('Delete this cycle?',tCycName(orig)+' — anything it already put on your list stays there.','Delete',()=>{
@@ -3354,6 +3372,10 @@ function tItemSheet(id){
       ${i.state==='week'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Today</div>
         <div class="chips"><button class="chip ${tIsToday(i)?'on':''}" data-ttoday="${i.id}" style="color:var(--hot)"><b></b>${tIsToday(i)?'On today':'Put it on today'}</button></div></div>`:''}
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Deadline</div><div class="dates">${dateChips(i)}</div></div>
+      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Repeats</div>
+        ${tCycOf(i)?`<div class="dates"><button class="dbtn on" id="trep">↻ ${esc(tCycEvery(tCycOf(i)))}</button></div>`
+          :`<div class="dates"><button class="dbtn" id="trep">↻ Make it repeat</button></div>
+            <div class="zkept" style="margin:8px 0 0">For things that come back — the car licence every year, the fridge every week.</div>`}</div>
       ${i.state==='waiting'?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Waiting on</div>
         <input class="sinput" id="twho2" placeholder="Who has it?" value="${esc(w.who||'')}" style="width:100%" />
         <div class="zkept" style="margin:12px 0 10px">since ${w.since?tShort(w.since):'—'} · check back ${w.checkBack?dueLabel(w.checkBack).t:'— not set'}</div>
@@ -3380,6 +3402,8 @@ function tItemSheet(id){
     const cb=box.querySelector('#tcb2');if(cb)cb.onclick=()=>tPush(i,draw);
     const ins=box.querySelector('#tins2');if(ins)ins.oninput=()=>{i.instr=ins.value;save()};
     const nt=box.querySelector('#tnotes');nt.oninput=()=>{i.notes=nt.value;save()};
+    const rp=box.querySelector('#trep');
+    if(rp)rp.onclick=()=>{const c=tCycOf(i);closeSheet();if(c)tCycSheet(c.dept,c.id);else tCycSheet(i.dept,null,i)};
     box.querySelector('#tok').onclick=()=>closeSheet();
     const dn=box.querySelector('#tdone');
     if(dn)dn.onclick=()=>{const was=i.state;tSet(i,'done');SHEET_CLOSE=null;closeSheet();tRefresh();
@@ -3491,7 +3515,13 @@ function tViewToday(){
       ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
       ${tSizeLabel(i)?`<span class="tag">${tSizeLabel(i)}</span>`:''}
       <button class="tlink" data-ttoday="${i.id}">+ today</button></div>`};
+  const cyc=tCycToday();
   return `${tBackLink()}<div class="planhead"><h2>Today</h2><span>${tDay(today())}${mins?' · '+TOWN_TIMES.find(x=>x.v===mins).name+' free':''}</span></div>
+    ${cyc.length?`<div class="tcycdue"><div class="slotlabel" style="margin:0 0 10px">↻ Due from the almanac — ${cyc.length}</div>
+      ${cyc.map(c=>{const d=TOWN_DEPTS.find(x=>x.id===c.dept),late=-daysTo(c.nextDue);
+        return `<div class="tmini" style="cursor:default"><span class="d" style="background:${d?d.color:C.grey}"></span>
+          <span class="t">${esc(tCycName(c))}</span><span class="tag" style="color:${late>0?C.red:'var(--ink-3)'}">${late>0?late+'d late':'today'}</span>
+          <button class="tlink" data-tcycdid="${c.id}">✓ did it</button><button class="tlink" data-tcycon="${c.id}">+ today</button></div>`}).join('')}</div>`:''}
     <div class="tplatewrap">
       ${L.length||mins?tMeter(mins,L):''}
       ${day.length?`<div class="tplate">${day.map(i=>tCard(i,'today')).join('')}</div>`:''}
@@ -3596,7 +3626,8 @@ function tViewWaiting(){
     ${!groups.length&&!wife.length?`<div class="empty"><h3>Nothing out.</h3><p>When the round hands something to someone, it shows up here.</p></div>`:''}`;
 }
 function tViewMap(){
-  return `${tBackLink()}<div class="planhead"><h2>Town map</h2><span>in round order · tap a department</span></div>
+  return `${tBackLink()}<div class="planhead"><h2>Town map</h2><span>in round order · tap a department</span>
+    <button class="btn" id="tcycnew" style="margin-left:auto">↻ + Recurring</button></div>
     <div class="tmap">${TOWN_DEPTS.map(d=>{
       const L=S.town.items.filter(i=>i.dept===d.id),c=st=>L.filter(i=>i.state===st).length,p=tPulse(d.id),lv=S.town.depts[d.id].lastVisit;
       const costly=L.filter(i=>tOpen(i)&&i.stakes===3).length,soon=tCycComing(d.id).length;
@@ -3699,6 +3730,9 @@ function wireTown(){
     tAdd(v,S.ui.townDept,'inbox');render();toast('in the inbox');const d2=document.getElementById('tdadd');if(d2)d2.focus()}};
   app.querySelectorAll('[data-tcyc]').forEach(b=>b.onclick=()=>tCycSheet(S.ui.townDept,b.dataset.tcyc));
   const ca=document.getElementById('tcycadd');if(ca)ca.onclick=()=>tCycSheet(S.ui.townDept);
+  const cn=document.getElementById('tcycnew');if(cn)cn.onclick=()=>tCycSheet(null);
+  app.querySelectorAll('[data-tcycdid]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycdid);if(c)tCycDidIt(c)});
+  app.querySelectorAll('[data-tcycon]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycon);if(c)tCycToToday(c)});
   const cr=document.getElementById('tcycret');if(cr)cr.onclick=()=>{TCYCRET=!TCYCRET;render()};
   const rf=document.getElementById('tref');
   if(rf){autosize(rf);rf.oninput=()=>{autosize(rf);S.town.depts[S.ui.townDept].ref=rf.value;save()}}

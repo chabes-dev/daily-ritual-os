@@ -58,6 +58,7 @@ function intended(root){
   root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
   root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
   root.querySelectorAll('.rbar').forEach(e=>e.remove());
+  root.querySelectorAll('#tcycnew,.tcycdue').forEach(e=>e.remove());                 /* + Recurring, almanac due on Today */
   root.querySelectorAll('#hometile-ritual .ht-meta').forEach(e=>e.textContent=e.textContent.replace(/of \d+ steps/,'of N steps'));   /* the weekly mission step */
   return root}
 
