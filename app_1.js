@@ -32,7 +32,7 @@ const ZNOTE={
   wpw:'Everything on the board is this week. Trim it to the limit you set — Later sends it to the backlog — or bring something back from the backlog.',
   ww:'Same question for the rest of the week. It sets how many tasks this week can hold — the limit you sort and pick against.',
   w6:'One deep thing. Three batch. Two spare. That is the whole day.',
-  wad:'Had one worth keeping? Yes opens Reel to save it. Otherwise, skip.',
+  wad:'Had it? Mark it. Found one worth keeping — save it in Reel on the way.',
   w8:'Work is done. Before you close, point at one personal thing for today — so a week of work days does not quietly swallow it.',
   w7:'Copy it down. Then close this and go and do it.',
   p1:'Health, money, family, the future — one line each. Anything sitting in TickTick counts too.',
@@ -1906,8 +1906,9 @@ function paintZen(isStepChange){
   }
   else if(kind==='adcheck'){
     const ans=S.adCheck.date===today()?S.adCheck.answer:null;
-    mid=`<div class="hrow"><button class="hbtn ${ans===true?'on':''}" id="adyes">Yes — save it in Reel ↗</button></div>`;
-    cta='Skip';
+    mid=`<div class="hrow"><button class="hbtn ${ans===true||ans==='saved'?'on':''}" id="adyes">Had it — save one in Reel ↗</button>
+      <button class="hbtn ${ans==='not'?'on':''}" id="adno">Not today</button></div>`;
+    cta='✓ Had it';
   }
   else{ mid=''; cta='Done'; }
 
@@ -1943,7 +1944,9 @@ function paintZen(isStepChange){
     if(S.personal.anchors.length>=1)return;
     S.personal.anchors.push({id:nid(),text:v});save();paintZen(false)}};
   const ady=zmidEl.querySelector('#adyes');
-  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:true};save();window.open(REEL_URL,'_blank');zenNext()};
+  if(ady)ady.onclick=()=>{S.adCheck={date:today(),answer:'saved'};save();window.open(REEL_URL,'_blank');zenNext()};
+  const adn=zmidEl.querySelector('#adno');
+  if(adn)adn.onclick=()=>{S.adCheck={date:today(),answer:'not'};save();zenNext()};
   const pcy=zmidEl.querySelector('#pcyes');
   if(pcy)pcy.onclick=()=>{S.pcheck={doneWeek:isoWeek(),skips:[]};save();zenNext()};
   const pcn=zmidEl.querySelector('#pcno');
@@ -1995,7 +1998,7 @@ function paintZen(isStepChange){
 
   document.getElementById('zgo').onclick=()=>{
     if(kind==='sort'&&nRaw){openTriage();return}   /* stays inside the ritual */
-    if(kind==='adcheck')S.adCheck={date:today(),answer:false};
+    if(kind==='adcheck')S.adCheck={date:today(),answer:'had'};
     if(kind==='pcheck'&&!personalDoneThisWeek()&&!S.pcheck.skips.includes(today()))S.pcheck.skips.push(today());
     zenNext();
   };
@@ -3831,7 +3834,7 @@ function tzRound(change){
       <div class="zkept">${n?n+' in the inbox, waiting to be sorted':'Nothing in the inbox yet.'}</div>
       ${TZJUST.length?`<div class="zcarry"><div class="zcarry-h">Just added — ${TZJUST.length}</div>
         <div class="zcarry-l">${TZJUST.map(t=>`<span class="zci" style="--cc:var(--hot)">${esc(t)}</span>`).join('')}</div></div>`:''}`;
-    o.cta=TZJUST.length?'Done dumping':'Skip';
+    o.cta=TZJUST.length?'Done dumping':'Nothing to add';
     o.hint='⏎ keeps a line · then press '+o.cta;
   }
   else if(st.id==='sort'){
@@ -3980,9 +3983,9 @@ function tzMove(change){
     back:mv.step>0?()=>{mv.step--;save();tzPaint(true)}:null,
     go:()=>{mv.step++;save();tzPaint(true)}};
   if(st.id==='spark'){
-    o.mid=`<div class="hrow"><button class="hbtn" id="tzspark">Open Spark ↗</button></div>
-      <div class="zkept">Opens in a new tab. Come back here when you’re done.</div>`;
-    o.cta='Skip';
+    o.mid=`<div class="hrow"><button class="hbtn" id="tzspark">Open Spark ↗</button><button class="hbtn" id="tzsparkno">Not today</button></div>
+      <div class="zkept">Opens in a new tab. Come back here when you’re done — or press Done if you already wrote today.</div>`;
+    o.cta='✓ Done';
   }
   else if(st.id==='time'){
     o.mid=`<div class="hrow">${TOWN_TIMES.map(t=>`<button class="hbtn ${mv.mins===t.v?'on':''}" data-tmins="${t.v}">${t.name}</button>`).join('')}</div>
@@ -4022,6 +4025,7 @@ function tzMove(change){
     o.cta='Close — go do it';o.go=()=>tMoveEnd('today is set — it’s in the Today tab',true);
   }
   const mid=tzFrame(o,change);
+  const spn=mid.querySelector('#tzsparkno');if(spn)spn.onclick=()=>o.go();
   const sp=mid.querySelector('#tzspark');
   if(sp)sp.onclick=()=>{window.open(SPARK_URL,'_blank');mv.step++;save();tzPaint(true)};
   mid.querySelectorAll('[data-tmins]').forEach(b=>b.onclick=()=>{mv.mins=+b.dataset.tmins;
