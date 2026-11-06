@@ -2277,6 +2277,14 @@ document.addEventListener('keydown',e=>{
   }
   if(mlayer.innerHTML){if(e.key==='Escape')closeSheet();return}
   if(DPV){if(e.key==='Escape')closeDP();return}
+  if(TR){
+    if(e.key==='Escape'){trClose();return}
+    if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT')return;
+    const k=+e.key;if(k>=1&&k<=TR_ACTS.length&&trItem()){e.preventDefault();trDo(TR_ACTS[k-1][0]);return}
+    if(e.key==='ArrowRight'&&trItem()){e.preventDefault();trDo('skip');return}
+    if(e.key==='Backspace'){e.preventDefault();trUndo();return}
+    return;
+  }
   if(BR){
     if(e.key==='Escape'){brClose();return}
     if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT')return;
@@ -3508,6 +3516,7 @@ function tViewHome(){
     <div class="hcopy"><button class="tlink" id="tcopyall" title="Copies everything on today and this week’s list, one line each">⧉ Copy today + this week</button>
       <span>${todayN} on today · ${n('week')-T.filter(i=>i.state==='week'&&tIsToday(i)).length} more this week</span></div>
     <div class="zdump tcap"><textarea id="tcap" rows="1" placeholder="Something on your mind? It goes to the inbox — ⏎"></textarea></div>
+    ${trPool().length?`<button class="btn btn-hot brgo" id="trgo">▶ Review one by one · ${trPool().length}</button>`:''}
     ${moved?`<div class="zkept tmoved">${moved} task${moved===1?'':'s'} from the old personal board ${moved===1?'is':'are'} in the inbox — the weekly round sorts ${moved===1?'it':'them'}.</div>`:''}
     <div class="town-row">
       <button class="hometile" data-tv="today"><span class="ht-label">Today</span>
@@ -3778,6 +3787,7 @@ function wireTown(){
   app.querySelectorAll('[data-tcyc]').forEach(b=>b.onclick=()=>tCycSheet(S.ui.townDept,b.dataset.tcyc));
   const ca=document.getElementById('tcycadd');if(ca)ca.onclick=()=>tCycSheet(S.ui.townDept);
   const cn=document.getElementById('tcycnew');if(cn)cn.onclick=()=>tCycSheet(null);
+  const trg=document.getElementById('trgo');if(trg)trg.onclick=trOpen;
   app.querySelectorAll('[data-tcycdid]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycdid);if(c)tCycDidIt(c)});
   app.querySelectorAll('[data-tcycon]').forEach(b=>b.onclick=()=>{const c=tCyc(b.dataset.tcycon);if(c)tCycToToday(c)});
   const cr=document.getElementById('tcycret');if(cr)cr.onclick=()=>{TCYCRET=!TCYCRET;render()};
@@ -3890,6 +3900,61 @@ function tVerdictRow(i){
     <div class="tv-acts">${TVERDICTS.map(g=>`<span class="tvg tvg-${g.g}">${g.v.map(([v,lb])=>
       `<button class="zsel tv-${v} ${i.state===v?'sel':''}" data-tverd="${i.id}:${v}">${lb}${v==='later'&&i.state==='later'&&i.back?' · '+tShort(i.back):''}</button>`).join('')}</span>`).join('')}</div></div>`;
 }
+/* ---- town review: the inbox and what's back from "not this week", one card at a time, between rounds.
+   Same verdicts as the round (tVerdict), so each one behaves exactly as it does there. Undo puts the card back as it was. */
+let TR=null;   /* {q:[ids], i, log:[{id,snap,did}], tally} while open */
+const TR_ACTS=[['week','I’ll do it this week',C.blue],['ai','🤖 Delegate to AI','#7C5CFC'],['wife','💛 Wife help','#D01884'],
+  ['waiting','👤 Waiting on someone',C.grey],['later','📅 Not this week','#E37400'],['done','✓ Done',C.green],['dropped','✕ Drop',C.red]];
+const TR_SAID={week:'this week',ai:'to AI',wife:'to your wife',waiting:'waiting',later:'not this week',done:'done',dropped:'dropped',skip:'skipped'};
+function trPool(){
+  const t=today();
+  return S.town.items.filter(i=>i.state==='inbox'||(i.state==='later'&&(!i.back||i.back<=t)))
+    .sort((a,b)=>((a.state==='later'?0:1)-(b.state==='later'?0:1))||((a.created||0)-(b.created||0)))}
+function trOpen(){
+  const q=trPool().map(i=>i.id);if(!q.length)return;
+  TR={q,i:0,log:[],tally:{}};document.body.style.overflow='hidden';
+  layer.innerHTML=`<div class="veil in"><div class="sheet triage brv"><div id="trin"></div></div></div>`;trDraw()}
+function trClose(){TR=null;layer.innerHTML='';document.body.style.overflow='';render()}
+const trItem=()=>{if(!TR)return null;const i=tById(TR.q[TR.i]);return i&&(i.state==='inbox'||i.state==='later')?i:null};
+function trDraw(){
+  const box=document.getElementById('trin');if(!TR||!box)return;
+  while(TR.i<TR.q.length&&!trItem())TR.i++;   /* sorted elsewhere meanwhile */
+  if(TR.i>=TR.q.length){
+    const t=Object.entries(TR.tally).filter(([,n])=>n>0).map(([k,n])=>n+' '+TR_SAID[k]).join(' · ');
+    box.innerHTML=`<div class="brend"><div class="tcount"><span>Town review</span></div>
+      <h3>All sorted.</h3><p>${t||'Nothing changed.'}</p>
+      <div class="tfoot"><button class="btn" id="trundo" ${TR.log.length?'':'disabled'}>↩ Undo last</button>
+        <button class="btn btn-hot" id="trclose">Close</button></div></div>`;
+    box.querySelector('#trclose').onclick=trClose;box.querySelector('#trundo').onclick=trUndo;return}
+  const i=trItem(),d=tDept(i.dept),age=Math.max(0,Math.round((Date.now()-(i.created||Date.now()))/864e5));
+  box.innerHTML=`<div class="tin anim">
+    <div class="tcount"><span>Town review · ${TR.i+1} of ${TR.q.length}</span><span>esc to stop</span></div>
+    <textarea class="ttext" id="trt" rows="1">${esc(i.title)}</textarea>
+    <div class="brmeta">${d?`<span class="dot" style="color:${d.color}"><b></b>${d.name}</span>`:'<span>no department yet</span>'}
+      <span>${i.state==='later'?'back from not this week':'inbox'} · ${age} day${age===1?'':'s'}</span>
+      ${i.due?`<span class="${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
+      ${tCycOf(i)?'<span>↻ almanac</span>':''}</div>
+    <div class="brkeep tdepts"><span>Department</span>${TOWN_DEPTS.map(x=>`<button class="chip ${i.dept===x.id?'on':''}" data-trd="${x.id}" style="color:${x.color}"><b></b>${x.name}</button>`).join('')}</div>
+    <div class="tgrid brgrid trgrid">${TR_ACTS.map(([k,l,c],n)=>`<button class="pick" data-tra="${k}" style="color:${c}"><b></b><span>${l}</span><span class="k">${n+1}</span></button>`).join('')}</div>
+    <div class="tfoot"><span class="keys">1–7 decide · → skip · ⌫ undo · esc stop</span>
+      <span class="bracts"><button class="btn" id="trundo" ${TR.log.length?'':'disabled'}>↩ Undo</button><button class="btn" id="trskip">Skip →</button></span></div></div>`;
+  const ta=box.querySelector('#trt');autosize(ta);ta.oninput=()=>{autosize(ta);const v=ta.value.trim();if(v){i.title=v;save()}};
+  box.querySelectorAll('[data-trd]').forEach(b=>b.onclick=()=>{i.dept=i.dept===b.dataset.trd?null:b.dataset.trd;save();trDraw()});
+  box.querySelectorAll('[data-tra]').forEach(b=>b.onclick=()=>trDo(b.dataset.tra));
+  box.querySelector('#trskip').onclick=()=>trDo('skip');box.querySelector('#trundo').onclick=trUndo;
+}
+function trDo(v){
+  const i=trItem();if(!i)return;
+  const rec={id:i.id,snap:JSON.stringify(i),did:v};
+  const next=()=>{if(!TR)return;TR.log.push(rec);TR.tally[v]=(TR.tally[v]||0)+1;TR.i++;save();trDraw()};
+  if(v==='skip'){next();return}
+  tVerdict(i,v,next);   /* waiting, not this week and an almanac drop ask first; the card moves on once you answer */
+}
+function trUndo(){
+  const rec=TR&&TR.log.pop();if(!rec)return;
+  const back=JSON.parse(rec.snap),cur=tById(rec.id);
+  if(cur){if(cur.state!==back.state)tSet(cur,back.state);Object.keys(cur).forEach(k=>delete cur[k]);Object.assign(cur,back)}
+  TR.tally[rec.did]--;TR.i=TR.q.indexOf(rec.id);save();trDraw()}
 function tVerdict(i,v,keep){
   if(v==='later'){tLaterSheet(i,keep);return}        /* re-tapping lets you change the date */
   if(i.state===v)return;

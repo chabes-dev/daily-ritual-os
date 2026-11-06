@@ -82,6 +82,9 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
         if(!brPool().length){const [x]=add('Ask Rafa for the old SOIP deck from the MX campaign — the long version with the case studies','work');x.sorted=true;x.lane='batch';setBucket(x,'backlog');save();render()}brOpen()`],
       ['backlog-review-end',`if(BR){BR.i=BR.q.length;brDraw()}`],
       ['backlog-after',`if(BR)brClose()`],
+      ['town-review',`closeSheet();S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';render();
+        if(!trPool().length){tAdd('Renovação do seguro do carro com a corretora antiga — ligar e pedir cotação',null,'inbox');render()}trOpen()`],
+      ['town-review-after',`if(TR)trClose()`],
     ].filter(([n])=>!ONLY||n.includes(ONLY));
     for(const [name,js] of views){
       await page.evaluate(js);await page.waitForTimeout(SHOT&&/round|move|sheet|check|step|reset-\d|zen-/.test(name)?900:60);   /* let overlays finish fading in before a screenshot */

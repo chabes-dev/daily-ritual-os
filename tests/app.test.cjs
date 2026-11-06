@@ -58,7 +58,7 @@ function intended(root){
   root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
   root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
   root.querySelectorAll('.rbar').forEach(e=>e.remove());
-  root.querySelectorAll('#tcycnew,.tcycdue,#brgo').forEach(e=>e.remove());   /* + review one by one on the backlog */                 /* + Recurring, almanac due on Today */
+  root.querySelectorAll('#tcycnew,.tcycdue,#brgo,#trgo').forEach(e=>e.remove());   /* + review one by one on the backlog */                 /* + Recurring, almanac due on Today */
   root.querySelectorAll('#hometile-ritual .ht-meta').forEach(e=>e.textContent=e.textContent.replace(/of \d+ steps/,'of N steps'));   /* the weekly mission step */
   return root}
 
@@ -1482,6 +1482,47 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(lt&&lt.dataset.tbk===nm,'Town · not this week: Next month');P.click(lt);
     ok(P.g(`S.town.items.find(i=>i.title==='Sort the garage').back`)===nm&&P.g(`S.town.items.find(i=>i.title==='Sort the garage').state`)==='later','… it comes back then');
     ok(P.g(`tAddPer('2026-01-31',1,'months')`)==='2026-02-28','Jan 31 + a month is the end of February, not March');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  section('31. town review: the inbox and what came back, one card at a time, with the round’s verdicts');
+  {
+    const P=boot(NEW,{});
+    P.g(`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='home';
+      const mk=(t,d,st,ago)=>{const i=tAdd(t,d,st);i.created=Date.now()-ago*864e5;return i};
+      mk('Book the dentist','health','inbox',9);mk('Fix the gate',null,'inbox',3);mk('Buy a lamp','buy','inbox',1);
+      const b=mk('Sort the garage','house','later',20);b.back=tAddPer(today(),-1,'days');
+      const f=mk('Paint the fence','house','later',30);f.back=tAddPer(today(),10,'days');
+      mk('Already this week','house','week',2);save();render()`);
+    ok(P.$('#trgo')&&P.$('#trgo').textContent.includes('Review one by one · 4'),'Town hall: review the inbox and what’s back from not this week (not what’s still away)');
+    P.click('#trgo');
+    const title=()=>P.$('#trt').value;
+    ok(title()==='Sort the garage'&&P.$('.brmeta').textContent.includes('back from not this week'),'first what came back, then the inbox, oldest first');
+    ok(P.$$('[data-tra]').map(b=>b.dataset.tra).join()==='week,ai,wife,waiting,later,done,dropped','the round’s own verdicts');
+    P.click('[data-tra="week"]');
+    ok(P.g(`S.town.items.find(i=>i.title==='Sort the garage').state`)==='week'&&title()==='Book the dentist','This week, next card');
+    P.key('5');ok(P.$('#mlayer').textContent.includes('Not this week')&&P.$$('#mlayer [data-tbk]').some(b=>b.textContent.startsWith('Next month')),'5 = not this week — the usual date picker, Next month included');
+    P.click(P.$$('#mlayer [data-tbk]').find(b=>b.textContent.startsWith('Next month')));
+    ok(P.g(`S.town.items.find(i=>i.title==='Book the dentist').back`)===P.g(`tAddPer(today(),1,'months')`)&&title()==='Fix the gate','… picked, and it moves on');
+    ok(P.$('.brmeta').textContent.includes('no department yet'),'a card without a department says so');
+    P.click('[data-trd="house"]');
+    ok(P.g(`S.town.items.find(i=>i.title==='Fix the gate').dept`)==='house'&&title()==='Fix the gate','tap a department — it stays on the card');
+    P.key('4');P.type('#mlayer #twho','Locksmith');P.click('#mlayer #yes');
+    ok(P.g(`S.town.items.find(i=>i.title==='Fix the gate').state`)==='waiting'&&P.g(`S.town.items.find(i=>i.title==='Fix the gate').wait.who`)==='Locksmith'&&title()==='Buy a lamp','4 = waiting on someone — asks who, then next');
+    P.key('Backspace');
+    const g=JSON.parse(P.g(`JSON.stringify(S.town.items.find(i=>i.title==='Fix the gate'))`));
+    ok(g.state==='inbox'&&!g.wait&&g.dept==='house'&&title()==='Fix the gate','⌫ undo puts it back exactly as it was');
+    P.key('ArrowRight');P.key('7');
+    ok(P.g(`S.town.items.find(i=>i.title==='Buy a lamp').state`)==='dropped','7 = drop');
+    ok(P.$('.brend')&&/1 this week · 1 not this week · 1 skipped · 1 dropped|1 this week.*1 not this week.*1 dropped/.test(P.$('.brend').textContent),'the end: what you decided');
+    P.click('#trclose');ok(!P.$('.brv')&&P.g('TR')===null,'Close goes back to the Town hall');
+    /* an almanac task done here rolls its cycle on, and undo rolls it back */
+    P.g(`const c={id:'cy1',title:'Car licence',who:'',type:'fixed',n:1,unit:'years',lead:30,lastDone:null,nextDue:today(),on:today(),notes:'',dept:'treasury',itemId:null,retired:false};
+      S.town.cycles.push(c);tCycPlant(c);save();render()`);
+    P.click('#trgo');while(P.$('#trt')&&P.$('#trt').value!=='Car licence')P.key('ArrowRight');
+    P.key('6');ok(P.g(`tCyc('cy1').nextDue`)===P.g(`tAddPer(today(),1,'years')`),'Done on an almanac task rolls the cycle to next year, like in the round');
+    P.key('Backspace');ok(P.g(`tCyc('cy1').nextDue`)===P.g('today()')&&P.g(`S.town.items.find(i=>i.cycle==='cy1').state`)==='inbox','… and undo rolls it back');
+    P.key('Escape');ok(P.g('TR')===null,'Esc stops any time');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
