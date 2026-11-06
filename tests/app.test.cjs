@@ -716,7 +716,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
       for(const [n,js] of views){P.g(js);const a=intended(P.$('#app').cloneNode(true));a.querySelectorAll('.nav').forEach(e=>e.remove());
         out[n]=norm(a.innerHTML)}
       const wid=P.g(`S.items.find(i=>i.mode==='work'&&!i.done).id`);P.g(`S.ui.mode='work';render();openDetail('${wid}')`);
-      out['work task card']=norm(P.$('#mlayer').innerHTML);P.g('closeSheet()');
+      const card=P.$('#mlayer').cloneNode(true);card.querySelectorAll('button').forEach(b=>{if(b.textContent==='Next month')b.remove()});   /* + Next month on dates */
+      out['work task card']=norm(card.innerHTML);P.g('closeSheet()');
       out.navWork=(P.g(`S.ui.mode='work';render()`),P.$$('.nav [data-v]').map(b=>b.textContent).join('|'));
       out.navPersonal=(P.g(`S.ui.mode='personal';S.ui.personalView='town';render()`),P.$$('.nav [data-v]').map(b=>b.textContent).join('|'));
       out.err=P.errors.join('|');P.close();return out};
@@ -1454,6 +1455,33 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click('#brgo');P.key('Escape');ok(!P.$('.brv')&&P.g('BR')===null,'Esc stops any time');
     P.g(`inBacklog('work').forEach(i=>{i.snoozeUntil=tAddPer(today(),9,'days')});save();render()`);
     ok(!P.$('#brgo'),'nothing to review → no button');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  section('30. next month: one tap to put something off longer than a week');
+  {
+    const P=boot(NEW,{});
+    const nm=P.g(`tAddPer(today(),1,'months')`);
+    P.g(`S.ui.mode='work';const [a]=add('Renew the agency insurance','work');a.sorted=true;a.lane='batch';save();snoozeSheet(a.id)`);
+    const sn=P.$$('#mlayer [data-sn]').find(b=>b.textContent==='Next month');
+    ok(sn&&sn.dataset.sn===nm,'snooze: Next month, the same day a month out');
+    P.click(sn);ok(P.g(`S.items.find(i=>i.text==='Renew the agency insurance').snoozeUntil`)===nm&&P.g(`S.items.find(i=>i.text==='Renew the agency insurance').bucket`)==='backlog','… and it goes to the backlog until then');
+    const id=P.g(`S.items.find(i=>i.text==='Renew the agency insurance').id`);
+    P.g(`openDetail('${id}')`);
+    const dc=P.$$('#mlayer [data-dset]').find(b=>b.textContent==='Next month');
+    ok(dc&&dc.dataset.dset===nm,'task dates: Next month');P.click(dc);ok(P.g(`byId('${id}').due`)===nm,'… sets it');P.g('closeSheet()');
+    P.g(`openDate(byId('${id}'),()=>{})`);
+    P.click(P.$$('.dp-q').find(b=>b.textContent==='Next month'));
+    ok(P.g(`byId('${id}').due`)===nm,'the calendar pop-up has it too');
+    P.g(`S.ui.mode='personal';const t=tAdd('Ask the clinic for the results','health','inbox');save();tWaitSheet(t,'Clinic')`);
+    const cb=P.$$('#mlayer [data-tcb]').find(b=>b.textContent==='Next month');
+    ok(cb&&cb.dataset.tcb===nm,'Town · check back: Next month');P.click(cb);P.click('#mlayer #yes');
+    ok(P.g(`S.town.items.find(i=>i.title==='Ask the clinic for the results').wait.checkBack`)===nm,'… saved as the check-back date');
+    P.g(`const t2=tAdd('Sort the garage','house','inbox');save();tLaterSheet(t2)`);
+    const lt=P.$$('#mlayer [data-tbk]').find(b=>b.textContent.startsWith('Next month'));
+    ok(lt&&lt.dataset.tbk===nm,'Town · not this week: Next month');P.click(lt);
+    ok(P.g(`S.town.items.find(i=>i.title==='Sort the garage').back`)===nm&&P.g(`S.town.items.find(i=>i.title==='Sort the garage').state`)==='later','… it comes back then');
+    ok(P.g(`tAddPer('2026-01-31',1,'months')`)==='2026-02-28','Jan 31 + a month is the end of February, not March');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 

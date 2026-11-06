@@ -202,10 +202,12 @@ function dueLabel(d){const n=daysTo(d);
   if(n===0)return{t:'today',c:'hot'};if(n===1)return{t:'tomorrow',c:'hot'};
   if(n<=14)return{t:'in '+n+' days',c:'hot'};
   return{t:new Date(d+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'}),c:''}}
+/* "Next month" everywhere a date can be picked: the same day a month from now, for putting things off longer than a week */
+const nextMonth=()=>tAddPer(today(),1,'months');
 function dateChips(i){
   const iso=n=>{const x=new Date();x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
   const wk=(()=>{const x=new Date();const g=(6-x.getDay()+7)%7;x.setDate(x.getDate()+(g||6));return x.toISOString().slice(0,10)})();
-  const opts=[['No date',null],['Today',iso(0)],['Tomorrow',iso(1)],['This weekend',wk],['Next week',iso(7)]];
+  const opts=[['No date',null],['Today',iso(0)],['Tomorrow',iso(1)],['This weekend',wk],['Next week',iso(7)],['Next month',nextMonth()]];
   const custom=i.due&&!opts.some(o=>o[1]===i.due);
   return opts.map(([l,v])=>`<button class="dbtn ${i.due===v?'on':''}" data-dset="${v===null?'':v}">${l}</button>`).join('')
     +`<button class="dbtn ${custom?'on':''}" data-dpick="1">${custom?dueLabel(i.due).t:'Pick a date'}</button>`;
@@ -834,7 +836,7 @@ function sheetPrompt(title,note,ph,onOk,initial){
       el.querySelector('#yes').onclick=go;el.querySelector('#no').onclick=closeSheet})}
 /* Snooze is "reconsider me then," not a deadline — deliberately a separate field from
    due, so a snoozed item doesn't start reading as overdue. Presets match how snoozing
-   actually gets used: looking ahead a day or two, or punting to next week. */
+   actually gets used: looking ahead a day or two, punting to next week, or a month out. */
 function snoozeSheet(id,after){
   const it=byId(id);if(!it)return;
   const iso=n=>{const x=new Date();x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
@@ -848,6 +850,7 @@ function snoozeSheet(id,after){
       <button class="dbtn" data-sn="${thisWeekend}">This weekend</button>
       <button class="dbtn" data-sn="${nextMon}">Next Monday</button>
       <button class="dbtn" data-sn="${iso(7)}">Next week</button>
+      <button class="dbtn" data-sn="${nextMonth()}">Next month</button>
     </div>
     <div class="sheet-acts">
       <button class="btn" id="snpick">Pick a date</button>
@@ -1051,12 +1054,12 @@ function drawDP(){
       <button class="dp-nav" data-mv="1">›</button></div>
     <div class="dp-grid">${['S','M','T','W','T','F','S'].map((w,k)=>`<div class="dp-w ${k===0||k===6?'we':''}">${w}</div>`).join('')}${cells}</div>
     <div class="dp-quick"><button class="dp-q" data-q="0">Today</button><button class="dp-q" data-q="1">Tomorrow</button>
-      <button class="dp-q" data-q="w">This weekend</button><button class="dp-q" data-q="7">Next week</button>
+      <button class="dp-q" data-q="w">This weekend</button><button class="dp-q" data-q="7">Next week</button><button class="dp-q" data-q="m">Next month</button>
       <button class="dp-q clear" data-q="x">No date</button></div></div></div>`;
   dplayer.querySelectorAll('[data-mv]').forEach(b=>b.onclick=()=>{DPV.m+=+b.dataset.mv;
     if(DPV.m<0){DPV.m=11;DPV.y--}if(DPV.m>11){DPV.m=0;DPV.y++}drawDP()});
   dplayer.querySelectorAll('[data-iso]').forEach(b=>b.onclick=()=>setDate(b.dataset.iso));
-  dplayer.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;if(q==='x')return setDate(null);
+  dplayer.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=b.dataset.q;if(q==='x')return setDate(null);if(q==='m')return setDate(nextMonth());
     const d=new Date();if(q==='w'){const g=(6-d.getDay()+7)%7;d.setDate(d.getDate()+(g||6))}else d.setDate(d.getDate()+ +q);
     setDate(d.toISOString().slice(0,10))});
   dplayer.querySelector('.veil').onclick=e=>{if(e.target.classList.contains('veil'))closeDP()};
@@ -3316,16 +3319,16 @@ const tBackLink=()=>`<div class="tback"><button class="zlink" data-tback="1">←
 function tSheetBox(wide){sheet('<div id="tbox"></div>',null,wide);return mlayer.querySelector('#tbox')}
 function tWaitSheet(i,who,after){
   const iso=n=>{const x=new Date();x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)};
-  const quick=[['Tomorrow',1],['In 3 days',3],['Next week',7],['In 2 weeks',14]];
+  const quick=[['Tomorrow',iso(1)],['In 3 days',iso(3)],['Next week',iso(7)],['In 2 weeks',iso(14)],['Next month',nextMonth()]];
   const w={who:(i.wait&&i.wait.who&&i.wait.who!=='Wife'?i.wait.who:'')||who||'',since:today(),checkBack:null};
   const box=tSheetBox();
   const draw=()=>{
-    const custom=w.checkBack&&!quick.some(([,n])=>iso(n)===w.checkBack);
+    const custom=w.checkBack&&!quick.some(([,d])=>d===w.checkBack);
     box.innerHTML=`<h3>👤 Who has the ball?</h3>
       <p>${esc(i.title)}<br><span style="color:var(--ink-3)">Someone else is doing their part — you just check back.</span></p>
       <input class="field" id="twho" placeholder="Clinic, bank, concierge…" value="${esc(w.who)}" />
       <div class="seg-label" style="margin:0 0 10px">Check back</div>
-      <div class="dates">${quick.map(([l,n])=>`<button class="dbtn ${w.checkBack===iso(n)?'on':''}" data-tcb="${iso(n)}">${l}</button>`).join('')}
+      <div class="dates">${quick.map(([l,d])=>`<button class="dbtn ${w.checkBack===d?'on':''}" data-tcb="${d}">${l}</button>`).join('')}
         <button class="dbtn ${custom?'on':''}" id="tcbpick">${custom?tShort(w.checkBack):'Pick a date'}</button></div>
       <div class="sheet-acts" style="margin-top:26px"><button class="btn" id="no">Cancel</button>
         <button class="btn btn-hot" id="yes">Waiting on them</button></div>`;
@@ -3339,7 +3342,7 @@ function tWaitSheet(i,who,after){
 }
 /* not this week: pick when it should come back — next week's days, or no date at all */
 function tLaterSheet(i,after){
-  const opts=[['Next Monday',tNextWeek(0)],['Next Wednesday',tNextWeek(2)],['Next Friday',tNextWeek(4)],['Next weekend',tNextWeek(5)]];
+  const opts=[['Next Monday',tNextWeek(0)],['Next Wednesday',tNextWeek(2)],['Next Friday',tNextWeek(4)],['Next weekend',tNextWeek(5)],['Next month',nextMonth()]];
   const box=tSheetBox();
   const commit=d=>{tSet(i,'later');i.back=d;save();closeSheet();if(after)after()};
   box.innerHTML=`<h3>📅 Not this week</h3>
