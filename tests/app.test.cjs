@@ -58,7 +58,7 @@ function intended(root){
   root.querySelectorAll('.hreset').forEach(e=>e.remove());                  /* energy reset card */
   root.querySelectorAll('.home-rituals').forEach(w=>w.replaceWith(...w.childNodes));
   root.querySelectorAll('.rbar').forEach(e=>e.remove());
-  root.querySelectorAll('#tcycnew,.tcycdue').forEach(e=>e.remove());                 /* + Recurring, almanac due on Today */
+  root.querySelectorAll('#tcycnew,.tcycdue,#brgo').forEach(e=>e.remove());   /* + review one by one on the backlog */                 /* + Recurring, almanac due on Today */
   root.querySelectorAll('#hometile-ritual .ht-meta').forEach(e=>e.textContent=e.textContent.replace(/of \d+ steps/,'of N steps'));   /* the weekly mission step */
   return root}
 
@@ -1418,6 +1418,42 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('#tzgo').textContent==='Skip','Spark step: Skip moves on if you’d rather not write');
     P.click('#tzgo');ok(P.g('S.reset.at')===4&&!P.g('S.reset.wrote'),'… straight to focus');
     P.g('endReset()');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  section('29. backlog review: one card at a time, a decision each');
+  {
+    const P=boot(NEW,{});
+    P.g(`S.ui.mode='work';S.ui.workView='backlog';
+      const L=add('Ask Rafa for the old deck\\nRename the shared drive\\nLearn After Effects\\nCall the printer\\nOld idea\\nLater thing\\nDated thing','work');
+      L.forEach((i,k)=>{i.sorted=true;i.lane='batch';setBucket(i,'backlog');i.created=Date.now()-(30-k)*864e5});
+      L[2].lane='ideas';L[4].snoozeUntil=tAddPer(today(),-1,'days');L[5].snoozeUntil=tAddPer(today(),5,'days');L[6].due=tAddPer(today(),2,'days');
+      const [b]=add('On the board','work');b.sorted=true;b.lane='batch';save();render()`);
+    ok(P.$('#brgo')&&P.$('#brgo').textContent.includes('Review one by one · 6')&&P.$$('.cols .col').length===6,'the columns stay; a button reviews the 6 that need a look (not the one snoozed to later)');
+    P.click('#brgo');
+    const title=()=>P.$('#brt').value;
+    ok(title()==='Old idea'&&P.$('.tcount').textContent.includes('1 of 6')&&P.$('.brmeta').textContent.includes('back from snooze'),'first the snooze that came due');
+    P.click('[data-bra="week"]');
+    ok(P.g(`S.items.find(i=>i.text==='Old idea').bucket`)==='board'&&!P.g(`S.items.find(i=>i.text==='Old idea').snoozeUntil`)&&title()==='Dated thing','This week puts it back on the board, and the next card shows — the nearest date');
+    P.click('[data-brk="hold"]');
+    ok(P.g(`S.items.find(i=>i.text==='Dated thing').lane`)==='hold'&&P.g(`S.items.find(i=>i.text==='Dated thing').bucket`)==='backlog'&&title()==='Ask Rafa for the old deck','Keep it here as… re-files it in the backlog; then the oldest');
+    P.key('3');ok(P.g(`S.items.find(i=>i.text==='Ask Rafa for the old deck').done`)===true&&title()==='Rename the shared drive','3 = already done');
+    P.key('4');ok(!P.g(`S.items.some(i=>i.text==='Rename the shared drive')`)&&title()==='Learn After Effects','4 = delete');
+    P.key('Backspace');ok(P.g(`S.items.some(i=>i.text==='Rename the shared drive'&&i.bucket==='backlog'&&!i.done)`)&&title()==='Rename the shared drive','⌫ undoes the delete and goes back to that card');
+    P.key('Backspace');P.key('Backspace');
+    ok(P.g(`S.items.find(i=>i.text==='Dated thing').lane`)==='batch'&&title()==='Dated thing','undo walks back through every decision');
+    P.key('ArrowRight');P.key('ArrowRight');ok(title()==='Rename the shared drive','→ skips, nothing changes');
+    P.key('2');ok(P.$('#mlayer').textContent.includes('Snooze until'),'2 = snooze — the usual snooze picker');
+    P.click('#mlayer [data-sn]');
+    ok(P.g(`S.items.find(i=>i.text==='Rename the shared drive').snoozeUntil`)>P.g('today()')&&title()==='Learn After Effects','… pick a day and it moves on');
+    P.g(`document.querySelector('#brt').value='Learn After Effects basics';document.querySelector('#brt').dispatchEvent(new Event('input'))`);
+    ok(P.g(`S.items.some(i=>i.text==='Learn After Effects basics')`),'the title can be fixed right there');
+    P.click('[data-brk="wish"]');P.key('ArrowRight');
+    ok(P.$('.brend')&&P.$('.brend').textContent.includes('1 snoozed')&&P.$('.brend').textContent.includes('1 kept')&&P.$('.brend').textContent.includes('3 skipped')&&P.$('.brend').textContent.includes('1 to this week'),'the end: what you decided, in one line');
+    P.click('#brclose');ok(!P.$('.brv')&&P.$('#brgo')&&P.g('BR')===null,'Close goes back to the columns');
+    P.click('#brgo');P.key('Escape');ok(!P.$('.brv')&&P.g('BR')===null,'Esc stops any time');
+    P.g(`inBacklog('work').forEach(i=>{i.snoozeUntil=tAddPer(today(),9,'days')});save();render()`);
+    ok(!P.$('#brgo'),'nothing to review → no button');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 

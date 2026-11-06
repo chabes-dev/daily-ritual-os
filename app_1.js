@@ -1473,8 +1473,10 @@ function viewCols(bucket){
 function viewWorkBacklog(items){
   items=items.filter(i=>!i.project);
   const order=backlogOrder(),custom=order.join()!==WORK_BACKLOG_ORDER.join();
+  const nRev=brPool().length;
   return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.
     ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset column order</button>`:''}</div>
+  ${nRev?`<button class="btn btn-hot brgo" id="brgo">▶ Review one by one · ${nRev}</button>`:''}
   <div class="cols">${order.map(id=>{
     const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched';
     const list=items.filter(i=>backlogCol(i)===id)
@@ -2059,6 +2061,68 @@ let TQ=[],TI=0,TOPEN=false,TSTEP=1,TCAT=null,TCARD='',TQUICKSOFT=false;
 /* TQUICKSOFT is per-sort-session only, never persisted — hard mode (interrupt for every
    ⚡ task) is the default every time the sorter opens; picking "batch these" below just
    quiets it for the rest of this pass. */
+/* ---- backlog review: the work backlog one card at a time, one decision each — for when the columns get crowded.
+   Order: snoozes that have come due, then nearest date, then oldest. Things snoozed to a later date stay put.
+   Every decision can be undone from inside the review. */
+let BR=null;   /* {q:[ids], i, log:[{id,snap,idx,did}], tally} while open */
+const BR_ACTS=[['week','⬆ This week',C.blue],['snooze','😴 Snooze',C.grey],['done','✓ Already done',C.green],['del','× Delete',C.red]];
+const BR_KEEP=[['hold','On hold'],['wish','Wish'],['ai','For AI'],['deep','Deep'],['batch','Batch']];
+const BR_SAID={week:'to this week',snooze:'snoozed',keep:'kept',done:'already done',del:'deleted',skip:'skipped'};
+function brPool(){
+  return inBacklog('work').filter(i=>!i.project&&!(i.snoozeUntil&&i.snoozeUntil>today())).sort((x,y)=>{
+    const rx=x.snoozeUntil?0:1,ry=y.snoozeUntil?0:1;if(rx!==ry)return rx-ry;
+    const dx=x.due?daysTo(x.due):999,dy=y.due?daysTo(y.due):999;if(dx!==dy)return dx-dy;
+    return (x.created||0)-(y.created||0)})}
+function brOpen(){
+  const q=brPool().map(i=>i.id);if(!q.length)return;
+  BR={q,i:0,log:[],tally:{}};document.body.style.overflow='hidden';
+  layer.innerHTML=`<div class="veil in"><div class="sheet triage brv"><div id="brin"></div></div></div>`;brDraw()}
+function brClose(){BR=null;layer.innerHTML='';document.body.style.overflow='';render()}
+const brItem=()=>BR&&S.items.find(x=>x.id===BR.q[BR.i]&&!x.done);
+function brDraw(){
+  const box=document.getElementById('brin');if(!BR||!box)return;
+  while(BR.i<BR.q.length&&!brItem())BR.i++;   /* finished or deleted elsewhere meanwhile */
+  if(BR.i>=BR.q.length){
+    const t=Object.entries(BR.tally).filter(([,n])=>n>0).map(([k,n])=>n+' '+BR_SAID[k]).join(' · ');
+    box.innerHTML=`<div class="brend"><div class="tcount"><span>Backlog review</span></div>
+      <h3>Backlog reviewed.</h3><p>${t||'Nothing changed.'}</p>
+      <div class="tfoot"><button class="btn" id="brundo" ${BR.log.length?'':'disabled'}>↩ Undo last</button>
+        <button class="btn btn-hot" id="brclose">Close</button></div></div>`;
+    box.querySelector('#brclose').onclick=brClose;box.querySelector('#brundo').onclick=brUndo;return}
+  const i=brItem(),col=WORK_BACKLOG.find(c=>c.id===backlogCol(i)),ready=i.snoozeUntil&&i.snoozeUntil<=today();
+  box.innerHTML=`<div class="tin anim">
+    <div class="tcount"><span>Backlog review · ${BR.i+1} of ${BR.q.length}</span><span>esc to stop</span></div>
+    <textarea class="ttext" id="brt" rows="1">${esc(i.text)}</textarea>
+    <div class="brmeta"><span class="dot" style="color:${col.color}"><b></b>${col.name}</span>
+      <span>in the backlog ${age(i)} day${age(i)===1?'':'s'}</span>
+      ${i.due?`<span class="${dueLabel(i.due).c==='late'?'late':''}">${dueLabel(i.due).t}</span>`:''}
+      ${ready?`<span>😴 back from snooze</span>`:''}</div>
+    <div class="tgrid brgrid">${BR_ACTS.map(([k,l,c],n)=>`<button class="pick" data-bra="${k}" style="color:${c}"><b></b><span>${l}</span><span class="k">${n+1}</span></button>`).join('')}</div>
+    <div class="brkeep"><span>Keep it here as</span>${BR_KEEP.map(([k,l])=>`<button class="chip ${backlogCol(i)===k?'on':''}" data-brk="${k}" style="color:${WORK_BACKLOG.find(c=>c.id===k).color}"><b></b>${l}</button>`).join('')}</div>
+    <div class="tfoot"><span class="keys">1–4 decide · → skip · ⌫ undo · esc stop</span>
+      <span class="bracts"><button class="btn" id="brundo" ${BR.log.length?'':'disabled'}>↩ Undo</button><button class="btn" id="brskip">Skip →</button></span></div></div>`;
+  const ta=box.querySelector('#brt');autosize(ta);ta.oninput=()=>{autosize(ta);i.text=ta.value.trim()||i.text;save()};
+  box.querySelectorAll('[data-bra]').forEach(b=>b.onclick=()=>brDo(b.dataset.bra));
+  box.querySelectorAll('[data-brk]').forEach(b=>b.onclick=()=>brDo('keep',b.dataset.brk));
+  box.querySelector('#brskip').onclick=()=>brDo('skip');box.querySelector('#brundo').onclick=brUndo;
+}
+/* one decision on the current card; the card's state before it is kept for undo */
+function brDo(did,col){
+  const i=brItem();if(!i)return;
+  const rec={id:i.id,snap:JSON.stringify(i),idx:S.items.indexOf(i),did};
+  const next=()=>{BR.log.push(rec);BR.tally[did]=(BR.tally[did]||0)+1;BR.i++;save();brDraw()};
+  if(did==='snooze'){snoozeSheet(i.id,()=>{if(BR)next()});return}
+  if(did==='week'){setBucket(i,'board');i.snoozeUntil=null;if(isParked(i))i.lane=i.star?'important':'batch'}
+  else if(did==='done'){i.done=true;i.doneAt=Date.now();clearFromPlan(i.mode,i.id)}
+  else if(did==='del')S.items.splice(rec.idx,1);
+  else if(did==='keep'){applyBacklogCol(i,col);if(i.snoozeUntil&&i.snoozeUntil<=today())i.snoozeUntil=null}
+  next();
+}
+function brUndo(){
+  const rec=BR&&BR.log.pop();if(!rec)return;
+  const back=JSON.parse(rec.snap),cur=S.items.find(x=>x.id===rec.id);
+  if(cur){Object.keys(cur).forEach(k=>delete cur[k]);Object.assign(cur,back)}else S.items.splice(Math.min(rec.idx,S.items.length),0,back);
+  BR.tally[rec.did]--;BR.i=BR.q.indexOf(rec.id);save();brDraw()}
 function openTriage(){TQ=raw(S.ui.mode).map(i=>i.id);TI=0;TSTEP=1;TCAT=null;TCARD='';TQUICKSOFT=false;if(!TQ.length)return;
   TOPEN=true;document.body.style.overflow='hidden';
   layer.innerHTML=`<div class="veil in"><div class="sheet triage"><div id="tin"></div></div></div>`;drawTriage()}
@@ -2210,6 +2274,14 @@ document.addEventListener('keydown',e=>{
   }
   if(mlayer.innerHTML){if(e.key==='Escape')closeSheet();return}
   if(DPV){if(e.key==='Escape')closeDP();return}
+  if(BR){
+    if(e.key==='Escape'){brClose();return}
+    if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT')return;
+    const k=+e.key;if(k>=1&&k<=BR_ACTS.length&&brItem()){e.preventDefault();brDo(BR_ACTS[k-1][0]);return}
+    if(e.key==='ArrowRight'&&brItem()){e.preventDefault();brDo('skip');return}
+    if(e.key==='Backspace'){e.preventDefault();brUndo();return}
+    return;
+  }
   if(TOPEN){
     if(e.key==='Escape'){closeTriage();return}
     const i=S.items.find(x=>x.id===TQ[TI]);if(!i)return;
@@ -4224,6 +4296,7 @@ function wire(){
     S.ritual[m]=d.includes(id)?d.filter(x=>x!==id):[...d,id];save();render()});
   document.getElementById('exp').onclick=()=>exportBackup(false);
   const db=document.getElementById('donebtn');if(db)db.onclick=doneSheet;
+  const brg=document.getElementById('brgo');if(brg)brg.onclick=brOpen;
   document.getElementById('imp').onclick=importBackup;
   document.getElementById('syncbtn').onclick=syncSheet;
   wireTown();
