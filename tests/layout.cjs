@@ -95,7 +95,7 @@ const server=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent
           const own=[...el.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent.trim()).join('');
           if(own.length<8)return;const b=el.getBoundingClientRect();if(!b.width&&!b.height)return;
           const cs=getComputedStyle(el);if(cs.visibility==='hidden'||cs.display==='none')return;
-          if(el.closest('.cols'))return;   /* the backlog board scrolls sideways on purpose */
+          if(el.closest('.cols')||el.closest('.blwrap'))return;   /* the backlog board scrolls sideways on purpose */
           if(b.width<60&&b.height>60)bad.push('squeezed '+el.className+' "'+own.slice(0,30)+'" w='+Math.round(b.width));
           if(b.right>vw+2&&cs.position!=='fixed')bad.push('off right '+el.className+' "'+own.slice(0,25)+'" right='+Math.round(b.right));
         });

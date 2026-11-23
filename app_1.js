@@ -1476,29 +1476,48 @@ function viewCols(bucket){
     </div>`}).join('')}</div>`;
 }
 
+/* The work backlog as a map, like the Town Map: rows are what each thing is waiting for
+   (the same six as before, in the same order), columns are the goal it moves. A goal with an
+   empty column has nothing queued behind it, which is the point of looking. Rows fold; an
+   empty row starts folded. Dropping a card in a cell sets both: why it waits and which goal. */
+const BL_HINT={sched:'comes back on a date',hold:'waiting on someone or something',deep:'needs a real block of focus',
+  batch:'small ones, done in a sweep',ai:'hand it to AI',wish:'someday, if ever'};
+const blGoalOf=i=>{const g=i.goal&&gById(i.goal);return g&&g.state==='active'?g.id:''};
+function blCols(){
+  const hor=G_HOR.map(h=>h.id);
+  return [{id:'',name:'No goal yet',sub:'not linked to a goal'}]
+    .concat(gActive().slice().sort((a,b)=>hor.indexOf(a.horizon)-hor.indexOf(b.horizon))
+      .map(g=>({id:g.id,name:g.title,sub:gHor(g.horizon).name,goal:g})))}
+const blOpen=(id,n)=>{const o=(S.ui.blRows||{})[id];return o===undefined?n>0:!!o};
 function viewWorkBacklog(items){
   items=items.filter(i=>!i.project);
   const order=backlogOrder(),custom=order.join()!==WORK_BACKLOG_ORDER.join();
-  const nRev=brPool().length;
-  return `<div style="font-size:18px;color:var(--ink-2);margin-bottom:22px;max-width:80ch">Later — sorted by what each thing is waiting for. Nothing here appears on Today; review it once a week and pull what's ready back in.
-    ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset column order</button>`:''}</div>
-  ${nRev?`<button class="btn btn-hot brgo" id="brgo">▶ Review one by one · ${nRev}</button>`:''}
-  <div class="cols">${order.map(id=>{
-    const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched';
-    const list=items.filter(i=>backlogCol(i)===id)
-      .sort(sched?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
-    return `<div class="col ${sched?'col-sched':'zone'}" data-colid="${id}" ${sched?'':`data-bcol="${id}" data-bucket="backlog"`}>
-      <div class="col-head"><span class="dot" style="color:${c.color}"><b></b></span>
-        <span class="col-name" style="color:${c.color}">${c.name}</span>
-        <span class="col-n">${list.length}</span></div>
-      ${list.map(i=>card(i,sched?schedLabel(i):null)).join('')}
-      ${!list.length?`<div class="col-empty">${sched?'Nothing dated.':'Clear.'}</div>`:''}
-      ${sched?'':S.ui.composer==='bcol:'+id
-        ?`<div class="composer"><textarea id="comp" rows="1" placeholder="What's the action?"></textarea>
-            <div class="hint">⏎ add · esc close</div></div>`
-        :`<button class="addbtn" data-addto="bcol:${id}">＋ Add</button>`}
-    </div>`}).join('')}</div>`;
+  const nRev=brPool().length,cols=blCols();
+  const inCell=(row,g)=>items.filter(i=>backlogCol(i)===row&&blGoalOf(i)===g)
+    .sort(row==='sched'?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
+  const head=c=>{const n=items.filter(i=>blGoalOf(i)===c.id).length,
+      onb=c.goal?onBoard('work').filter(i=>i.goal===c.id).length:0;
+    return `<div class="blhd ${c.id?'':'nogoal'}"><span class="blhor">${esc(c.sub)}</span>
+      <b>${esc(c.name)}</b>
+      <small>${c.id?(n||onb?`${n} waiting here${onb?` · ${onb} on the board`:''}`:'<em>nothing lined up for this goal</em>'):`${n} waiting`}</small></div>`};
+  return `<div class="blintro">Later — what each thing is waiting for, against the goal it moves. Nothing here appears on Today; review it once a week and pull what's ready back in.
+    ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset row order</button>`:''}</div>
+  <div class="bltop">${nRev?`<button class="btn btn-hot brgo" id="brgo">▶ Review one by one · ${nRev}</button>`:''}
+    <span class="blkeys"><button class="zlink" data-blall="1">Open all rows</button> · <button class="zlink" data-blall="0">Fold all</button></span></div>
+  <div class="blwrap"><div class="blmap" style="grid-template-columns:var(--blrow) repeat(${cols.length},minmax(var(--blcol),1fr));min-width:calc(var(--blrow) + ${cols.length} * var(--blcol))">
+    <div class="blcorner"></div>${cols.map(head).join('')}
+    ${order.map(id=>{const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched',
+        n=items.filter(i=>backlogCol(i)===id).length,open=blOpen(id,n);
+      return `<button class="blrow ${open?'':'shut'}" data-blrow="${id}" style="--bc:${c.color}">
+          <span><em>${open?'▾':'▸'}</em>${c.name}</span><small>${n} · ${BL_HINT[id]}</small></button>
+        ${cols.map(g=>{const L=inCell(id,g.id);
+          return `<div class="blcell zone ${open?'':'shut'}" style="--bc:${c.color}" data-bgoal="${g.id}" ${sched?'data-bsched="1"':`data-bcol="${id}" data-bucket="backlog"`}>
+            ${open?(L.map(i=>card(i,sched?schedLabel(i):null)).join('')||'<span class="blnone">—</span>')
+              :(L.length?`<b class="blsum">${L.length}</b>`:'<span class="blnone">·</span>')}</div>`}).join('')}`}).join('')}
+    <div class="blrow plain"></div>${cols.map(g=>`<div class="blcell plain"><input class="bladd" data-bladd="${g.id}" placeholder="Add${g.id?' for this goal':''} — ⏎"></div>`).join('')}
+  </div></div>`;
 }
+
 
 /* ---- fire (quick, sub-60s tasks — one at a time, no ceremony). Embedded inline in
    Today/This week rather than its own tab — same board data, no reason to duplicate the nav. */
@@ -4199,6 +4218,14 @@ function wire(){
       else add(v,m,gid,bk);
       render();toast('added')}})}
   app.querySelectorAll('[data-colid]>.col-head').forEach(colDrag);
+  app.querySelectorAll('[data-blrow]').forEach(b=>b.onclick=()=>{const k=b.dataset.blrow,o=S.ui.blRows=S.ui.blRows||{};
+    o[k]=!b.classList.contains('shut')?0:1;save();render()});
+  app.querySelectorAll('[data-blall]').forEach(b=>b.onclick=()=>{S.ui.blRows={};WORK_BACKLOG.forEach(c=>S.ui.blRows[c.id]=+b.dataset.blall);save();render()});
+  app.querySelectorAll('[data-bladd]').forEach(f=>f.addEventListener('keydown',e=>{if(e.key!=='Enter')return;
+    const v=f.value.trim();if(!v)return;const g=f.dataset.bladd;
+    add(v,'work',null,'backlog').forEach(x=>{applyBacklogCol(x,'batch');if(g)x.goal=g});
+    S.ui.blRows=S.ui.blRows||{};S.ui.blRows.batch=1;save();render();toast('added to Batch backlog');
+    const n=app.querySelector(`[data-bladd="${g}"]`);if(n)n.focus()}));
   const cr=document.getElementById('colreset');if(cr)cr.onclick=()=>{delete S.ui.backlogOrder;save();render()};
   app.querySelectorAll('[data-addto]').forEach(b=>b.onclick=()=>{S.ui.composer=b.dataset.addto;save();render()});
 
@@ -4352,6 +4379,8 @@ function wire(){
       const idx=(phIdx<0?kids.length:kids.slice(0,phIdx).filter(el=>(el.classList.contains('card')||el.classList.contains('mini'))&&el.dataset.id!==id).length);
       dropPh();
       const to=zone.dataset.drop,bcol=zone.dataset.bcol;
+      if(zone.dataset.bsched&&!schedDate(item)){toast('give it a date to schedule it — open the card');render();return}
+      if('bgoal' in zone.dataset){if(zone.dataset.bgoal)item.goal=zone.dataset.bgoal;else delete item.goal}
       if(bcol){applyBacklogCol(item,bcol);clearFromPlan(item.mode,item.id)}
       else if(to){item[GKEY[item.mode]]=to;item.sorted=true;
         if(zone.dataset.bucket)setBucket(item,zone.dataset.bucket);

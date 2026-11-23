@@ -1129,11 +1129,10 @@ function hallSidebar(){ /* 2 · Dark ritual column on the left, dashboard on the
       ${L.map(r=>`<button class="dr ${r===next?'next':''}" ${ritAttr(r)}><span class="ic">${r.icon}</span><span><b>${r.name}</b><small class="${r.warn?'warn':''}">${r.line}</small></span>${r.n?`<em>${r.n}</em>`:''}</button>`).join('')}
       <div class="dk-foot">${S.phrase?`<div class="dk-phr" data-phrase="1">✨ ${esc(S.phrase)}</div>`:'<button class="link" data-phrase="1" style="color:#9aa">set the week’s one thing</button>'}</div></aside>
     <div class="h2-main"><div class="panel big">${prioPanel()}</div><div class="panel att">${attPanel(2)}</div><div class="panel ars">${areasPanel()}</div></div></div>`}
-function hallHero(){ /* 3 · One hero: the ritual you should do next */
-  const {L,next}=ritState(),others=L.filter(r=>r!==next);
-  const sub={round:'Dump, sort, decide. About 12 minutes.',clear:'One card at a time — where it lives, who does it.',move:'Time free today, then pick from the week.',ai:'Copy, send, mark sent. Watch the queue empty.',follow:'Nudge them or close it.'}[next.k];
-  return `<div class="hall h3"><div class="hero3"><button class="hb" ${ritAttr(next)}><span class="mono">Next ritual</span><span class="nm">${next.icon} ${next.name}</span><span class="sub">${sub}</span><span class="ln">${next.line}</span><span class="go">Start <kbd>⏎</kbd></span></button>
-      <div class="hs">${others.map(r=>`<button class="hsr ${r.need?'':'calm'}" ${ritAttr(r)}><span class="ic">${r.icon}</span><b>${r.name}</b><small class="${r.warn?'warn':''}">${r.line}</small></button>`).join('')}</div></div>
+function hallHero(){ /* 3 · The weekly round is always the big one; the four tiles never move — the one to do next is lit */
+  const {L,next}=ritState(),main=L[0],others=L.slice(1),isNext=r=>r===next;
+  return `<div class="hall h3"><div class="hero3"><button class="hb ${isNext(main)?'next':'later'}" ${ritAttr(main)}><span class="mono">${isNext(main)?'Up next':roundDone()?'This week’s round · done ✓':'This week’s round'}</span><span class="nm">${main.icon} ${main.name}</span><span class="sub">Dump, sort, decide. About 12 minutes.</span><span class="ln">${main.line}</span><span class="go">${isNext(main)?'Start <kbd>⏎</kbd>':roundDone()?'Open again':'Start'}</span></button>
+      <div class="hs">${others.map(r=>`<button class="hsr ${isNext(r)?'next':r.need?'':'calm'}" ${ritAttr(r)}>${isNext(r)?'<span class="upnext">Up next <kbd>⏎</kbd></span>':''}<span class="ic">${r.icon}</span><b>${r.name}</b><small class="${r.warn?'warn':''}">${r.line}</small></button>`).join('')}</div></div>
     <div class="h3-row"><div class="panel">${prioPanel({top:3})}</div><div class="panel">${attPanel(4)}</div><div class="panel">${areasPanel()}</div></div></div>`}
 
 /* ======================= TOWN MAP: the spread ×3 ======================= */
@@ -1524,7 +1523,7 @@ function mapBands(){const list=areasByNeed(),B=BUCKETS;
   const top=`<div class="spreadtop"><span class="mono">Rows</span><button class="tog on" data-ball="open" style="--bc:var(--ink)"><i></i>Open all</button><button class="tog" data-ball="close" style="--bc:var(--ink)"><i></i>Fold all</button>
     <span class="note">hover a folded row to peek · click its name to pin it open</span><button class="tog ${S.spreadShow.extras?'on':''}" data-stog="extras" style="--bc:var(--ink)"><i></i>Almanac & ref</button>
     <span class="grow"></span><span class="mono">Jump</span><select class="fld" data-jumpsel="1" style="padding:6px 10px;font-size:14px">${list.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select><span class="note">← →</span></div>`;
-  return top+`<div class="bandsWrap" id="spread"><div class="bands" style="grid-template-columns:170px repeat(${list.length},360px)">
+  return top+`<div class="bandsWrap" id="spread"><div class="bands" style="grid-template-columns:170px repeat(${list.length},minmax(320px,1fr));width:max(100%,calc(170px + ${list.length} * 320px))">
     <div class="bl corner"></div>${list.map(d=>`<div class="bhd" id="col-${d.id}">${colHead(d)}</div>`).join('')}
     ${B.map(b=>{const [c,bg]=BCOL[b.id],open=!!S.bandOpen[b.id],tot=list.reduce((n,d)=>n+inB(d.id,b.id).length,0);
       return `<button class="bl ${open?'':'collapsed'}" data-band="${b.id}" data-bandtoggle="${b.id}" style="--bc:${c};--bg:${bg}"><span><em class="chev">${open?'▾':'▸'}</em>${b.name}</span><small>${tot} · ${b.hint}</small></button>
