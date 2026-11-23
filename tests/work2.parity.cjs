@@ -3,7 +3,7 @@
 const path=require('path'),fs=require('fs'),http=require('http');
 let chromium;try{({chromium}=require('playwright'))}catch(e){({chromium}=require('/opt/node22/lib/node_modules/playwright'))}
 const ROOT=path.join(__dirname,'..');
-const T={'.html':'text/html','.js':'text/javascript','.png':'image/png','.svg':'image/svg+xml'};
+const T={'.css':'text/css','.html':'text/html','.js':'text/javascript','.png':'image/png','.svg':'image/svg+xml'};
 const srv=http.createServer((q,r)=>{const f=path.join(ROOT,q.url.split('?')[0]);if(!fs.existsSync(f)||fs.statSync(f).isDirectory()){r.writeHead(404);r.end();return}r.writeHead(200,{'content-type':T[path.extname(f)]||'x'});fs.createReadStream(f).pipe(r)});
 let pass=0,fail=0;const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m)}else{fail++;console.log('  ✗ '+m)}};
 (async()=>{await new Promise(r=>srv.listen(0,r));const B='http://localhost:'+srv.address().port;const b=await chromium.launch();const errs=[];
