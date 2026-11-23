@@ -1,0 +1,123 @@
+/* Work's Today, Backlog and Goals in the Paper look of the new Home (work2.js).
+   Only applies under the new top bar (body[data-w2strip]); ?classic=1 shows the classic screens unchanged.
+   Same markup and behaviour as before — this file changes how they look, nothing else. */
+body[data-w2strip]{--dark:#2E2A24;--dark-2:#3A352E;--darkhot:color-mix(in srgb,var(--hot) 30%,#2E2A24);--hotlite:color-mix(in srgb,var(--hot) 45%,#fff);
+  --rp:22px;--pshadow:0 1px 2px rgba(40,30,10,.05),0 12px 28px -18px rgba(40,30,10,.30);font-size:16.5px;padding-left:32px;padding-right:32px}
+body[data-w2strip] .wrap{max-width:1280px}
+body[data-w2strip] .foot{display:none}   /* backup, import, sync and the done list live in the ⋯ menu */
+
+/* ---- shared: page title, labels, buttons ---- */
+body[data-w2strip] .planhead{margin:6px 0 22px}
+body[data-w2strip] .planhead h2{font:400 46px/1.05 var(--serif);letter-spacing:-.025em}
+body[data-w2strip] .planhead span{font:400 15px var(--sans);letter-spacing:0;text-transform:none;color:var(--ink-3)}
+body[data-w2strip] .slotlabel,body[data-w2strip] .rest h3{font:600 12px var(--mono);letter-spacing:.08em;color:var(--ink-3)}
+body[data-w2strip] .btn,body[data-w2strip] .capopen,body[data-w2strip] .sortbtn{font:600 15px var(--sans);letter-spacing:0;text-transform:none;
+  padding:11px 18px;border-radius:12px;border:1px solid var(--line);background:var(--surface);box-shadow:none;min-height:0}
+body[data-w2strip] .btn:hover{border-color:var(--hot-line)}
+body[data-w2strip] .btn-hot,body[data-w2strip] .sortbtn{background:var(--hot);border-color:var(--hot);color:#fff;box-shadow:0 8px 18px -10px var(--hot)}
+body[data-w2strip] .btn-sm{padding:8px 13px;font-size:13.5px;border-radius:10px}
+body[data-w2strip] .capopen .lbl,body[data-w2strip] .capopen .num{font:600 13.5px var(--sans);letter-spacing:0;text-transform:none}
+body[data-w2strip] #app .nav{margin:18px 0 6px;gap:10px}
+body[data-w2strip] .daybar{border:0;margin:0 0 6px;padding:0}
+
+/* ---- Today = the desk: Now as the dark card, the queue as paper, the rest beside it ---- */
+body[data-w2strip] .tdesk{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start;margin-bottom:10px}
+body[data-w2strip] .tdmain>.slotlabel{margin-top:0}
+body[data-w2strip] .queue{gap:10px}
+body[data-w2strip] .qrow{border-radius:18px;border:1px solid var(--line);border-left:5px solid var(--cc,var(--line));box-shadow:var(--pshadow);padding:14px 16px 14px 10px}
+body[data-w2strip] .qt{font:400 20px/1.3 var(--serif);letter-spacing:-.01em}
+body[data-w2strip] .qrow.now{background:linear-gradient(135deg,var(--dark) 0%,var(--darkhot) 100%);color:#fff;border:0;border-radius:26px;
+  padding:30px 26px 26px 14px;min-height:190px;box-shadow:0 24px 44px -24px rgba(20,22,27,.75);overflow:hidden;position:relative}
+body[data-w2strip] .qrow.now::after{content:'';position:absolute;right:-60px;top:-90px;width:280px;height:280px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--hot) 55%,transparent),transparent 70%);opacity:.5;pointer-events:none}
+body[data-w2strip] .qrow.now .qn{color:var(--hotlite);align-self:flex-start;padding-top:10px}
+body[data-w2strip] .qrow.now .qt{font-size:clamp(30px,3vw,42px);line-height:1.08;letter-spacing:-.025em}
+body[data-w2strip] .qrow.now .qmeta,body[data-w2strip] .qrow.now .qmeta .tag{color:rgba(255,255,255,.72)}
+body[data-w2strip] .qrow.now .qk{color:var(--hotlite)}
+body[data-w2strip] .qrow.now .qmv{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);color:#fff}
+body[data-w2strip] .qrow.now .qmore .act{color:rgba(255,255,255,.75)}
+body[data-w2strip] .qrow.now .qmore .act:hover{background:rgba(255,255,255,.1);color:#fff}
+body[data-w2strip] .qrow.now .qdone{font-size:17px;padding:15px 26px;border-radius:999px;z-index:1}
+body[data-w2strip] .qrow.now .qacts{align-self:flex-end;z-index:1}
+body[data-w2strip] .qrow:not(.now) .qdone{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:none}
+body[data-w2strip] .qempty{border-radius:var(--rp);background:var(--surface);border:1px dashed var(--line)}
+/* the side column: small paper panels */
+body[data-w2strip] .tdside>*{background:var(--surface);border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow);padding:16px 18px;margin:0 0 14px}
+body[data-w2strip] .tdside>.slotlabel{background:none;border:0;box-shadow:none;padding:0;margin:0 0 8px}
+body[data-w2strip] .tdpp{display:block!important;font:500 16px/1.4 var(--sans);letter-spacing:0;text-transform:none;border-left:5px solid var(--green,#1E8E3E)!important}
+body[data-w2strip] .tdpp em{margin-top:8px}
+body[data-w2strip] .tdside .deep{border-top:0;border-left:5px solid var(--cc);padding:18px}
+body[data-w2strip] .tdside .deep-t{font-size:22px}
+body[data-w2strip] .tdside .deep .acts{gap:8px;flex-wrap:wrap}
+body[data-w2strip] .qroomline{display:flex;flex-wrap:wrap;gap:8px}
+body[data-w2strip] .qroomline .qroom-l{flex-basis:100%;margin-bottom:2px}
+body[data-w2strip] .qroom{border:1px dashed var(--line);background:var(--sunken);font:500 13.5px var(--sans);padding:7px 13px}
+body[data-w2strip] .qroom-n{font-size:13.5px}
+body[data-w2strip] .qsug{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+body[data-w2strip] .qsug .txt{font:400 18px/1.35 var(--serif)}
+/* the rest of the board: one panel per column */
+body[data-w2strip] .rest{border-top:0;margin-top:26px;padding-top:0}
+body[data-w2strip] .restgroup{background:var(--surface);border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow);padding:14px 16px}
+body[data-w2strip] .restgroup h4{font:600 15px var(--sans);letter-spacing:0;text-transform:none}
+body[data-w2strip] .qboard-empty{background:var(--surface);border:1px solid var(--line);border-radius:var(--rp);padding:14px 18px}
+
+/* ---- Backlog = the shelves: every column a paper panel, all in view ---- */
+body[data-w2strip] .cols{grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-columns:auto;overflow:visible;gap:16px}
+body[data-w2strip] .col{background:var(--surface);border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow);padding:16px 14px 10px;min-height:150px}
+body[data-w2strip] .col.over{box-shadow:0 0 0 2px var(--hot)}
+body[data-w2strip] .col-head{border-bottom:1px solid var(--line-soft);padding:0 6px 12px}
+body[data-w2strip] .col-name{font:400 22px var(--serif);letter-spacing:-.01em;text-transform:none;color:var(--ink)!important}
+body[data-w2strip] .col-n{font:400 26px var(--serif);color:var(--ink-3)}
+body[data-w2strip] .col .card{border-radius:14px;border:1px solid var(--line);border-left:5px solid var(--cc);box-shadow:none;padding:12px 14px}
+body[data-w2strip] .col .card-text{font-size:18px;font-weight:400}
+body[data-w2strip] .col-empty{font-size:14px}
+body[data-w2strip] .addbtn{font:500 14px var(--sans);letter-spacing:0;text-transform:none;padding:10px 12px}
+body[data-w2strip] .brgo{display:inline-flex;align-items:center;gap:12px;background:linear-gradient(135deg,var(--dark),var(--darkhot));border:0;color:#fff;
+  font:400 24px var(--serif);letter-spacing:-.01em;padding:18px 26px;border-radius:20px;box-shadow:0 18px 34px -20px rgba(20,22,27,.7);margin:4px 0 24px}
+
+/* ---- Goals = the map: the mission as the hero, horizons as columns of goal cards ---- */
+body[data-w2strip] .gheading{border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow)}
+body[data-w2strip] .gheading .seg-label,body[data-w2strip] .gbox .ht-label{font:600 12px var(--mono);letter-spacing:.08em;color:var(--ink-3)}
+body[data-w2strip] .gmission{background:linear-gradient(135deg,var(--dark) 0%,var(--darkhot) 100%);border:0;border-radius:26px;padding:30px 34px;
+  box-shadow:0 24px 44px -24px rgba(20,22,27,.75);position:relative;overflow:hidden}
+body[data-w2strip] .gmission::after{content:'';position:absolute;right:-60px;top:-90px;width:300px;height:300px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--hot) 55%,transparent),transparent 70%);opacity:.5;pointer-events:none}
+body[data-w2strip] .gmission .seg-label{color:var(--hotlite)}
+body[data-w2strip] .gmission textarea{color:#fff;font-size:clamp(26px,2.8vw,38px);position:relative;z-index:1}
+body[data-w2strip] .gmission textarea::placeholder{color:rgba(255,255,255,.5)}
+body[data-w2strip] .gmission .ghint,body[data-w2strip] .gmission .zlink{color:rgba(255,255,255,.7)}
+body[data-w2strip] .gbox{border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow)}
+body[data-w2strip] .gcheck{background:var(--dark);border:0;color:#fff;box-shadow:0 18px 34px -20px rgba(20,22,27,.7)}
+body[data-w2strip] .gcheck .ht-label{color:var(--hotlite)}
+body[data-w2strip] .gcheck .ht-meta{color:rgba(255,255,255,.65)}
+body[data-w2strip] .gbig{font-family:var(--serif);font-weight:400;letter-spacing:-.02em}
+body[data-w2strip] .gbox .ht-meta{font:400 14px var(--sans);letter-spacing:0}
+body[data-w2strip] .ghor{gap:18px}
+body[data-w2strip] .gcol>.slotlabel{margin-bottom:2px}
+body[data-w2strip] .gcard{border:1px solid var(--line);border-left:1px solid var(--line);border-top:5px solid var(--gc);border-radius:var(--rp);box-shadow:var(--pshadow);padding:16px 18px}
+body[data-w2strip] .gcard-t{font-size:23px;line-height:1.2}
+body[data-w2strip] .gcard-m{font:500 13px var(--sans);letter-spacing:0;text-transform:none}
+body[data-w2strip] .grulesrow{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:26px}
+body[data-w2strip] .grules{max-width:none;margin:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--rp);box-shadow:var(--pshadow);padding:18px 22px}
+body[data-w2strip] .grules .slotlabel{margin-top:0}
+
+/* ---- phone ---- */
+@media (max-width:760px){
+  body[data-w2strip]{padding-left:16px;padding-right:16px}
+  body[data-w2strip] .planhead h2{font-size:34px}
+  body[data-w2strip] .tdesk,body[data-w2strip] .grulesrow{grid-template-columns:1fr}
+  body[data-w2strip] .cols{grid-template-columns:1fr}
+  body[data-w2strip] .qrow.now{min-height:0;padding:22px 16px 18px 10px}
+  body[data-w2strip] .qrow.now .qt{font-size:28px}
+  body[data-w2strip] .gmission{padding:22px 20px}
+}
+@media (min-width:761px) and (max-width:1100px){body[data-w2strip] .cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* one toolbar line: the week pill on the left, Copy today → paper on the right */
+body[data-w2strip] #app .nav{justify-content:flex-start}
+body[data-w2strip] .daybar{margin-top:-52px;justify-content:flex-end;pointer-events:none}
+body[data-w2strip] .daybar>*{pointer-events:auto}
+body[data-w2strip] .qrow.now .noverb{background:rgba(255,210,63,.16);color:#FFD23F}
+@media (max-width:760px){body[data-w2strip] .daybar{margin-top:10px}}
+@media (max-width:760px){body[data-w2strip] .cols{margin:0;padding:0 0 24px;scroll-snap-type:none}}
+body[data-w2strip] .tdmain,body[data-w2strip] .tdside{min-width:0}
+@media (max-width:760px){body[data-w2strip] .tdesk,body[data-w2strip] .grulesrow{grid-template-columns:minmax(0,1fr)}}

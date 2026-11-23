@@ -725,7 +725,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const A=snap(PRETOWN_HOME_REF),B=snap(NEW);
     const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
     /* work today became a queue in this change — compared again once the live version has it */
-    for(const [n] of views){if(n==='work today'&&!A[n].includes('qrow'))continue;ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
+    for(const [n] of views){if(n==='work today'&&!A[n].includes('tdesk'))continue;   /* Today became the desk (queue + side column) — compared again once live */ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
     ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
     ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
     ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');

@@ -1191,21 +1191,24 @@ function viewToday(){
   <div class="planhead"><h2>Today</h2>
     <span>${caps.deep?'1 deep':'no deep'} · ${caps.batch} batch · ${caps.buffer} to AI · 2 spare</span></div>
 
-  ${pp?`<div class="db-chip flat" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
-    <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
-
-  ${fireCard(m)}
-
+  <div class="tdesk"><div class="tdmain">
   <div class="slotlabel">Up next — ${q.length}
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
   <div class="queue">
     ${q.length?q.map((x,n)=>queueRow(x,n,n===q.length-1)).join('')
       :`<div class="qempty">Nothing picked for today yet — the ritual does it in a minute, or pick from the board below.</div>`}
-  </div>
+  </div></div>
+  <aside class="tdside">
+  ${pp?`<div class="db-chip flat tdpp" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
+    <em><button class="act" data-tpdone="${pp.id}" style="padding:0;color:var(--green,#1E8E3E)">✓ mark done</button></em></div>`:''}
+
+  ${fireCard(m)}
+
   <div class="qroomline"><span class="qroom-l">Room</span>${room.join('')||'<span class="qroom-n">full — today is set</span>'}
     ${room.some(r=>r.includes('data-slotdrop'))?`<span class="qroom-n">${TOUCH?'· use Deep · Batch · AI · Spare on a task below':'· drag a task onto one'}</span>`:''}</div>
   ${sug?`<div class="suggest qsug"><span class="txt">Suggested deep: ${esc(sug.text)}</span>
     <button class="btn btn-hot btn-sm" data-usedeep="${sug.id}">Use this</button></div>`:''}
+  </aside></div>
 
   <div class="rest">
     <h3>Also on the board — ${rest.length}</h3>
@@ -2451,7 +2454,7 @@ function viewGoals(){
       <div class="ghint">${h.hint}</div>
       ${L.map(card).join('')}
       <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div>
-  <div class="grules">
+  <div class="grulesrow"><div class="grules">
     <div class="slotlabel">Keep straight — ${G.rules.length}</div>
     <div class="ghint">Ground rules for how you get there. Worth a read whenever you step back.</div>
     ${G.rules.map(r=>`<div class="grule"><span class="grule-t" data-gredit="${r.id}">${esc(r.text)}</span>
@@ -2462,7 +2465,7 @@ function viewGoals(){
     <div class="ghint">One shows on the focus clock at the end of an energy reset.</div>
     ${G.lines.map(l=>`<div class="grule"><span class="grule-t gline" data-gledit="${l.id}">${esc(l.text)}</span>
       <button class="act del" data-gldel="${l.id}" title="Remove">×</button></div>`).join('')}
-    <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div>
+    <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div></div>
   ${wins.length?`<div class="slotlabel">Wins — ${wins.length}</div>
     ${wins.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d" style="background:#1E8E3E;opacity:1"></span>
       <span class="t">${esc(x.title)}</span><span class="tag">${x.doneAt?tShort(x.doneAt):''}</span></div>`).join('')}`:''}
