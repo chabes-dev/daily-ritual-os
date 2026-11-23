@@ -725,7 +725,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const A=snap(PRETOWN_HOME_REF),B=snap(NEW);
     const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
     /* work today became a queue in this change — compared again once the live version has it */
-    for(const [n] of views){if(n==='work today'&&!A[n].includes('tdesk'))continue;   /* Today became the desk (queue + side column) — compared again once live */ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
+    for(const [n] of views){if(n==='work today'&&!A[n].includes('tdesk'))continue;
+      if(n==='work backlog'&&!A[n].includes('blmap'))continue;   /* Backlog became the goal map — compared again once live */   /* Today became the desk (queue + side column) — compared again once live */ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
     ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
     ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
     ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');
@@ -1430,7 +1431,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
       L.forEach((i,k)=>{i.sorted=true;i.lane='batch';setBucket(i,'backlog');i.created=Date.now()-(30-k)*864e5});
       L[2].lane='ideas';L[4].snoozeUntil=tAddPer(today(),-1,'days');L[5].snoozeUntil=tAddPer(today(),5,'days');L[6].due=tAddPer(today(),2,'days');
       const [b]=add('On the board','work');b.sorted=true;b.lane='batch';save();render()`);
-    ok(P.$('#brgo')&&P.$('#brgo').textContent.includes('Review one by one · 6')&&P.$$('.cols .col').length===6,'the columns stay; a button reviews the 6 that need a look (not the one snoozed to later)');
+    ok(P.$('#brgo')&&P.$('#brgo').textContent.includes('Review one by one · 6')&&P.$$('.blmap .blrow[data-blrow]').length===6,'the six rows stay; a button reviews the 6 that need a look (not the one snoozed to later)');
     P.click('#brgo');
     const title=()=>P.$('#brt').value;
     ok(title()==='Old idea'&&P.$('.tcount').textContent.includes('1 of 6')&&P.$('.brmeta').textContent.includes('back from snooze'),'first the snooze that came due');
@@ -1523,6 +1524,38 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.key('6');ok(P.g(`tCyc('cy1').nextDue`)===P.g(`tAddPer(today(),1,'years')`),'Done on an almanac task rolls the cycle to next year, like in the round');
     P.key('Backspace');ok(P.g(`tCyc('cy1').nextDue`)===P.g('today()')&&P.g(`S.town.items.find(i=>i.cycle==='cy1').state`)==='inbox','… and undo rolls it back');
     P.key('Escape');ok(P.g('TR')===null,'Esc stops any time');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  /* ===================================================================== */
+  section('32. work backlog map: rows = what it waits for, columns = the goal it moves');
+  {
+    const st={};const P=boot(NEW,st);
+    P.g(`const g1=gAdd('New portfolio online','now'),g2=gAdd('Creative lead role','long');window.G1=g1.id;window.G2=g2.id;
+      const m=add('Write the case study\\nRename the drive\\nAsk Rafa for the deck','work');
+      m.forEach(i=>{i.sorted=true;i.lane='batch';setBucket(i,'backlog')});m[0].goal=g1.id;m[2].due=tAddPer(today(),5,'days');
+      window.M=m.map(i=>i.id);S.ui.mode='work';S.ui.workView='backlog';save();render()`);
+    const heads=P.$$('.blhd b').map(b=>b.textContent);
+    ok(heads.join('|')==='No goal yet|New portfolio online|Creative lead role','columns: no goal first, then goals by horizon');
+    ok(P.$$('.blrow[data-blrow]').map(b=>b.dataset.blrow).join()==='sched,hold,deep,batch,ai,wish','rows: the same six, same order');
+    ok(P.$$('.blhd small')[2].textContent.includes('nothing lined up'),'a goal with nothing behind it says so');
+    const cell=(row,g)=>P.$(`.blcell[data-bgoal="${g}"]`+(row==='sched'?'[data-bsched]':`[data-bcol="${row}"]`));
+    ok(cell('batch',P.g('G1')).textContent.includes('Write the case study')&&cell('batch','').textContent.includes('Rename the drive'),'each card sits under its goal');
+    ok(cell('sched','').textContent.includes('Ask Rafa'),'a dated one sits in Scheduled');
+    ok(P.$('.blrow[data-blrow="hold"]').classList.contains('shut')&&!P.$('.blrow[data-blrow="batch"]').classList.contains('shut'),'empty rows start folded, full ones open');
+    const drop=(el,id)=>{const e=new P.w.Event('drop',{bubbles:true,cancelable:true});e.dataTransfer={getData:()=>id};el.dispatchEvent(e)};
+    const id1=P.g('M[1]');drop(cell('deep',P.g('G2')),id1);
+    ok(P.g(`byId('${id1}').goal`)===P.g('G2')&&P.g(`byId('${id1}').star`)===true,'drop in a cell: links the goal and sets why it waits');
+    drop(cell('batch',''),id1);
+    ok(!P.g(`byId('${id1}').goal`)&&!P.g(`byId('${id1}').star`),'drop under No goal yet: unlinks it');
+    const id2=P.g('M[2]');drop(cell('sched',P.g('G1')),id2);
+    ok(P.g(`byId('${id2}').goal`)===P.g('G1')&&P.g(`!!byId('${id2}').due`),'Scheduled row: only re-links the goal, keeps the date');
+    const id0=P.g('M[0]');drop(cell('sched',P.g('G1')),id0);
+    ok(P.g(`byId('${id0}').goal`)===P.g('G1')&&!P.g(`byId('${id0}').due`)&&P.g(`backlogCol(byId('${id0}'))`)==='batch','an undated card can’t be dropped into Scheduled');
+    P.click('.blrow[data-blrow="batch"]');ok(P.$('.blrow[data-blrow="batch"]').classList.contains('shut')&&P.$(`.blcell[data-bcol="batch"][data-bgoal=""] .blsum`),'click a row to fold it — counts stay');
+    P.click('[data-blall="1"]');ok(!P.$$('.blrow[data-blrow]').some(b=>b.classList.contains('shut')),'Open all rows');
+    const f=P.$(`[data-bladd="${P.g('G2')}"]`);f.value='Draft the leadership pitch';P.key('Enter',f);
+    ok(P.g(`S.items.find(i=>i.text==='Draft the leadership pitch').goal`)===P.g('G2')&&P.g(`backlogCol(S.items.find(i=>i.text==='Draft the leadership pitch'))`)==='batch','add under a goal: lands in Batch backlog, linked');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 

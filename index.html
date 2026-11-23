@@ -41,6 +41,40 @@ body[data-mode="personal"]{   /* Sand & Ink — warm sand, dark ink, olive */
   --hot:#5E6B35; --hot-2:#5E6B35; --hot-ink:#4A5527; --hot-soft:#E7EBD9; --hot-line:#B9C29A;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* ---- Work backlog map: rows = what it waits for, columns = the goal it moves ---- */
+.blintro{font-size:18px;color:var(--ink-2);margin-bottom:16px;max-width:80ch}
+.bltop{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.bltop .brgo{margin:0}
+.blkeys{margin-left:auto;font-size:14px;color:var(--ink-3)}
+.blwrap{--blrow:210px;--blcol:290px;overflow-x:auto;padding-bottom:30px;margin:0 -4px}
+.blmap{display:grid;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 1px 2px rgba(40,30,10,.05),0 12px 28px -18px rgba(40,30,10,.30);overflow:hidden}
+.blcorner,.blhd{background:var(--surface);border-bottom:1px solid var(--line)}
+.blcorner{position:sticky;left:0;z-index:3}
+.blhd{padding:18px 18px 14px;border-left:1px solid var(--line-soft);display:flex;flex-direction:column;gap:4px;min-width:0}
+.blhd .blhor{font:600 11.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--hot)}
+.blhd b{font:400 22px/1.2 var(--serif);letter-spacing:-.01em;color:var(--ink);overflow-wrap:anywhere}
+.blhd small{font-size:13.5px;color:var(--ink-3)}
+.blhd small em{font-style:normal;color:var(--hot)}
+.blhd.nogoal .blhor{color:var(--ink-3)}
+.blrow{position:sticky;left:0;z-index:2;font:inherit;text-align:left;cursor:pointer;display:block;width:100%;border:0;
+  background:var(--bg);border-left:5px solid var(--bc,transparent);border-bottom:1px solid var(--line-soft);box-shadow:1px 0 0 var(--line);padding:16px 14px;color:inherit}
+.blrow span{display:block;font:600 12.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--bc)}
+.blrow span em{font-style:normal;display:inline-block;width:16px}
+.blrow small{display:block;margin-top:4px;font-size:13px;color:var(--ink-3);line-height:1.35}
+.blrow.shut{padding:10px 14px}
+.blrow.shut small{display:none}
+.blrow.plain{cursor:default;border-left-color:transparent;background:var(--surface)}
+.blcell{background:color-mix(in srgb,var(--bc) 5%,var(--bg));border-left:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:8px;min-width:0;min-height:58px}
+.blcell.shut{min-height:0;padding:6px 14px;background:var(--bg)}
+.blcell.plain{background:var(--surface);min-height:0}
+.blcell.over{box-shadow:inset 0 0 0 2px var(--hot)}
+.blcell .card{margin:0 0 8px;background:var(--surface)}
+.blnone{display:block;padding:8px 10px;color:var(--ink-3);opacity:.45}
+.blsum{font:400 22px var(--serif);color:var(--bc)}
+.bladd{width:100%;border:1px dashed var(--line);background:transparent;border-radius:12px;padding:10px 12px;font:inherit;font-size:14.5px;color:var(--ink);outline:none}
+.bladd:focus{border-style:solid;border-color:var(--hot);background:var(--bg)}
+@media (max-width:760px){.blwrap{--blrow:118px;--blcol:250px}.blrow small{display:none}.bltop .blkeys{margin-left:0}}
+
 /* Work's Today, Backlog and Goals under the new top bar (work2.js "strip"): the bar replaces this header */
 body[data-w2strip]{padding-top:var(--w2h,150px)}
 body[data-w2strip]::before{display:none}

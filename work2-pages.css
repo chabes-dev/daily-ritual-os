@@ -3,7 +3,7 @@
    Same markup and behaviour as before — this file changes how they look, nothing else. */
 body[data-w2strip]{--dark:#2E2A24;--dark-2:#3A352E;--darkhot:color-mix(in srgb,var(--hot) 30%,#2E2A24);--hotlite:color-mix(in srgb,var(--hot) 45%,#fff);
   --rp:22px;--pshadow:0 1px 2px rgba(40,30,10,.05),0 12px 28px -18px rgba(40,30,10,.30);font-size:16.5px;padding-left:32px;padding-right:32px}
-body[data-w2strip] .wrap{max-width:1280px}
+body[data-w2strip] .wrap{max-width:none}   /* every page uses the whole width */
 body[data-w2strip] .foot{display:none}   /* backup, import, sync and the done list live in the ⋯ menu */
 
 /* ---- shared: page title, labels, buttons ---- */
@@ -121,3 +121,10 @@ body[data-w2strip] .qrow.now .noverb{background:rgba(255,210,63,.16);color:#FFD2
 @media (max-width:760px){body[data-w2strip] .cols{margin:0;padding:0 0 24px;scroll-snap-type:none}}
 body[data-w2strip] .tdmain,body[data-w2strip] .tdside{min-width:0}
 @media (max-width:760px){body[data-w2strip] .tdesk,body[data-w2strip] .grulesrow{grid-template-columns:minmax(0,1fr)}}
+
+/* full width: the board on Today fills the row; Goals' horizons get room */
+body[data-w2strip] .tdesk{grid-template-columns:minmax(0,1fr) 400px}
+body[data-w2strip] .blcell .card{border-radius:14px;border:1px solid var(--line);border-left:5px solid var(--cc);box-shadow:none;padding:12px 14px}
+body[data-w2strip] .blcell .card-text{font-size:17px;font-weight:400}
+@media (max-width:1100px){body[data-w2strip] .tdesk{grid-template-columns:minmax(0,1fr) 320px}}
+@media (max-width:760px){body[data-w2strip] .tdesk{grid-template-columns:minmax(0,1fr)}}

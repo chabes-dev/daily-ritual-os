@@ -42,3 +42,34 @@
   .hb{min-height:230px;padding:26px 24px 92px}.hb .nm{font-size:44px}
   .hsr{min-height:130px;padding:18px 20px}.hsr b{font-size:24px}
 }
+
+/* every page uses the whole width */
+.ctrl,.metrics,.chips-att,.focus,.ledger,.ib,.wtoday{max-width:none}
+
+/* Home: the tiles never move. The one to do next is lit in the accent colour with an "Up next ⏎" chip;
+   the rest stay dark; ones with nothing to do fade back. The big tile is always the main ritual. */
+.hsr{position:relative;background:var(--dark);transition:transform .12s,box-shadow .12s,background .12s}
+.hsr.reset{background:var(--dark)}
+.hsr.calm{background:var(--dark-3);opacity:1}
+.hsr.calm b,.hsr.calm small,.hsr.calm .ic{opacity:.62}
+.hsr.next{background:linear-gradient(135deg,var(--hot) 0%,color-mix(in srgb,var(--hot) 70%,var(--dark)) 100%);box-shadow:0 18px 36px -18px var(--hot),0 0 0 3px color-mix(in srgb,var(--hot) 30%,transparent)}
+.hsr.next small,.hsr.next .ic{opacity:.9}
+.hsr .upnext{position:absolute;top:18px;right:18px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.18);border-radius:999px;padding:6px 10px;display:flex;gap:7px;align-items:center}
+.hsr .upnext kbd{font:500 11px var(--mono);border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:0 5px}
+.hsr:hover{transform:translateY(-2px);box-shadow:0 16px 30px -18px rgba(20,22,27,.7)}
+.hsr.next:hover{box-shadow:0 22px 40px -18px var(--hot),0 0 0 3px color-mix(in srgb,var(--hot) 40%,transparent)}
+.hb.next{box-shadow:0 24px 44px -24px rgba(20,22,27,.75),0 0 0 3px color-mix(in srgb,var(--hot) 30%,transparent)}
+.hb.later{background:linear-gradient(135deg,var(--dark) 0%,var(--dark-2) 100%)}
+.hb.later::after{opacity:.18}
+.hb.later .mono,.hb.later .ln{color:rgba(255,255,255,.6)}
+.hb.later .go{background:transparent;border:1px solid rgba(255,255,255,.35)}
+.hb.later:hover .go{background:rgba(255,255,255,.1)}
+
+/* Home: every row in the three boxes below behaves the same — hover = a paper tint and a dark bar on the left.
+   Colour only ever means status (late, overdue, not checked), never "you can click this". */
+.wli,.ap-i,.arp-i,.pp-i{position:relative;background:transparent;border-radius:0;transition:background .12s;cursor:pointer;color:var(--ink)}
+.wli,.ap-i,.arp-i{padding-left:12px!important;padding-right:12px!important}
+.wli::before,.ap-i::before,.arp-i::before,.pp-i::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--ink);opacity:0;transition:opacity .12s}
+.wli:hover,.ap-i:hover,.arp-i:hover,.pp-i:hover{background:var(--sunken);color:var(--ink);border-radius:10px;border-bottom-color:transparent}
+.wli:hover::before,.ap-i:hover::before,.arp-i:hover::before,.pp-i:hover::before{opacity:1}
+.wdeep{transition:filter .12s}.wdeep:hover{filter:brightness(.97)}
