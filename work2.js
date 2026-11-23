@@ -4,7 +4,8 @@
    same goals, same rituals (startZen, startReset, startStepBack), same save → sync.
    New data is additive and underscore-prefixed: item._wait = {who,since,checkBack} on items in
    the Follow Up lane. Screen state lives in S.ui._w2 (never synced). Today, Backlog and Goals
-   keep app_1's screens. ?classic=1 turns this file off.
+   keep app_1's screens (every behaviour intact) under this file's top bar — the "strip": the bar
+   stays, app_1 draws below it with its own header hidden. ?classic=1 turns this file off.
    ====================================================================== */
 window.__W2REAL=()=>S;
 (function(){
@@ -760,8 +761,36 @@ kbd.k{font:600 11px var(--mono);border:1px solid var(--line);background:#fff;bor
 .menu2 .mv{font:500 11.5px var(--mono);color:var(--ink-3);padding:8px 12px 4px;border-top:1px solid var(--line-soft);margin-top:4px}
 .wsl.three{grid-template-columns:1fr 1fr 1fr}
 .wrow .who{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+/* bigger top bar and Home buttons (Nov 23): easier to read, quicker to hit */
+.top{padding:22px 32px 4px}.brand{font-size:30px}
+.nav{gap:8px;padding:12px 32px 16px}
+.tab{font:500 18px var(--sans);padding:11px 18px;border-radius:12px}
+.tab .n{font-size:13.5px;padding:2px 8px}
+.modesw{padding:4px}.modesw button{font-size:16.5px;padding:10px 20px}
+.cap{border-radius:14px}.cap input{font-size:16.5px;padding:13px 6px}
+.more2{width:48px;height:48px;font-size:20px;border-radius:14px}
+.t2app[data-strip]{height:auto;box-shadow:0 10px 24px -22px rgba(40,30,10,.35)}
+.t2app[data-strip] #stage,.t2app[data-strip] #rit{display:none}
+.hb{min-height:300px;padding:34px 38px}.hb .nm{font-size:64px}.hb .sub{font-size:18px}.hb .ln{font-size:16px}.hb .go{font-size:18px;padding:16px 28px}
+.hs{gap:14px}.hsr{min-height:143px;padding:22px 24px;gap:6px;border-radius:22px;justify-content:flex-end}
+.hsr .ic{font-size:20px}.hsr b{font-size:28px;line-height:1.1}.hsr small{font-size:15px}
+/* two rows: who/where on top, the tabs below at reading size */
+.nav{flex-wrap:wrap;row-gap:10px;border-bottom:0}.top{border-bottom:1px solid var(--line);padding-bottom:6px}
+.nav .modesw{order:0}.nav .cap{order:1;margin-left:auto;width:420px}.nav .more2{order:2}
+.nav .tabs{order:4;flex-basis:100%;display:flex;align-items:center;gap:8px}
+.top{flex-wrap:wrap;align-items:center;column-gap:14px;row-gap:12px;padding:20px 32px 14px}
+.nav{display:contents}.brand{order:-1}.nav .tab:first-of-type{margin-left:-6px}
 @media (max-width:760px){.top{flex-wrap:wrap}.nav{overflow-x:auto;flex-wrap:nowrap;width:100%;padding-bottom:4px}.nav .tab,.modesw{flex:none}.cap{order:9;width:100%!important;margin:6px 0 0}.hall{height:auto}.hero3,.h3-row{grid-template-columns:1fr!important}.hb .nm{font-size:38px}.wrow,.whead{grid-template-columns:1fr!important}.hb .go{position:static;align-self:flex-start;margin-top:16px}}
 @media (max-width:760px){#rit.open{grid-template-columns:1fr!important;grid-template-rows:auto 1fr}.r-rail{flex-direction:row!important;align-items:center;gap:12px;padding:12px 16px!important;border-right:0!important;border-bottom:1px solid var(--line)}.r-rail .ring,.r-rail .r-tally,.r-rail .r-steps,.r-rail .r-kind{display:none!important}.r-rail .r-title{font-size:22px;margin:0}.r-foot{margin:0 0 0 auto!important}.r-stage{overflow:auto;min-height:0}.r-inner{padding:22px 18px 40px!important}.r-name{font-size:40px!important}.r-tiles{grid-template-columns:1fr 1fr!important}}
+@media (max-width:760px){
+.top{padding:12px 16px 10px;column-gap:10px;row-gap:10px}.brand{font-size:24px;flex:1}
+.modesw button{font-size:14px;padding:8px 14px}
+.nav .cap{order:1;flex:1;width:auto!important;margin:0}.nav .cap input{font-size:16px;padding:10px 4px}
+.nav .more2{width:44px;height:44px;margin:0}
+.nav .tabs{overflow-x:auto;flex-wrap:nowrap;gap:4px;margin:0 -16px;padding:0 16px;scrollbar-width:none}
+.nav .tabs::-webkit-scrollbar{display:none}.nav .tab{flex:none;font-size:16px;padding:9px 13px}
+.hb{min-height:220px;padding:26px 24px}.hb .nm{font-size:42px}.hsr{min-height:118px;padding:16px 18px}.hsr b{font-size:22px}
+}
 </style><div class="t2app" data-skin="1" data-mode="work"><header class="top"><span class="brand">Daily Ritual</span><nav class="nav" id="nav"></nav></header><main id="stage"></main><div id="rit"></div><div id="toast"></div></div>`;
 const APP=ROOT.querySelector('.t2app'),$=id=>ROOT.getElementById(id);
 const UI=()=>{const u=R().ui;if(!u._w2||typeof u._w2!=='object')u._w2={page:'home'};return u._w2};
@@ -885,21 +914,23 @@ function aiAct(a){const r=UI().rit,i=aiQ()[0];if(!i||BUSY)return;const ta=$('rin
 function closeRit(){if(UI().rit){UI().rit.open=false;UI().rit=null}save();drawRit();render()}
 
 /* ---------- frame ---------- */
-function navHTML(){const od=waiting().filter(wLate).length,pg=UI().page;
+function navHTML(){const od=waiting().filter(wLate).length,pg=stripOn()?'':UI().page,wv=stripOn()?R().ui.workView:'';
   const t=(attr,l,on,n,red)=>`<button class="tab ${on?'on':''}" ${attr}>${l}${n!=null?`<span class="n ${red?'red':''}">${n}</span>`:''}</button>`;
   return `<div class="modesw"><button data-personal="1" title="Tab">Personal</button><button class="on">Work</button></div>
-    ${t('data-page="home"','Home',pg==='home')}${t('data-view="today"','Today')}${t('data-view="backlog"','Backlog')}${t('data-view="goals"','Goals')}<span class="navsep"></span>
-    ${t('data-go="ai"','AI round',false,buffer().length)}${t('data-page="waiting"','Waiting',pg==='waiting',waiting().length,od)}
+    <div class="tabs">${t('data-page="home"','Home',pg==='home')}${t('data-view="today"','Today',wv==='today')}${t('data-view="backlog"','Backlog',wv==='backlog',inBacklog('work').length||null)}${t('data-view="goals"','Goals',wv==='goals')}<span class="navsep"></span>
+    ${t('data-go="ai"','AI round',false,buffer().length)}${t('data-page="waiting"','Waiting',pg==='waiting',waiting().length,od)}</div>
     <label class="cap"><input id="cap" placeholder="Dump it → work inbox"><span>⏎</span></label><button class="more2" data-menu="1" title="Sync, backup, done list">⋯</button>`}
 function render(){
   migrateW2();
+  APP.toggleAttribute('data-strip',stripOn());
+  if(stripOn()){$('nav').innerHTML=navHTML();$('stage').innerHTML='';wire();return}
   if(!['home','waiting'].includes(UI().page))UI().page='home';
   $('nav').innerHTML=navHTML();
   const st=$('stage');st.innerHTML=UI().page==='waiting'?pageWaiting():home();st.className='w-'+UI().page;
   wire();drawRit()}
 function wire(){const on=(s,f)=>APP.querySelectorAll(s).forEach(b=>b.onclick=e=>f(b,e));
   on('[data-go]',b=>go(b.dataset.go));
-  on('[data-page]',b=>{UI().page=b.dataset.page;save();render()});
+  on('[data-page]',b=>{UI().page=b.dataset.page;R().ui.workView='home';save();window.render()});
   on('[data-view]',b=>{R().ui.workView=b.dataset.view;save();window.render()});
   on('[data-personal]',()=>{R().ui.mode='personal';save();window.render()});
   on('[data-open]',b=>{const i=byId(b.dataset.open);if(!i)return;R().ui.workView=i.bucket==='backlog'?'backlog':'today';save();window.render();setTimeout(()=>{try{openDetail(i.id)}catch(e){}},50)});
@@ -921,10 +952,15 @@ function menu(btn){let m=$('menu2');if(m){m.remove();return}
 
 /* ---------- hand-off with app_1 (and town2, which wraps render first) ---------- */
 const active=()=>R().ui.mode==='work'&&R().ui.workView==='home'&&!ZEN&&!TZ&&!BR;
+const stripOn=()=>R().ui.mode==='work'&&['today','backlog','goals'].includes(R().ui.workView);
 const appEl=document.getElementById('app'),prev=window.render;
 window.render=function(){
-  if(active()){appEl.style.display='none';const t2=document.getElementById('town2');if(t2)t2.style.display='none';host.style.display='block';document.body.dataset.mode='work';render()}
-  else{host.style.display='none';prev()}};
+  if(active()){delete document.body.dataset.w2strip;host.style.bottom='0';appEl.style.display='none';const t2=document.getElementById('town2');if(t2)t2.style.display='none';host.style.display='block';document.body.dataset.mode='work';render()}
+  else if(stripOn()){prev();host.style.bottom='auto';host.style.display='block';render();
+    document.body.dataset.w2strip='1';document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')}
+  else{delete document.body.dataset.w2strip;host.style.display='none';prev()}};
+/* the bar's height follows the window (it wraps on a phone) */
+window.addEventListener('resize',()=>{if(stripOn())document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')});
 const appSheetOpen=()=>['layer','mlayer','dplayer'].some(id=>{const e=document.getElementById(id);return e&&e.innerHTML});
 function keys(e,t){LAST_INPUT=Date.now();const typing=/INPUT|TEXTAREA|SELECT/.test(t.tagName||''),r=UI().rit,k=e.key.toLowerCase();
   if(r&&r.open){if(e.key==='Escape'||(e.key==='Enter'&&!typing)){e.preventDefault();closeRit();return}if(typing||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;

@@ -39,6 +39,11 @@ body[data-mode="personal"]{   /* Paper & Jewel — warm paper, ink, emerald (cla
   --hot:#0E8F64; --hot-2:#2FAE80; --hot-soft:#E3F3EB; --hot-line:#A9DCC5;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* Work's Today, Backlog and Goals under the new top bar (work2.js "strip"): the bar replaces this header */
+body[data-w2strip]{padding-top:var(--w2h,150px)}
+body[data-w2strip]::before{display:none}
+body[data-w2strip] #app .top,body[data-w2strip] #app .nav>.tab,body[data-w2strip] #app .nav>.spacer{display:none}
+body[data-w2strip] #app .nav{margin:22px 0 26px;justify-content:flex-end;background:none;border:none;box-shadow:none;padding:0;min-height:0}
 body{min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:19px;line-height:1.55;
   -webkit-font-smoothing:antialiased;padding:0 44px 130px;transition:background .4s}
 body::before{content:'';position:fixed;left:0;right:0;top:0;height:6px;background:var(--hot);z-index:400;transition:background .4s}
