@@ -765,7 +765,7 @@ kbd.k{font:600 11px var(--mono);border:1px solid var(--line);background:#fff;bor
 .menu2 .mv{font:500 11.5px var(--mono);color:var(--ink-3);padding:8px 12px 4px;border-top:1px solid var(--line-soft);margin-top:4px}
 @media (max-width:760px){.top{flex-wrap:wrap}.nav{overflow-x:auto;flex-wrap:nowrap;width:100%;padding-bottom:4px}.nav .tab{flex:none}.modesw{flex:none}.cap{order:9;width:100%!important;margin:6px 0 0}.hall{height:auto}.hero3,.h3-row{grid-template-columns:1fr!important}.hb .nm{font-size:38px}}
 @media (max-width:760px){#rit.open{grid-template-columns:1fr!important;grid-template-rows:auto 1fr}.r-rail{flex-direction:row!important;align-items:center;gap:12px;padding:12px 16px!important;border-right:0!important;border-bottom:1px solid var(--line)}.r-rail .ring,.r-rail .r-tally,.r-rail .r-steps,.r-rail .r-kind{display:none!important}.r-rail .r-title{font-size:22px;margin:0}.r-foot{margin:0 0 0 auto!important}.r-stage{overflow:auto;min-height:0}.r-inner{padding:22px 18px 40px!important}.r-name{font-size:40px!important}.r-tiles{grid-template-columns:1fr 1fr!important}}
-</style><div class="t2app" data-skin="1" data-mode="town"><header class="top"><span class="brand">Daily Ritual</span><nav class="nav" id="nav"></nav></header><main id="stage"></main><div id="rit"></div><div id="layer"></div><div id="toast"></div></div>`;
+</style><link rel="stylesheet" href="/frame2.css"><div class="t2app" data-skin="1" data-mode="town"><header class="top"><span class="brand">Daily Ritual</span><nav class="nav" id="nav"></nav></header><main id="stage"></main><div id="rit"></div><div id="layer"></div><div id="toast"></div></div>`;
 const APP=ROOT.querySelector('.t2app');
 const UI=()=>{const u=REAL().ui;if(!u._t2||typeof u._t2!=='object')u._t2={page:'hall',bandOpen:{now:1,delegated:1,queue:1},spreadShow:{now:1,delegated:1,queue:1,later:1,unscheduled:1,notprio:1}};return u._t2};
 const TOWNMAP={items:1,cycles:1,depts:1,lastRound:1,aiTemplate:1};
@@ -1605,9 +1605,10 @@ function pauseRit(){if(!S.rit)return;const k=S.rit.kind;S.rit.open=false;save();
   render();toast('paused — it picks up right here')}
 function navHTML(){
   const od=overdueW().length,t=(p,l,n,red,attr)=>`<button class="tab ${S.page===p?'on':''}" ${attr||`data-page="${p}"`}>${l}${n!=null?`<span class="n ${red?'red':''}">${n}</span>`:''}</button>`;
-  return `<div class="modesw"><button class="on">Personal</button><button data-gowork="1" title="Tab">Work</button></div>${t('hall','Town Hall')}${t('map','Town Map')}<span class="navsep"></span>
-    ${t('','To sort',poolDue().length,0,'data-rit="clear"')}${t('','AI queue',inState('ai').length,0,'data-rit="ai"')}${t('waiting','Waiting',inState('waiting').length,od)}
-    <label class="cap"><input id="cap" placeholder="On your mind? → queue"><span>⏎</span></label><button class="more2" data-menu="1" title="Sync, backup, done list">⋯</button>`}
+  return `<div class="modesw"><button data-gowork="1" title="Tab">Work</button><button class="on">Personal</button></div>
+    <label class="cap"><input id="cap" placeholder="On your mind? → queue"><span>⏎</span></label><button class="more2" data-menu="1" title="Sync, backup, done list">⋯</button>
+    <div class="tabs">${t('hall','Town Hall')}${t('map','Town Map')}<span class="navsep"></span>
+    ${t('','To sort',poolDue().length,0,'data-rit="clear"')}${t('','AI queue',inState('ai').length,0,'data-rit="ai"')}${t('waiting','Waiting',inState('waiting').length,od)}</div>`}
 function render(){
   APP.dataset.skin='1';APP.dataset.mode='town';
   ROOT.getElementById('nav').innerHTML=navHTML();
