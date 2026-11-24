@@ -943,8 +943,12 @@ window.render=function(){
   else if(stripOn()){prev();host.style.bottom='auto';host.style.display='block';render();
     document.body.dataset.w2strip='1';document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')}
   else{delete document.body.dataset.w2strip;host.style.display='none';prev()}};
-/* the bar's height follows the window (it wraps on a phone) */
-window.addEventListener('resize',()=>{if(stripOn())document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')});
+/* the page under the bar starts where the bar ends — re-measured whenever the bar changes size:
+   the window, a phone wrap, and the bar's stylesheet and fonts arriving after the first draw */
+const w2h=()=>{if(stripOn()&&host.style.display!=='none')document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')};
+window.addEventListener('resize',w2h);
+if(window.ResizeObserver)new ResizeObserver(w2h).observe(host);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(w2h);
 const appSheetOpen=()=>['layer','mlayer','dplayer'].some(id=>{const e=document.getElementById(id);return e&&e.innerHTML});
 function keys(e,t){LAST_INPUT=Date.now();const typing=/INPUT|TEXTAREA|SELECT/.test(t.tagName||''),r=UI().rit,k=e.key.toLowerCase();
   if(r&&r.open){if(e.key==='Escape'||(e.key==='Enter'&&!typing)){e.preventDefault();closeRit();return}if(typing||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;

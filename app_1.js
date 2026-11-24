@@ -1176,7 +1176,7 @@ function viewToday(){
   const q=queueOf(m);
   /* empty capacity, as small targets instead of empty cards */
   const open=(slot,n,label)=>n>0?`<span class="qroom" data-slotdrop="${slot}">${label}</span>`:'';
-  const room=[!caps.deep?'<span class="qroom-n">no deep today — not enough time</span>':open('deep',p.deep?0:1,'Deep'),
+  const room=[!caps.deep?'<span class="qroom-n">no deep today — not enough time</span>':open('deep',p.deep?0:1,'1 deep'),
     open('batch',caps.batch-p.batch.length,(caps.batch-p.batch.length)+' batch'),
     open('buffer',caps.buffer-p.buffer.length,(caps.buffer-p.buffer.length)+' to AI'),
     open('next',2-p.next.length,(2-p.next.length)+' spare')].filter(Boolean);
@@ -1348,7 +1348,7 @@ function mini(i){
   return `<div class="mini" draggable="true" data-id="${i.id}" data-open="${i.id}">
     <span class="d" style="background:${dotColor(i)}"></span>
     <span class="t">${esc(i.text)}</span>
-    ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
+    ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.c==='late'?l.t:'due '+l.t}</span>`:''}
     <span class="mq"><button class="act" data-done="${i.id}" title="Already done">✓</button><button class="act" data-mmore="${i.id}" title="More actions">⋯</button></span>
     <span class="floatbar"><button class="act" data-done="${i.id}" title="Already done">✓ Done</button>
       <button class="act" data-todeep="${i.id}">Deep</button>
@@ -2450,7 +2450,7 @@ function viewGoals(){
   <div class="planhead"><h2>Goals</h2><span>step back · where you’re going · is the route working</span></div>
   ${(()=>{const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
     return `<div class="gheading gmission"><div class="seg-label" style="margin:0 0 6px">This week’s mission · week of ${tShort(isoWeek())}</div>
-      <textarea id="gmission" rows="1" placeholder="Write it fresh. What are you going after this week — and why does it matter to you?">${esc(mw?mw.text:'')}</textarea>
+      <textarea id="gmission" rows="1" placeholder="What are you going after this week — and why?">${esc(mw?mw.text:'')}</textarea>
       ${!mw&&last?`<div class="ghint" style="margin:8px 0 0">Last week: ${esc(last.text)}</div>`:''}
       ${past.length?`<button class="zlink" id="gmhist" style="font-size:12px;margin-top:10px">Past missions — ${past.length} · ${GMHIST?'hide':'show'}</button>
         ${GMHIST?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}`:''}

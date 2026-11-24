@@ -1044,7 +1044,7 @@ function attention(){
     else if(stuckWhy(i))out.push({i,k:'stuck',w:'Stuck',t:i.title,why:stuckWhy(i)});
     else if(i.due&&daysTo(i.due)<=7&&i.stakes===3&&i.state!=='week')out.push({i,k:'sort',w:'Can’t undo',t:i.title,why:`due ${dueLabel(i.due).t} — not on your list`});
   });
-  S.cycles.filter(cycDue).forEach(c=>out.push({c,k:'quiet',w:'Coming up',t:c.title,why:`${dueLabel(c.nextDue).late?'overdue':'due '+dueLabel(c.nextDue).t} · ${cycEvery(c)} · ${(dept(c.dept)||{}).name}`}));
+  S.cycles.filter(cycDue).forEach(c=>out.push({c,k:dueLabel(c.nextDue).late?'late':'quiet',w:dueLabel(c.nextDue).late?'Late':'Coming up',t:c.title,why:`${dueLabel(c.nextDue).late?'overdue':'due '+dueLabel(c.nextDue).t} · ${cycEvery(c)} · ${(dept(c.dept)||{}).name}`}));
   return out.sort((a,b)=>({late:0,stuck:1,sort:2,quiet:3}[a.k])-({late:0,stuck:1,sort:2,quiet:3}[b.k]))}
 const priorities=()=>inState('week').sort((a,b)=>(isToday(b)-isToday(a))||order(a,b));
 function prioText(){const P=priorities();return (S.phrase?'✨ '+S.phrase+'\n\n':'')+'THIS WEEK\n'+(P.map(i=>'☐ '+i.title+(i.due?' ('+dueLabel(i.due).t+')':'')).join('\n')||'—')}

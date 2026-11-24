@@ -128,3 +128,5 @@ body[data-w2strip] .blcell .card{border-radius:14px;border:1px solid var(--line)
 body[data-w2strip] .blcell .card-text{font-size:17px;font-weight:400}
 @media (max-width:1100px){body[data-w2strip] .tdesk{grid-template-columns:minmax(0,1fr) 320px}}
 @media (max-width:760px){body[data-w2strip] .tdesk{grid-template-columns:minmax(0,1fr)}}
+/* room at the bottom so the floating Shortcuts button never covers the last row */
+body[data-w2strip]{padding-bottom:110px}

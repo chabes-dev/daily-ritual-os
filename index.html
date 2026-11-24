@@ -287,14 +287,15 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .restgroup h4 span{margin-left:auto;color:var(--ink-3);font-weight:400}
 .restgroup h4 em{font-style:normal;font-size:11px;letter-spacing:.08em;color:#9A6700;background:#FEF7E0;
   padding:3px 9px;border-radius:999px;margin-left:8px;font-weight:600}
-.mini{position:relative;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;opacity:.55;
+.mini{position:relative;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;opacity:1;color:var(--ink-2);
   transition:.15s;cursor:grab;font-size:17px}
 .mini:hover{opacity:1;background:var(--card);box-shadow:var(--shadow);z-index:10}
 .mini .d{width:9px;height:9px;border-radius:50%;flex:none}
 .mini .t{flex:1;min-width:0;font-family:var(--serif);font-weight:300;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini{flex-wrap:wrap}
-.mini .mq{display:flex;gap:2px;flex:none;opacity:0;transition:opacity .12s}
-.mini:hover .mq,.mini.open .mq{opacity:1}
+.mini .mq{display:none;gap:2px;flex:none}
+.mini:hover .mq,.mini.open .mq{display:flex}
+.mini:hover{color:var(--ink)}
 .mini .mq .act{font:600 16px var(--sans);letter-spacing:0;padding:4px 11px;border-radius:9px;color:var(--ink-2)}
 .mini .mq .act:hover{background:var(--sunken);color:var(--ink)}
 .mini.open .mq [data-mmore]{background:var(--sunken);color:var(--ink)}
@@ -700,7 +701,7 @@ body.dragging .dropbar{bottom:30px;pointer-events:auto}
     padding:0;margin-top:12px;justify-content:flex-start;max-width:none;width:auto;z-index:2}
   .act{padding:10px 12px}
   /* the rest-of-board rows open the item sheet on tap, which has every action */
-  .mini .mq{opacity:1}   /* touch: ✓ and ⋯ always there */
+  .mini .mq{display:flex}   /* touch: ✓ and ⋯ always there */
   .mini{opacity:.9}
 }
 /* ---------- town (personal) ---------- */
