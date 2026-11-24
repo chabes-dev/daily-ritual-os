@@ -19,6 +19,13 @@ let pass=0,fail=0;const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m)}else{fai
  /* a refresh on Backlog (or Today, Goals) comes back with the new bar, not the old header */
  await p.evaluate(()=>{S.ui.mode='work';S.ui.workView='backlog';save()});await p.reload();await p.waitForTimeout(600);
  ok(await p.evaluate(()=>document.body.hasAttribute('data-w2strip'))&&await p.locator('#app .top').isHidden(),'refresh on Backlog: new bar straight away, old header hidden');
+ /* the bar's stylesheet can arrive after the first draw: the page must still start below the bar */
+ await p.route('**/frame2.css',async r=>{await new Promise(z=>setTimeout(z,700));await r.continue()});
+ await p.evaluate(()=>{S.ui.workView='today';save()});await p.reload();await p.waitForTimeout(1600);
+ const gap=await p.evaluate(()=>{const bar=document.getElementById('work2').getBoundingClientRect().bottom;
+   const t=[...document.querySelectorAll('#app .daybar,#app .planhead')].filter(e=>e.offsetParent).map(e=>e.getBoundingClientRect().top);return Math.min(...t)-bar});
+ ok(gap>=0,'slow stylesheet: Today still starts below the bar (gap '+Math.round(gap)+'px)');
+ await p.unroute('**/frame2.css');
  await p.evaluate(()=>{S.ui.workView='home';save();window.render()});await p.waitForTimeout(200);
  const tiles=async()=>p.evaluate(()=>{const R=document.getElementById('work2').shadowRoot;
    return {order:[...R.querySelectorAll('.hb,.hsr')].map(b=>b.dataset.go).join(),lit:R.querySelectorAll('.hb.next,.hsr.next').length,chip:R.querySelectorAll('.upnext').length}});
