@@ -1349,6 +1349,7 @@ function mini(i){
     <span class="d" style="background:${dotColor(i)}"></span>
     <span class="t">${esc(i.text)}</span>
     ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.t}</span>`:''}
+    <span class="mq"><button class="act" data-done="${i.id}" title="Already done">✓</button><button class="act" data-mmore="${i.id}" title="More actions">⋯</button></span>
     <span class="floatbar"><button class="act" data-done="${i.id}" title="Already done">✓ Done</button>
       <button class="act" data-todeep="${i.id}">Deep</button>
       <button class="act" data-tobatch="${i.id}">Batch</button>
@@ -4313,6 +4314,9 @@ function wire(){
       save();render();toast('fresh day')});
 
   app.querySelectorAll('[data-done]').forEach(b=>b.onclick=e=>{e.stopPropagation();finish(b.dataset.done,b)});
+  /* board rows: ⋯ opens the row's actions underneath it, inside the card — nothing floats over other rows */
+  app.querySelectorAll('[data-mmore]').forEach(b=>b.onclick=e=>{e.stopPropagation();const r=b.closest('.mini');
+    app.querySelectorAll('.mini.open').forEach(x=>{if(x!==r)x.classList.remove('open')});r.classList.toggle('open')});
   app.querySelectorAll('[data-open]').forEach(el=>el.onclick=e=>{
     if(e.target.closest('.tick')||e.target.closest('.floatbar'))return;
     openDetail(el.dataset.open)});

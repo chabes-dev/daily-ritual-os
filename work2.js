@@ -956,6 +956,7 @@ window.addEventListener('keydown',e=>{if(!active()||appSheetOpen()||e.composedPa
 host.addEventListener('keydown',e=>{if(!active()||appSheetOpen())return;keys(e,e.composedPath()[0]||host);e.stopPropagation()});
 
 migrateW2();
-if(active())window.render();
+/* draw at load on Home and also on Today / Backlog / Goals (the bar), so a refresh never shows the old header */
+if(active()||stripOn())window.render();
 window.__W2={ROOT,render:()=>window.render(),UI};
 })();

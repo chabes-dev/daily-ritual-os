@@ -16,6 +16,10 @@ let pass=0,fail=0;const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m)}else{fai
    S.ui.workView='home';save();window.render()});
  const tab=async name=>{await p.locator('#work2 .tab',{hasText:name}).first().click();await p.waitForTimeout(250)};
  ok(await p.locator('#work2 .hb').count()===1,'Home: the new home');
+ /* a refresh on Backlog (or Today, Goals) comes back with the new bar, not the old header */
+ await p.evaluate(()=>{S.ui.mode='work';S.ui.workView='backlog';save()});await p.reload();await p.waitForTimeout(600);
+ ok(await p.evaluate(()=>document.body.hasAttribute('data-w2strip'))&&await p.locator('#app .top').isHidden(),'refresh on Backlog: new bar straight away, old header hidden');
+ await p.evaluate(()=>{S.ui.workView='home';save();window.render()});await p.waitForTimeout(200);
  const tiles=async()=>p.evaluate(()=>{const R=document.getElementById('work2').shadowRoot;
    return {order:[...R.querySelectorAll('.hb,.hsr')].map(b=>b.dataset.go).join(),lit:R.querySelectorAll('.hb.next,.hsr.next').length,chip:R.querySelectorAll('.upnext').length}});
  const t1=await tiles();ok(t1.order==='work,ai,follow,step,reset'&&t1.lit===1,'Home: the tiles sit in a fixed order, exactly one is lit as next ('+t1.order+')');
