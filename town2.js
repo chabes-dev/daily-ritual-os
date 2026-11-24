@@ -858,8 +858,11 @@ function move(i,s){
     months:()=>d.setMonth(d.getMonth()+c.n),years:()=>d.setFullYear(d.getFullYear()+c.n)})[c.unit]();c.nextDue=iso(d);c.itemId=null}
 }
 let UNDO=null;
-function snap(ids,msg){UNDO={msg,items:ids.map(id=>JSON.parse(JSON.stringify(byId(id)))),cycles:JSON.parse(JSON.stringify(S.cycles))}}
-function undo(){if(!UNDO)return;UNDO.items.forEach(o=>{const k=S.items.findIndex(i=>i.id===o.id);if(k>=0)S.items[k]=o;else S.items.push(o)});
+function snap(ids,msg){UNDO={msg,at:Date.now(),n:S.items.length,items:ids.map(id=>JSON.parse(JSON.stringify(byId(id)))),cycles:JSON.parse(JSON.stringify(S.cycles))}}
+function undo(){if(!UNDO)return;
+  /* a track that moved on planted its next task: undo takes that back out too */
+  const planted=S.items.slice(UNDO.n).filter(i=>i.cycle).map(i=>i.id);if(planted.length)S.items=S.items.filter(i=>!planted.includes(i.id));
+  UNDO.items.forEach(o=>{const k=S.items.findIndex(i=>i.id===o.id);if(k>=0)S.items[k]=o;else S.items.push(o)});
   S.cycles=UNDO.cycles;UNDO=null;save();render();toast('undone')}
 let TT;function toast(msg,withUndo){const t=ROOT.getElementById('toast');
   t.innerHTML=esc(msg)+(withUndo?' <button id="tund">Undo</button>':'');t.classList.add('in');
@@ -1017,8 +1020,10 @@ function stuckWhy(i){
 const isLate=i=>open(i)&&((i.due&&i.due<today())||late(i));
 function health(id){
   const L=inArea(id);
-  if(!L.length)return {k:'empty',t:'Nothing open'};
-  const lt=L.filter(isLate).length;if(lt)return {k:'late',t:lt===1?'Something late':lt+' things late'};
+  /* a track that's overdue or late counts as late, even with no task open yet */
+  const tl=S.cycles.filter(c=>c.dept===id&&!c.retired&&c.track&&!tCycItem(c)&&tTrack(c).k==='late').length;
+  if(!L.length&&!tl)return {k:'empty',t:'Nothing open'};
+  const lt=L.filter(isLate).length+tl;if(lt)return {k:'late',t:lt===1?'Something late':lt+' things late'};
   const sk=L.filter(stuckWhy).length;if(sk)return {k:'stuck',t:sk===1?'Something stuck':sk+' stuck'};
   const last=Math.max(...S.items.filter(i=>i.dept===id).map(i=>i.movedAt||i.created||0));
   const wk=Math.floor(daysSince(last)/7);if(wk>=3)return {k:'quiet',t:`Quiet for ${wk} weeks`};
@@ -1430,6 +1435,8 @@ function wire(root){
   on('[data-exp]',b=>{EXP[b.dataset.exp]=!EXP[b.dataset.exp];render()});
   on('[data-cyc]',b=>{const c=S.cycles.find(x=>x.id===b.dataset.cyc);S.page='map';S.mapArea=c.dept;save();render()});
   on('[data-cplant]',b=>{const c=S.cycles.find(x=>x.id===b.dataset.cplant),i=tCycPlant(c);tSet(i,'week');save();render();toast('on this week')});
+  on('[data-track]',b=>openTrack(b.dataset.track));
+  on('[data-trackadd]',b=>openTrack(null,b.dataset.trackadd));
   root.querySelectorAll('[data-ref]').forEach(t=>t.oninput=()=>{S.depts[t.dataset.ref].ref=t.value;save()});
   root.querySelectorAll('[data-add]').forEach(t=>t.onkeydown=e=>{if(e.key==='Enter'&&t.value.trim()){add(t.value.trim(),t.dataset.add,'inbox');render();toast('in the queue')}});
   on('[data-lrow]',(b,e)=>{if(e.target.closest('[data-lcell]'))return;const id=b.dataset.lrow;S.ledgerOpen[id]=S.ledgerOpen[id]==='all'?null:'all';save();render()});
@@ -1525,6 +1532,7 @@ function mapBands(){const list=areasByNeed(),B=BUCKETS;
     <span class="grow"></span><span class="mono">Jump</span><select class="fld" data-jumpsel="1" style="padding:6px 10px;font-size:14px">${list.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select><span class="note">← →</span></div>`;
   return top+`<div class="bandsWrap" id="spread"><div class="bands" style="grid-template-columns:170px repeat(${list.length},minmax(320px,1fr));width:max(100%,calc(170px + ${list.length} * 320px))">
     <div class="bl corner"></div>${list.map(d=>`<div class="bhd" id="col-${d.id}">${colHead(d)}</div>`).join('')}
+    ${statusRow(list)}
     ${B.map(b=>{const [c,bg]=BCOL[b.id],open=!!S.bandOpen[b.id],tot=list.reduce((n,d)=>n+inB(d.id,b.id).length,0);
       return `<button class="bl ${open?'':'collapsed'}" data-band="${b.id}" data-bandtoggle="${b.id}" style="--bc:${c};--bg:${bg}"><span><em class="chev">${open?'▾':'▸'}</em>${b.name}</span><small>${tot} · ${b.hint}</small></button>
       ${list.map(d=>{const L=inB(d.id,b.id);return `<div class="bc ${open?'':'collapsed'}" data-band="${b.id}" style="--bc:${c};--bg:${bg}">
@@ -1532,6 +1540,84 @@ function mapBands(){const list=areasByNeed(),B=BUCKETS;
     ${S.spreadShow.extras?`<div class="bl" style="--bc:var(--ink)"><span>Almanac · ref</span></div>${list.map(d=>`<div class="bc">${areaExtras(d.id)}</div>`).join('')}`:''}
     <div class="bl"></div>${list.map(d=>`<div class="bc plain"><input class="addin" data-add="${d.id}" placeholder="Add to ${esc(d.name)} — ⏎"></div>`).join('')}
   </div></div>`}
+/* ---------- Status: recurring things as a standing status, not tasks that vanish ----------
+   One line per track (who · what · where it stands). Green when all is clear; the stage otherwise. */
+const tracksOf=id=>S.cycles.filter(c=>c.dept===id&&!c.retired)
+  .sort((a,b)=>{const r=x=>({late:0,review:1,results:2,booked:3,due:4,ok:5})[tTrack(x).k];return r(a)-r(b)||(a.who||'').localeCompare(b.who||'')||(a.nextDue<b.nextDue?-1:1)});
+function trackLine(c){const st=tTrack(c),info=TSTAGE_INFO[st.k];
+  return `<button class="trk st-${st.k}" data-track="${c.id}" style="--tc:${info.c}"><span class="tp"></span>
+    <span class="tt">${c.who?`<em>${esc(c.who)}</em>`:''}${esc(c.title)}</span><span class="ts">${esc(st.t)}</span></button>`}
+function statusRow(list){
+  const all=list.reduce((n,d)=>n+tracksOf(d.id).length,0),ok=list.reduce((n,d)=>n+tracksOf(d.id).filter(c=>tTrack(c).k==='ok').length,0);
+  return `<div class="bl status" style="--bc:var(--ink)"><span>Status</span><small>${all?ok+' of '+all+' all clear':'recurring things'}</small></div>
+    ${list.map(d=>{const T=tracksOf(d.id);return `<div class="bc status">${T.map(trackLine).join('')}
+      <button class="trkadd" data-trackadd="${d.id}">+ ${d.id==='health'?'health track':'recurring'}</button></div>`}).join('')}`}
+/* the sheet for one track: where it stands, the one thing to do next, and how it repeats */
+const TRACK_STEPS=[['due','Book'],['booked','Go'],['results','Results'],['review','Look'],['ok','All clear']];
+function openTrack(id,dept){LAYER={k:'track',id,dept};drawTrack()}
+function drawTrack(){
+  const c=LAYER.id?S.cycles.find(x=>x.id===LAYER.id):null,isNew=!c;
+  const f=LAYER.f=LAYER.f||(c?{title:c.title,who:c.who||'',n:c.n,unit:c.unit,results:c.results!==false,last:c.lastDone||'',next:c.nextDue}
+    :{title:'',who:'',n:1,unit:'years',results:LAYER.dept==='health',last:'',next:today()});
+  const whos=[...new Set(S.cycles.map(x=>(x.who||'').trim()).filter(Boolean))].sort();
+  const st=c?tTrack(c):null,stage=c?(c.stage||(st.k==='ok'?'ok':'due')):null,it=c?tCycItem(c):null,a=(c&&c.appt)||{};
+  const steps=TRACK_STEPS.filter(s=>f.results||(s[0]!=='results'&&s[0]!=='review'));
+  const k=steps.findIndex(s=>s[0]===stage);
+  const plain=c&&!c.track;
+  const act=!c?'':plain?(stage==='ok'?`<div class="tkact"><div class="mono">All clear</div><div class="note">Nothing to do until ${tTrackWhen(c.nextDue)}.</div></div>`
+      :`<div class="tkact"><div class="mono">Due</div><div class="row2"><button class="btn hot" data-tk="did">Did it ✓</button>${it?'':'<button class="btn" data-tk="plant">Put it on this week</button>'}</div></div>`)
+    :stage==='due'?`<div class="tkact"><div class="mono">Booked it?</div>
+        <div class="row2"><input class="fld" id="tkD" type="date" value="${a.date||''}"><input class="fld" id="tkT" placeholder="time" value="${esc(a.time||'')}" style="width:96px">
+        <input class="fld" id="tkW" placeholder="where — clinic, lab" value="${esc(a.where||'')}" style="flex:1;min-width:150px"></div>
+        <div class="row2" style="margin-top:12px"><button class="btn hot" data-tk="book">Booked ✓</button>${it?'':'<button class="btn" data-tk="plant">Put “book it” on this week</button>'}</div></div>`
+    :stage==='booked'?`<div class="tkact"><div class="mono">The appointment</div>
+        <div class="row2"><input class="fld" id="tkD" type="date" value="${a.date||''}"><input class="fld" id="tkT" placeholder="time" value="${esc(a.time||'')}" style="width:96px">
+        <input class="fld" id="tkW" placeholder="where" value="${esc(a.where||'')}" style="flex:1;min-width:150px"><button class="btn sm" data-tk="save">Save</button></div>
+        <div class="row2" style="margin-top:12px"><button class="btn hot" data-tk="next">Went ✓${f.results?' — now wait for results':''}</button></div></div>`
+    :stage==='results'?`<div class="tkact"><div class="mono">Waiting for the results</div>
+        <div class="note">It sits in Waiting with the lab; you’ll be nudged to chase it ${it&&it.wait&&it.wait.checkBack?tDay(it.wait.checkBack):'in a week'}.</div>
+        <div class="row2" style="margin-top:12px"><button class="btn hot" data-tk="next">Results are in ✓</button></div></div>`
+    :stage==='review'?`<div class="tkact"><div class="mono">Look at the results</div>
+        <div class="row2" style="margin-top:6px"><button class="btn hot" data-tk="next">All clear ✓</button><button class="btn" data-tk="follow">Needs a doctor follow-up</button></div></div>`
+    :`<div class="tkact"><div class="mono">All clear</div><div class="note">Nothing to do until ${tTrackWhen(c.nextDue)}. It comes back ${c.lead} days before.</div>
+        <div class="row2" style="margin-top:12px"><button class="btn" data-tk="early">Book it early</button></div></div>`;
+  sheet(`<div class="mono" style="color:var(--ink-3)">${isNew?'New '+(LAYER.dept==='health'?'health track':'recurring thing'):'Track'}</div>
+    ${isNew?`<input class="fld" id="tkName" placeholder="Blood work, dermatologist, dentist…" value="${esc(f.title)}" style="width:100%;font-size:20px;margin:8px 0 4px">`
+      :`<h2 class="tkh">${c.who?`<em>${esc(c.who)}</em> `:''}${esc(c.title)}</h2><div class="tkst" style="--tc:${TSTAGE_INFO[st.k].c}"><span class="tp"></span>${esc(st.t)}</div>`}
+    ${c&&!plain?`<div class="tksteps">${steps.map((s,j)=>`<span class="${j<k?'done':j===k?'now':''}">${s[1]}</span>`).join('<i></i>')}</div>`:''}${act}
+    <details class="tkset" ${isNew?'open':''}><summary class="mono">Who · how often · results</summary>
+      <div class="row2"><span class="note" style="width:70px">Who</span>${whos.map(w=>`<button class="chip ${f.who===w?'on':''}" data-tkwho="${esc(w)}">${esc(w)}</button>`).join('')}
+        <input class="fld" id="tkWho" placeholder="${whos.length?'or someone else':'Me, Lila…'}" value="${whos.includes(f.who)?'':esc(f.who)}" style="width:150px"></div>
+      <div class="row2"><span class="note" style="width:70px">Every</span><input class="fld" id="tkN" type="number" min="1" max="99" value="${f.n}" style="width:64px">
+        ${['months','years'].map(u=>`<button class="chip ${f.unit===u?'on':''}" data-tku="${u}">${u}</button>`).join('')}</div>
+      ${isNew?`<div class="row2"><span class="note" style="width:70px">Last done</span><input class="fld" id="tkLast" type="date" value="${f.last}"><span class="note">leave empty if you’re not sure — it’ll be due now</span></div>`:''}
+      ${(c?c.track:LAYER.dept==='health')?`<div class="row2"><span class="note" style="width:70px">Results</span><button class="chip ${f.results?'on':''}" data-tkres="1">Has results to wait for</button><button class="chip ${!f.results?'on':''}" data-tkres="0">No results (dentist…)</button></div>`:''}
+      <div class="row2" style="margin-top:14px">${c?`<button class="link" data-tk="retire">retire</button>`:''}<span class="grow"></span><button class="btn ${isNew?'hot':''}" data-tk="saveset">${isNew?'Add track':'Save'}</button></div>
+    </details>`);
+  const Ly=ROOT.getElementById('layer'),q=x=>Ly.querySelector(x),v=x=>q(x)?q(x).value:'';
+  const keep=()=>{if(q('#tkName'))f.title=v('#tkName');if(q('#tkN'))f.n=Math.max(1,+v('#tkN')||1);if(q('#tkWho')&&v('#tkWho').trim())f.who=v('#tkWho').trim();if(q('#tkLast'))f.last=v('#tkLast')};
+  const appt=()=>{c.appt={date:v('#tkD')||null,time:v('#tkT').trim(),where:v('#tkW').trim()}};
+  Ly.querySelectorAll('[data-tkwho]').forEach(b=>b.onclick=()=>{keep();f.who=f.who===b.dataset.tkwho?'':b.dataset.tkwho;drawTrack()});
+  Ly.querySelectorAll('[data-tku]').forEach(b=>b.onclick=()=>{keep();f.unit=b.dataset.tku;drawTrack()});
+  Ly.querySelectorAll('[data-tkres]').forEach(b=>b.onclick=()=>{keep();f.results=b.dataset.tkres==='1';drawTrack()});
+  Ly.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{const k2=b.dataset.tk;keep();
+    if(k2==='saveset'){if(!f.title.trim()){toast('give it a name');return}
+      if(isNew){const nc={id:nid(),title:f.title.trim(),who:f.who,type:'interval',n:f.n,unit:f.unit,lead:30,lastDone:f.last||null,
+          nextDue:f.last?tAddPer(f.last,f.n,f.unit):today(),on:null,notes:'',dept:LAYER.dept,itemId:null,retired:false,track:LAYER.dept==='health',results:f.results,stage:null};
+        S.cycles.push(nc);save();LAYER={k:'track',id:nc.id};drawTrack();render();toast('track added');return}
+      c.who=f.who;c.n=f.n;c.unit=f.unit;c.results=f.results;save();LAYER.f=null;drawTrack();render();toast('saved');return}
+    if(k2==='retire'){c.retired=true;const i=tCycItem(c);if(i){i.cycle=null;c.itemId=null}save();closeLayer();toast('retired');return}
+    snap(it?[it.id]:[]);
+    if(k2==='plant'){tCycPlant(c);tSet(tCycItem(c),'week')}
+    else if(k2==='did'){const i=tCycItem(c)||tCycPlant(c);tSet(i,'done')}
+    else if(k2==='early'){c.nextDue=today();tCycPlant(c);tSet(tCycItem(c),'week')}
+    else if(k2==='book'){if(!v('#tkD')){toast('pick the day first');return}const i=tCycItem(c)||tCycPlant(c);appt();tSet(i,'done')}
+    else if(k2==='save'){appt();const i=tCycItem(c);if(i&&c.appt.date)i.due=c.appt.date}
+    else if(k2==='next'){if(q('#tkD'))appt();tSet(it,'done')}
+    else if(k2==='follow'){add('Doctor follow-up: '+tCycName(c),c.dept,'week');tSet(it,'done')}
+    save();LAYER.f=null;drawTrack();render();
+    const st2=tTrack(c);toast(st2.k==='ok'?'all clear — next '+tTrackWhen(c.nextDue):TSTAGE_INFO[st2.k].name,true)});
+}
 let PEEKT={};
 function wireBands(root){
   root.querySelectorAll('[data-bandtoggle]').forEach(b=>b.onclick=()=>{const k=b.dataset.bandtoggle;S.bandOpen[k]=!S.bandOpen[k];save();render()});

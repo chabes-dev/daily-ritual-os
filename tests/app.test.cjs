@@ -299,7 +299,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const st={};P=boot(NEW,st);
     P.g(`window.D=n=>tAddPer(today(),n,'days');S.ui.mode='personal';S.ui.personalView='town';
       window.mk=(o)=>{const c=Object.assign({id:nid(),title:'Cycle',who:'',type:'interval',n:6,unit:'months',lead:30,lastDone:null,
-        nextDue:D(0),on:null,notes:'',dept:'health',itemId:null,retired:false,created:Date.now()},o);S.town.cycles.push(c);save();return c};
+        nextDue:D(0),on:null,notes:'',dept:'health',itemId:null,retired:false,track:false,created:Date.now()},o);S.town.cycles.push(c);save();return c};   /* plain cycles; tracks have their own section */
       mk({id:'den',title:'Dentist',who:'Léo',nextDue:D(12),notes:'Dr. Paula'});
       mk({id:'vac',title:'Vaccines',who:'Luna',type:'fixed',n:1,unit:'years',on:D(5),nextDue:D(5),dept:'family'});
       mk({id:'tax',title:'Taxes',type:'fixed',n:1,unit:'years',on:D(-3),nextDue:D(-3),dept:'treasury'});
@@ -1556,6 +1556,45 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.click('[data-blall="1"]');ok(!P.$$('.blrow[data-blrow]').some(b=>b.classList.contains('shut')),'Open all rows');
     const f=P.$(`[data-bladd="${P.g('G2')}"]`);f.value='Draft the leadership pitch';P.key('Enter',f);
     ok(P.g(`S.items.find(i=>i.text==='Draft the leadership pitch').goal`)===P.g('G2')&&P.g(`backlogCol(S.items.find(i=>i.text==='Draft the leadership pitch'))`)==='batch','add under a goal: lands in Batch backlog, linked');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  /* ===================================================================== */
+  section('33. health tracks: a status that walks book → go → results → look → all clear');
+  {
+    const st={};let P=boot(NEW,st);
+    P.g(`S.town.cycles.push({id:'bw',title:'Blood work',who:'Me',type:'interval',n:1,unit:'years',lead:30,lastDone:null,nextDue:today(),on:null,notes:'',dept:'health',itemId:null,retired:false},
+      {id:'dn',title:'Dentist',who:'Me',type:'interval',n:6,unit:'months',lead:30,lastDone:null,nextDue:tAddPer(today(),3,'months'),on:null,notes:'',dept:'house',itemId:null,retired:false});save()`);
+    P.close();P=boot(NEW,st);   /* reload: the migration marks health cycles as tracks */
+    ok(P.g(`tCyc('bw').track`)===true&&P.g(`tCyc('dn').track`)===false&&P.g(`tCyc('bw').results`)===true,'health cycles become tracks (results on by default); other areas stay plain');
+    ok(P.g(`tTrack(tCyc('bw')).k`)==='due','due now → “book it”');
+    P.g(`tCycPlant(tCyc('bw'))`);const it=()=>P.g(`tCycItem(tCyc('bw'))&&tCycItem(tCyc('bw')).title`);
+    ok(it()==='Book: Blood work — Me','planting makes the “Book:” task');
+    P.g(`tCyc('bw').appt={date:tAddPer(today(),5,'days'),time:'8:00',where:'Lab'};tSet(tCycItem(tCyc('bw')),'done')`);
+    ok(P.g(`tCyc('bw').stage`)==='booked'&&it()==='Go: Blood work — Me'&&P.g(`tCycItem(tCyc('bw')).due`)===P.g(`tAddPer(today(),5,'days')`),'booked → a “Go:” task due on the appointment day');
+    ok(P.g(`tTrack(tCyc('bw')).t`).includes('8:00')&&P.g(`tTrack(tCyc('bw')).k`)==='booked','status shows the appointment');
+    const goId=P.g(`tCycItem(tCyc('bw')).id`);
+    P.g(`tSet(tCycItem(tCyc('bw')),'done')`);
+    ok(P.g(`tCyc('bw').stage`)==='results'&&P.g(`tCycItem(tCyc('bw')).state`)==='waiting'&&P.g(`tCycItem(tCyc('bw')).wait.who`)==='lab'
+      &&P.g(`tCycItem(tCyc('bw')).wait.checkBack`)===P.g(`tAddPer(today(),7,'days')`),'went → waiting on the lab, check back in a week');
+    P.g(`tSet(tById('${goId}'),'week')`);
+    ok(P.g(`tCyc('bw').stage`)==='booked'&&P.g(`tCycItem(tCyc('bw')).id`)===goId&&P.g(`S.town.items.filter(i=>i.cycle==='bw'&&tOpen(i)).length`)===1,'reopening “Go” takes the results task back out');
+    P.g(`tSet(tById('${goId}'),'done')`);P.g(`tSet(tCycItem(tCyc('bw')),'done')`);
+    ok(P.g(`tCyc('bw').stage`)==='review'&&it()==='Look at the results: Blood work — Me','results in → “look at the results”');
+    P.g(`tCycItem(tCyc('bw')).wait={who:'lab',since:today(),checkBack:tAddPer(today(),-1,'days')}`);
+    P.g(`tSet(tCycItem(tCyc('bw')),'done')`);
+    ok(P.g(`tCyc('bw').stage`)===null&&P.g(`tCycItem(tCyc('bw'))`)===null&&P.g(`tTrack(tCyc('bw')).k`)==='ok'
+      &&P.g(`tCyc('bw').nextDue`)===P.g(`tAddPer(today(),1,'years')`),'looked → all clear, green, next one in a year');
+    /* no results: the dentist goes straight from Went to all clear */
+    P.g(`S.town.cycles.push({id:'dt',title:'Dentist',who:'Lila',type:'interval',n:6,unit:'months',lead:30,lastDone:null,nextDue:today(),on:null,notes:'',dept:'health',itemId:null,retired:false,track:true,results:false});
+      tCycPlant(tCyc('dt'));tCyc('dt').appt={date:today(),time:'',where:''};tSet(tCycItem(tCyc('dt')),'done');tSet(tCycItem(tCyc('dt')),'done')`);
+    ok(P.g(`tTrack(tCyc('dt')).k`)==='ok'&&P.g(`tCyc('dt').nextDue`)===P.g(`tAddPer(today(),6,'months')`),'no results: Went → all clear');
+    /* a booked day that passed asks if you went; late results say chase them */
+    P.g(`tCyc('dt').nextDue=today();tCycPlant(tCyc('dt'));tCyc('dt').appt={date:tAddPer(today(),-2,'days')};tSet(tCycItem(tCyc('dt')),'done')`);
+    ok(P.g(`tTrack(tCyc('dt')).k`)==='late'&&P.g(`tTrack(tCyc('dt')).t`).includes('went?'),'a booked day in the past: late — went?');
+    /* dropping a track task skips the round like any cycle, and resets the stage */
+    P.g(`tSet(tCycItem(tCyc('dt')),'dropped')`);
+    ok(P.g(`tCyc('dt').stage`)===null&&P.g(`tCycItem(tCyc('dt'))`)===null,'dropped: back to waiting for the next date');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
