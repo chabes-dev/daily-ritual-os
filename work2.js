@@ -815,6 +815,18 @@ function go(k){if(k==='work'){startZen();window.render()}else if(k==='reset'){st
   else if(k==='follow'){UI().page='waiting';render()}else if(k==='ai')startAI()}
 
 /* ---------- home ---------- */
+/* Home's first box: this week's board, by lane — what you picked for today is marked */
+function weekPanel(){
+  const pl=P(),tod=new Set([pl.deep,...pl.batch,...pl.next,...pl.buffer].filter(Boolean));
+  const L=onBoard('work').filter(i=>!PARKED.work.includes(i.lane));
+  const order=['urgent','important','batch','followup'];
+  const G=order.map(id=>({l:LANES.find(x=>x.id===id),L:L.filter(i=>i.lane===id).sort((a,b)=>(tod.has(b.id)-tod.has(a.id))||((a.ord||0)-(b.ord||0)))})).filter(g=>g.L.length);
+  const other=L.filter(i=>!order.includes(i.lane));if(other.length)G.push({l:{name:'Unsorted',color:'#B8BCC6'},L:other});
+  return `<div class="pp"><div class="pp-h"><span class="mono">This week’s plan</span><span class="pp-n">${L.length}</span><span class="grow"></span>${tod.size?'<button class="btn sm" data-copy="1">⧉ Copy today</button>':''}</div>
+    ${G.length?`<div class="wkp">${G.map(g=>`<div class="wkg"><div class="wkl"><span class="dot" style="--c:${g.l.color}"></span>${g.l.name}<span>${g.L.length}</span></div>
+      ${g.L.map(i=>`<button class="wli" data-open="${i.id}">${esc(i.text)}${tod.has(i.id)?' <b class="tod">today</b>':''}${i.due&&i.due<today()?' <b class="red">late</b>':''}</button>`).join('')}</div>`).join('')}</div>`
+      :`<div class="note" style="margin-top:10px">Nothing on the board this week. The Work ritual picks it in a few minutes.</div>`}
+    <button class="link" data-view="today" style="margin-top:12px">open Today →</button></div>`}
 function planPanel(){
   if(!ritualDone()&&!UI().peek)return `<div class="pp-empty"><div class="mono">Today’s plan</div><div class="big serif">Today’s plan appears<br>after the Work ritual.</div>
     <div class="note">Music on, dump, sort, pick — then the day lands here, ready to copy.</div>
@@ -833,7 +845,7 @@ function goalsPanel(){const G=gActive();
 function home(){const {L,next}=ritState(),main=L[0],others=L.slice(1),isNext=r=>r===next;
   return `<div class="hall h3"><div class="hero3"><button class="hb ${isNext(main)?'next':'later'}" data-go="${main.k}"><span class="mono">${isNext(main)?'Up next':ritualDone()?'Today’s ritual · done ✓':'Today’s ritual'}</span><span class="nm">${main.icon} ${main.name}</span><span class="sub">Music, dump, sort, pick. The whole day in about 10 minutes.</span><span class="ln">${main.line}</span><span class="go">${isNext(main)?'Start <kbd>⏎</kbd>':ritualDone()?'Open again':'Start'}</span></button>
       <div class="hs">${others.map(r=>`<button class="hsr ${isNext(r)?'next':r.need?'':'calm'}" data-go="${r.k}">${isNext(r)?'<span class="upnext">Up next <kbd>⏎</kbd></span>':''}<span class="ic">${r.icon}</span><b>${r.name}</b><small class="${r.warn?'warn':''}">${r.line}</small></button>`).join('')}</div></div>
-    <div class="h3-row"><div class="panel">${planPanel()}</div><div class="panel">${attPanel(4)}</div><div class="panel">${goalsPanel()}</div></div></div>`}
+    <div class="h3-row"><div class="panel">${weekPanel()}</div><div class="panel">${attPanel(4)}</div><div class="panel">${goalsPanel()}</div></div></div>`}
 
 /* ---------- waiting ---------- */
 function pageWaiting(){const L=waiting().sort((a,b)=>(wLate(b)-wLate(a))||((a._wait||{}).checkBack<(b._wait||{}).checkBack?-1:1)),od=L.filter(wLate).length;
