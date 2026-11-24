@@ -3021,6 +3021,9 @@ function initTown(){
     if(!TCYC_UNITS.some(u=>u.id===c.unit))c.unit=c.type==='fixed'?'years':'months';
     if(typeof c.lead!=='number'||!(c.lead>=0))c.lead=TCYC_LEAD;
     if(!c.nextDue)c.nextDue=today();
+    if(c.track===undefined)c.track=c.dept==='health';
+    if(c.results===undefined)c.results=true;
+    if(!TSTAGES.includes(c.stage))c.stage=null;
   });
   if(!t.depts||typeof t.depts!=='object')t.depts={};
   /* Dogs + Kids became Family: move items, keep both reference cards, keep the latest visit */
@@ -3176,20 +3179,66 @@ function tCycAfter(c,after){
   return tAddPer(after,c.n,c.unit)}
 /* what "skip once" would move it to: one period past the due date, or past today if it's overdue */
 const tCycSkipTo=(c,due)=>{const t=today(),from=(due||c.nextDue)>t?(due||c.nextDue):t;return tCycAfter(c,from)};
+/* ---- tracks: a recurring health thing is a status, not a task that goes away ----
+   A track is an almanac cycle that walks through stages instead of rolling forward on the first
+   tick: book it → go (on the day) → wait for the results → look at them → all clear until next time.
+   Each stage plants the one task that matters now; finishing that task moves the track on.
+   Results can be switched off per track (the dentist has none). */
+const TSTAGES=['booked','results','review'];
+const TSTAGE_INFO={due:{name:'Book it',c:'#B06000'},booked:{name:'Booked',c:'#1A73E8'},results:{name:'Waiting for results',c:'#7C5CFC'},
+  review:{name:'Results in',c:'#D01884'},ok:{name:'All clear',c:'#1E8E3E'},late:{name:'Late',c:'#D93025'}};
+const TRESULT_DAYS=7;
+const tTrackTitle=(c,stage)=>({null:'Book: ',booked:'Go: ',results:'Results: ',review:'Look at the results: '}[stage]||'')+tCycName(c);
+/* where a track stands now, with the words to show for it */
+function tTrack(c){
+  const it=tCycItem(c),st=c.stage;
+  if(it&&st==='booked'){const a=c.appt||{};const late=a.date&&daysTo(a.date)<0;
+    return {k:late?'late':'booked',t:a.date?(late?'was booked '+tDay(a.date)+' — went?':'booked '+tDay(a.date)+(a.time?' · '+a.time:'')+(a.where?' · '+a.where:'')):'booked — add the date'}}
+  if(it&&st==='results'){const cb=it.wait&&it.wait.checkBack,late=cb&&daysTo(cb)<0;
+    return {k:late?'late':'results',t:late?'results late — chase them':'waiting for results'+(cb?' · check '+tDay(cb):'')}}
+  if(it&&st==='review')return {k:'review',t:'results in — look at them'};
+  if(it||tCycDue(c)){const n=daysTo(c.nextDue);return {k:n<0?'late':'due',t:n<0?'overdue '+(-n)+'d — book it':'book it · due '+tDay(c.nextDue)}}
+  return {k:'ok',t:'all clear · next '+tTrackWhen(c.nextDue)}}
+/* far dates read better as a month and year */
+function tTrackWhen(iso){if(daysTo(iso)<=120)return tDay(iso);
+  const d=new Date(iso+'T00:00:00');return d.toLocaleDateString('en-US',{month:'short',year:'numeric'})}
+/* plant the task for a stage; it is linked to the track like any almanac item */
+function tTrackPlant(c,stage,state){
+  const i=tAdd(tTrackTitle(c,stage),c.dept,stage==='results'?'waiting':state||'week');
+  i.cycle=c.id;i.notes=c.notes||'';c.itemId=i.id;c.stage=stage;
+  if(stage===null)i.due=c.nextDue;
+  if(stage==='booked'&&c.appt&&c.appt.date)i.due=c.appt.date;
+  if(stage==='results'){i.wait={who:'lab',since:today(),checkBack:tAddPer(today(),c.resultDays||TRESULT_DAYS,'days')}}
+  return i}
+/* the task for the current stage was finished: move the track on (or roll it, at the end) */
+function tTrackStep(i,c){
+  const st=c.stage,next=st===null?'booked':st==='booked'?(c.results?'results':'ok'):st==='results'?'review':'ok';
+  if(st==='booked'&&c.appt&&c.appt.date)c.lastDone=c.appt.date<today()?c.appt.date:today();
+  if(next==='ok'){c.stage=null;c.appt=null;const t=today();c.lastDone=c.lastDone||t;
+    c.nextDue=c.type==='fixed'?tCycAfter(c,c.nextDue>t?c.nextDue:t):tAddPer(c.lastDone,c.n,c.unit);c.itemId=null;return null}
+  if(next==='booked')c.appt=c.appt||{date:null,time:'',where:''};
+  const n=tTrackPlant(c,next);return n}
 function tCycClose(i,state){
   const c=tCycOf(i);if(!c||c.itemId!==i.id)return;
   i.cycSnap={nextDue:c.nextDue,lastDone:c.lastDone||null,retired:!!c.retired};
+  if(c.track)Object.assign(i.cycSnap,{stage:c.stage||null,appt:c.appt?Object.assign({},c.appt):null});
+  if(c.track&&state==='done'){const n=tTrackStep(i,c);if(n)i.cycSnap.next=n.id;return}
+  if(c.track){c.stage=null;c.appt=null}
   const t=today();
   if(state==='done'){c.lastDone=t;c.nextDue=c.type==='fixed'?tCycAfter(c,c.nextDue>t?c.nextDue:t):tAddPer(t,c.n,c.unit)}
   else if(i.dropAs==='retire')c.retired=true;
   else c.nextDue=tCycSkipTo(c);
   c.itemId=null}
 function tCycReopen(i){
-  const c=tCycOf(i),other=c&&tCycItem(c);
+  const c=tCycOf(i);
+  /* a track that moved on planted the next stage's task: take it back out, then restore */
+  if(c&&i.cycSnap&&i.cycSnap.next){const n=tById(i.cycSnap.next);if(n&&tOpen(n))S.town.items=S.town.items.filter(x=>x.id!==n.id)}
+  const other=c&&tCycItem(c);
   if(!c||!i.cycSnap||(other&&other!==i)){delete i.cycSnap;return}
-  Object.assign(c,i.cycSnap);c.itemId=i.id;delete i.cycSnap}
+  const s=i.cycSnap;delete s.next;Object.assign(c,s);c.itemId=i.id;delete i.cycSnap}
 /* the round's verdict turns a cycle into a regular item, linked back to it */
 function tCycPlant(c){
+  if(c.track){const i=tTrackPlant(c,null,'inbox');save();return i}
   const i=tAdd(tCycName(c),c.dept,'inbox');
   i.cycle=c.id;i.due=c.nextDue;i.notes=c.notes||'';c.itemId=i.id;save();return i}
 function tCycDropSheet(c,pick,due){
