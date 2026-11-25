@@ -14,7 +14,7 @@ const T2VER='town2 · r5';
 (()=>{const lk=document.createElement('link');lk.rel='stylesheet';
   lk.href='https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap';
   document.head.appendChild(lk)})();
-const host=document.createElement('div');host.id='town2';host.style.cssText='position:fixed;inset:0;z-index:100;display:none';
+const host=document.createElement('div');host.id='town2';host.dataset.look=lookNow();host.style.cssText='position:fixed;inset:0;z-index:100;display:none';
 document.body.appendChild(host);
 const ROOT=host.attachShadow({mode:'open'});
 ROOT.innerHTML=`<style>
@@ -1711,9 +1711,9 @@ function wireT2(root){
 }
 function toggleMenu(btn){let m=ROOT.getElementById('menu2');if(m){m.remove();return}
   m=document.createElement('div');m.id='menu2';m.className='menu2';
-  m.innerHTML=`<button data-m="sync">${esc(syncLabel())}</button><button data-m="done">Done list</button><button data-m="exp">↓ Export a backup</button><button data-m="imp">↑ Import a backup</button><button data-m="classic">Open the classic Personal tab</button><div class="mv">Daily Ritual ${APPVER} · ${T2VER}</div>`;
+  m.innerHTML=`<button data-m="sync">${esc(syncLabel())}</button><button data-m="done">Done list</button><button data-m="exp">↓ Export a backup</button><button data-m="imp">↑ Import a backup</button><button data-m="look">${lookNow()==="classic"?"✦ Switch to the new look":"◐ Switch to the classic look"}</button><button data-m="classic">Open the classic Personal tab</button><div class="mv">Daily Ritual ${APPVER} · ${T2VER}</div>`;
   APP.appendChild(m);const r=btn.getBoundingClientRect();m.style.top=(r.bottom+6)+'px';m.style.right=Math.max(8,innerWidth-r.right)+'px';
-  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{m.remove();({sync:syncSheet,done:doneSheet,exp:()=>exportBackup(false),imp:importBackup,classic:()=>{location.search='?classic=1'}})[b.dataset.m]()});
+  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{m.remove();({sync:syncSheet,done:doneSheet,exp:()=>exportBackup(false),imp:importBackup,look:toggleLook,classic:()=>{location.search='?classic=1'}})[b.dataset.m]()});
   setTimeout(()=>{const c=ev=>{if(!m.contains(ev.composedPath()[0]))m.remove();ROOT.removeEventListener('click',c)};ROOT.addEventListener('click',c)},0)}
 
 /* first visit: 'wife' items become “waiting on your wife” due today (so you can message her),
@@ -1729,7 +1729,7 @@ const active=()=>REAL().ui.mode==='personal';
 const appEl=document.getElementById('app');
 const appSheetOpen=()=>['layer','mlayer','dplayer'].some(id=>{const e=document.getElementById(id);return e&&e.innerHTML});
 const _render=window.render;
-window.render=function(){
+window.render=function(){applyLook();   /* the look can change from the menu or another device */
   if(active()){appEl.style.display='none';host.style.display='block';document.body.dataset.mode='personal';render()}
   else{host.style.display='none';appEl.style.display='';_render()}};
 const _startRound=window.startRound,_startMove=window.startMove;

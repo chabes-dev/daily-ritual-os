@@ -1075,7 +1075,15 @@ function closeDP(){dplayer.innerHTML='';DPV=null}
 
 /* ===== render ===== */
 const app=document.getElementById('app'),layer=document.getElementById('layer'),keysbox=document.getElementById('keysbox');
+/* the look: 'lime' (new) or 'classic' (Sand & Ink). The page and both layers carry data-look;
+   look.css and the layers' look rules only apply when it isn't classic */
+const lookNow=()=>S.ui&&S.ui.look==='classic'?'classic':'lime';
+function applyLook(){const k=lookNow();
+  document.documentElement.dataset.look=k;['work2','town2'].forEach(id=>{const h=document.getElementById(id);if(h)h.dataset.look=k})}
+function toggleLook(){S.ui.look=S.ui.look==='classic'?'lime':'classic';save();applyLook();window.render();
+  toast(S.ui.look==='classic'?'classic look — switch back any time in ⋯':'new look — switch back any time in ⋯')}
 function render(){
+  applyLook();
   /* anything marked data-keepx keeps its scroll position through the redraw */
   const KEEP={};document.querySelectorAll('#app [data-keepx]').forEach(e=>KEEP[e.dataset.keepx]=[e.scrollLeft,e.scrollTop]);
   renderApp();

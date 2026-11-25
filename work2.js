@@ -11,7 +11,7 @@ window.__W2REAL=()=>S;
 (function(){
 if(/[?&]classic\b/.test(location.search))return;
 const R=()=>window.__W2REAL();
-const host=document.createElement('div');host.id='work2';host.style.cssText='position:fixed;inset:0;z-index:100;display:none';
+const host=document.createElement('div');host.id='work2';host.dataset.look=lookNow();host.style.cssText='position:fixed;inset:0;z-index:100;display:none';
 document.body.appendChild(host);
 const ROOT=host.attachShadow({mode:'open'});
 ROOT.innerHTML=`<style>
@@ -929,16 +929,16 @@ function wire(){const on=(s,f)=>APP.querySelectorAll(s).forEach(b=>b.onclick=e=>
   const cap=$('cap');if(cap)cap.onkeydown=e=>{if(e.key==='Enter'&&cap.value.trim()){add(cap.value.trim(),'work');cap.value='';save();render();toast('in the work inbox — the ritual sorts it')}}}
 function menu(btn){let m=$('menu2');if(m){m.remove();return}
   m=document.createElement('div');m.id='menu2';m.className='menu2';
-  m.innerHTML=`<button data-m="sync">${esc(syncLabel())}</button><button data-m="done">Done list</button><button data-m="exp">↓ Export a backup</button><button data-m="imp">↑ Import a backup</button><button data-m="classic">Open the classic app</button><div class="mv">Daily Ritual ${APPVER} · work2 · r5</div>`;
+  m.innerHTML=`<button data-m="sync">${esc(syncLabel())}</button><button data-m="done">Done list</button><button data-m="exp">↓ Export a backup</button><button data-m="imp">↑ Import a backup</button><button data-m="look">${lookNow()==="classic"?"✦ Switch to the new look":"◐ Switch to the classic look"}</button><button data-m="classic">Open the classic app</button><div class="mv">Daily Ritual ${APPVER} · work2 · r5</div>`;
   APP.appendChild(m);const r=btn.getBoundingClientRect();m.style.top=(r.bottom+6)+'px';m.style.right=Math.max(8,innerWidth-r.right)+'px';
-  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{m.remove();({sync:syncSheet,done:doneSheet,exp:()=>exportBackup(false),imp:importBackup,classic:()=>{location.search='?classic=1'}})[b.dataset.m]()});
+  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{m.remove();({sync:syncSheet,done:doneSheet,exp:()=>exportBackup(false),imp:importBackup,look:toggleLook,classic:()=>{location.search='?classic=1'}})[b.dataset.m]()});
   setTimeout(()=>{const c=ev=>{if(!m.contains(ev.composedPath()[0]))m.remove();ROOT.removeEventListener('click',c)};ROOT.addEventListener('click',c)},0)}
 
 /* ---------- hand-off with app_1 (and town2, which wraps render first) ---------- */
 const active=()=>R().ui.mode==='work'&&R().ui.workView==='home'&&!ZEN&&!TZ&&!BR;
 const stripOn=()=>R().ui.mode==='work'&&['today','backlog','goals'].includes(R().ui.workView);
 const appEl=document.getElementById('app'),prev=window.render;
-window.render=function(){
+window.render=function(){applyLook();   /* the look can change from the menu or another device */
   if(active()){delete document.body.dataset.w2strip;host.style.bottom='0';appEl.style.display='none';const t2=document.getElementById('town2');if(t2)t2.style.display='none';host.style.display='block';document.body.dataset.mode='work';render()}
   else if(stripOn()){prev();host.style.bottom='auto';host.style.display='block';render();
     document.body.dataset.w2strip='1';document.body.style.setProperty('--w2h',Math.ceil(host.getBoundingClientRect().height)+'px')}
