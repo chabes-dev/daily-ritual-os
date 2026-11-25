@@ -2487,7 +2487,7 @@ const gMonthEnd=k=>{const d=new Date();d.setMonth(d.getMonth()+1+k,0);return d.t
 const gMonthsOut=k=>{const d=new Date();d.setMonth(d.getMonth()+k);return d.toISOString().slice(0,10)};
 /* the work task's link to a goal, shown on the today cards */
 const gTag=i=>{const x=i.goal&&gById(i.goal);return x?`<span class="tag ggoal" title="${esc(x.title)}">◎ ${esc(x.title)}</span>`:''};
-let GLETGO=false,GMHIST=false,GCPR=false,GCPL=false,GCPW=false;   /* compass folds: past missions, rules, lines, wins, let go */
+let GLETGO=false,GMHIST=false,GCPR=false,GCPL=false,GCPW=false,GDRAG=null;   /* compass folds: past missions, rules, lines, wins, let go */
 function viewGoals(){
   /* B · steps up front: the goals in focus as checklists of their path, the rest in a side column,
      and a compact compass (mission, direction; ground rules and lines fold open) underneath */
@@ -2498,7 +2498,7 @@ function viewGoals(){
   const F=gFocus(),R=act.filter(x=>!x.focus);
   const card=x=>{const r=gRoute(x),open=gTasks(x.id).filter(i=>!i.done).length,by=gByLabel(x);
     const st=gSteps(x),now=gStepNow(x),kids=gKids(x),par=x.parent&&gById(x.parent),dn=gStepsDone(x);
-    return `<div class="gcard gcard-b" data-gopen="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
+    return `<div class="gcard gcard-b" data-gopen="${x.id}" data-gdrag="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
       <div class="gcb-h"><div class="gcb-tt">${par&&par.state==='active'?`<div class="gpart">part of ${esc(par.title)}</div>`:''}
         <div class="gcard-t">${esc(x.title)}</div></div>
         ${st.length?`<span class="gsbar"><i style="width:${Math.round(dn/st.length*100)}%"></i></span><span class="gcb-n">${dn}/${st.length}</span>`:''}
@@ -2531,8 +2531,8 @@ function viewGoals(){
     <aside class="gB-side grest"><div class="slotlabel" style="margin-top:0">Resting — ${R.length}</div>
       <div class="ghint">Not judged while they rest.</div>
       <div class="grgrid">${G_HOR.map(h=>{const L=R.filter(x=>x.horizon===h.id);
-        return `<div class="gcol"><div class="ghh">${h.name}<span>${h.hint}</span></div>
-          ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${gSteps(x).length?` <em class="grst">${gStepsDone(x)}/${gSteps(x).length}</em>`:''}${gNext(x)?`<small>Next → ${esc(gNext(x))}</small>`:''}</button>
+        return `<div class="gcol" data-ghzone="${h.id}"><div class="ghh">${h.name}<span>${h.hint}</span></div>
+          ${L.map(x=>`<div class="grrow" data-gdrag="${x.id}"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${gSteps(x).length?` <em class="grst">${gStepsDone(x)}/${gSteps(x).length}</em>`:''}${gNext(x)?`<small>Next → ${esc(gNext(x))}</small>`:''}</button>
             ${!gSteps(x).length&&!gKids(x).length?`<button class="gdraft sm" data-gdraft="${x.id}" title="Draft the steps">+ steps</button>`:''}
             <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')}
           <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></aside>
@@ -2838,6 +2838,27 @@ function wireGoals(){
     gStepToWeek(x,n);render();toast('“'+n.text.slice(0,40)+'” is on this week’s board')});
   app.querySelectorAll('[data-gdraft]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gdraft);
     const f=document.querySelector('#mlayer #gsadd');if(f){if(f.scrollIntoView)f.scrollIntoView({block:'center'});f.focus()}});
+  /* drag goals: resting → In focus to focus one; a focus card → a horizon to rest it there;
+     between horizons to move it; onto a goal to put it above that one. Touch keeps the buttons. */
+  app.querySelectorAll('[data-gdrag]').forEach(el=>{el.setAttribute('draggable','true');
+    el.addEventListener('dragstart',e=>{if(e.target.closest&&e.target.closest('textarea,input'))return;GDRAG=el.dataset.gdrag;
+      if(e.dataTransfer){e.dataTransfer.setData('text/plain','goal:'+GDRAG);e.dataTransfer.effectAllowed='move'}
+      el.classList.add('gdragging');document.body.classList.add('gdnd');e.stopPropagation()});
+    el.addEventListener('dragend',()=>{GDRAG=null;el.classList.remove('gdragging');document.body.classList.remove('gdnd');app.querySelectorAll('.gdrop').forEach(z=>z.classList.remove('gdrop'))})});
+  const gZone=(el,fn)=>{if(!el)return;
+    el.addEventListener('dragover',e=>{if(!GDRAG)return;e.preventDefault();el.classList.add('gdrop')});
+    el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('gdrop')});
+    el.addEventListener('drop',e=>{const raw=GDRAG||((e.dataTransfer&&e.dataTransfer.getData('text/plain'))||'').replace(/^goal:/,'');
+      const x=raw&&gById(raw);if(!x)return;e.preventDefault();e.stopPropagation();el.classList.remove('gdrop');GDRAG=null;document.body.classList.remove('gdnd');fn(x,e)})};
+  gZone(app.querySelector('.gB-main'),x=>{if(!x.focus)gSetFocus(x.id,true)});
+  app.querySelectorAll('[data-ghzone]').forEach(col=>gZone(col,(x,e)=>{
+    const before={focus:!!x.focus,focusAt:x.focusAt,horizon:x.horizon,order:S.goals.items.map(g=>g.id)};
+    x.focus=false;x.horizon=col.dataset.ghzone;
+    const row=e.target.closest&&e.target.closest('.grrow'),tid=row&&row.dataset.gdrag;
+    if(tid&&tid!==x.id){const L=S.goals.items,a=L.indexOf(x);L.splice(a,1);L.splice(L.findIndex(g=>g.id===tid),0,x)}
+    save();render();
+    toastUndo(before.focus?'resting — '+gHor(x.horizon).name:'moved to '+gHor(x.horizon).name,()=>{
+      x.focus=before.focus;x.focusAt=before.focusAt;x.horizon=before.horizon;S.goals.items.sort((p,q)=>before.order.indexOf(p.id)-before.order.indexOf(q.id));save();render()})}));
   app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
   const ck=document.getElementById('gcheck');if(ck)ck.onclick=startStepBack;
   const qk=document.getElementById('gquick');if(qk)qk.onclick=gCheckSheet;

@@ -41,6 +41,12 @@ body[data-mode="personal"]{   /* Sand & Ink — warm sand, dark ink, olive */
   --hot:#5E6B35; --hot-2:#5E6B35; --hot-ink:#4A5527; --hot-soft:#E7EBD9; --hot-line:#B9C29A;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* ---- Goals: drag between focus and resting ---- */
+[data-gdrag]{cursor:grab}
+.gdragging{opacity:.4}
+body.gdnd .gB-main,body.gdnd [data-ghzone]{outline:2px dashed var(--line);outline-offset:6px;border-radius:18px;transition:outline-color .12s}
+.gB-main.gdrop,[data-ghzone].gdrop{outline-color:var(--hot)!important;background:color-mix(in srgb,var(--hot-soft) 50%,transparent)}
+
 /* ---- Goals B: focus checklists + resting column + compact compass ---- */
 .gB{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:24px;align-items:start;margin-top:6px}
 .gB .gfgrid{grid-template-columns:minmax(0,1fr);margin-top:12px}

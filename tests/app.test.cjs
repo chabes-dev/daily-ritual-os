@@ -1711,6 +1711,28 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
+  /* ===================================================================== */
+  section('38. goals: drag between focus and resting');
+  {
+    const st={};const P=boot(NEW,st);
+    P.g(`['A','B','C'].forEach(t=>gAdd(t,'now'));gAdd('L','long');S.ui.mode='work';S.ui.workView='goals';save();render()`);
+    const id=t=>P.g(`S.goals.items.find(x=>x.title==='${t}').id`);
+    const drag=(src,dst,on)=>{const a=P.$(`[data-gdrag="${src}"]`);a.dispatchEvent(new P.w.Event('dragstart',{bubbles:true}));
+      const tgt=on||P.$(dst);const e=new P.w.Event('drop',{bubbles:true,cancelable:true});e.dataTransfer={getData:()=>'goal:'+src};tgt.dispatchEvent(e)};
+    ok(P.$$('.grrow[draggable="true"]').length===4,'resting goals can be dragged');
+    drag(id('A'),'.gB-main');
+    ok(P.g(`gById('${id('A')}').focus`)===true&&!!P.$(`.gB-main [data-gdrag="${id('A')}"]`),'drag a resting goal into In focus: it’s in focus');
+    drag(id('B'),'.gB-main');drag(id('C'),'.gB-main');
+    ok(P.g('gFocus().map(x=>x.title).join()')==='B,C','focus full: dragging in a third swaps out the oldest');
+    drag(id('B'),'[data-ghzone="long"]');
+    ok(P.g(`gById('${id('B')}').focus`)===false&&P.g(`gById('${id('B')}').horizon`)==='long','drag a focus card onto a horizon: it rests there');
+    P.g(`[...document.querySelectorAll('.toast .undo')].pop().click()`);
+    ok(P.g(`gById('${id('B')}').focus`)===true&&P.g(`gById('${id('B')}').horizon`)==='now','… undo brings it back');
+    drag(id('A'),'[data-ghzone="long"]',P.$(`[data-ghzone="long"] .grrow[data-gdrag="${id('L')}"] .grt`));
+    ok(P.g(`S.goals.items.filter(x=>x.horizon==='long'&&!x.focus).map(x=>x.title).join()`)==='A,L','drop onto a resting goal: goes above it, in that horizon');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
   process.exit(0);
