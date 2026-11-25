@@ -1646,6 +1646,45 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
+  /* ===================================================================== */
+  section('36. goal steps and projects: draft the path, take one step at a time');
+  {
+    const st={};const P=boot(NEW,st);
+    P.g(`window.US=gAdd('Work in the US','long');window.EB=gAdd('EB1','now');window.PF=gAdd('Portfolio','now');EB.focus=true;EB.focusAt=1;
+      S.ui.mode='work';S.ui.workView='goals';save();render()`);
+    const eb=P.g('EB.id'),us=P.g('US.id');
+    P.click(`.gcard[data-gopen="${eb}"]`);
+    ok(!!P.$('#mlayer #gsadd')&&!!P.$('#mlayer #gnext'),'no steps yet: draft box, and the plain next step still there');
+    P.enter('#mlayer #gsadd','1. List the evidence I already have\n• Book the call with the lawyer\n5 recommendation letters\n');
+    ok(P.g(`gSteps(EB).map(p=>p.text).join('|')`)==='List the evidence I already have|Book the call with the lawyer|5 recommendation letters','pasting a list adds every step (bullets and numbering go, a leading 5 stays)');
+    ok(P.$$('#mlayer .gstep').length===3&&P.$('#mlayer .gstep.now').textContent.includes('List the evidence')&&!P.$('#mlayer #gnext'),'one step is Now; the plain next-step box steps aside');
+    ok(P.g('gNext(EB)')==='List the evidence I already have','the goal’s Next → is the step that’s now');
+    P.click('#mlayer [data-gsweek]');
+    const tid=P.g(`gSteps(EB)[0].itemId`);
+    ok(!!tid&&P.g(`byId('${tid}').goal`)===eb&&P.g(`byId('${tid}').bucket`)==='board'&&P.g(`byId('${tid}').sorted`)===true,'→ This week: the step is a task on the board, linked to the goal');
+    ok(P.$('#mlayer .gstep.now [data-gtopen]').textContent.includes('on this week'),'… and the step says so');
+    P.g(`byId('${tid}').done=true;save()`);
+    ok(P.g('gStepNow(EB).text')==='Book the call with the lawyer'&&P.g('gNext(EB)')==='Book the call with the lawyer','task done → the step is done, the next one is now');
+    P.g(`S.items.find(i=>i.id==='${tid}').done=false;save()`);
+    ok(P.g('gStepNow(EB).text')==='List the evidence I already have','undoing the task un-does the step');
+    P.g(`S.items.find(i=>i.id==='${tid}').done=true;save();closeSheet();gSheet(EB.id)`);
+    P.click(`#mlayer [data-gsmv="${P.g('gSteps(EB)[2].id')}:-1"]`);
+    ok(P.g('gStepNow(EB).text')==='5 recommendation letters','↑ reorders: the next step can change');
+    P.click(`#mlayer [data-gsck="${P.g('gStepNow(EB).id')}"]`);
+    ok(P.g('gStepsDone(EB)')===2&&P.g('gStepNow(EB).text')==='Book the call with the lawyer','tick a step done by hand, no task needed');
+    /* projects */
+    P.click(`#mlayer [data-gpar="${us}"]`);
+    ok(P.g('EB.parent')===us,'part of a bigger goal');
+    P.g(`closeSheet();US.focus=true;US.focusAt=2;save();render()`);
+    ok(P.$(`.gcard[data-gopen="${us}"] .gkids`).textContent.includes('EB1 · 2/3'),'the big goal shows its projects and how far along');
+    ok(P.$(`.gcard[data-gopen="${eb}"] .gpart`).textContent.includes('Work in the US'),'the project says what it’s part of');
+    P.click(`.gcard[data-gopen="${us}"] .gkids [data-gopen="${eb}"]`);
+    ok(P.$('#mlayer #gti').value==='EB1','clicking a project chip opens the project, not its parent');
+    P.g(`closeSheet();gSheet(US.id)`);P.click('#mlayer #gdel');P.click('#mlayer #yes');
+    ok(!P.g('EB.parent'),'deleting the big goal leaves its projects standing, unlinked');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if(fail){console.log('FAILED:\n - '+fails.join('\n - '));process.exit(1)}
   process.exit(0);

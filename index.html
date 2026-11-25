@@ -41,6 +41,32 @@ body[data-mode="personal"]{   /* Sand & Ink — warm sand, dark ink, olive */
   --hot:#5E6B35; --hot-2:#5E6B35; --hot-ink:#4A5527; --hot-soft:#E7EBD9; --hot-line:#B9C29A;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* ---- goal steps and projects ---- */
+.gopt{font:400 12px var(--sans);letter-spacing:0;text-transform:none;color:var(--ink-3);margin-left:6px}
+.gpart{font:500 12px var(--sans);color:var(--ink-3);margin-bottom:4px}
+.gsteps-mini{display:flex;align-items:center;gap:10px;margin:8px 0 2px;font-size:13px;color:var(--ink-3)}
+.gsbar{flex:1;max-width:160px;height:5px;border-radius:5px;background:var(--sunken);overflow:hidden}
+.gsbar i{display:block;height:100%;background:var(--hot);border-radius:5px}
+.gkids{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.gkids span{font-size:13px;padding:4px 10px;border-radius:999px;background:var(--sunken);color:var(--ink-2);cursor:pointer}
+.gkids span:hover{color:var(--ink)}
+.grst{font-style:normal;font:500 12px var(--sans);color:var(--ink-3);margin-left:6px}
+.gsteps{display:flex;flex-direction:column;gap:2px}
+.gstep{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:12px}
+.gstep.now{background:var(--hot-soft)}
+.gstep.done .gstx{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--line)}
+.gsck{width:28px;height:28px;flex:none;border-radius:50%;border:1.5px solid var(--line);font:600 12px var(--sans);color:var(--ink-3);background:var(--surface)}
+.gstep.now .gsck{border-color:var(--hot);color:var(--hot)}
+.gstep.done .gsck{background:var(--ink);border-color:var(--ink);color:#fff}
+.gstx{flex:1;min-width:0;font-size:15.5px;cursor:text;outline:none;border-radius:6px;padding:2px 4px}
+.gstx[contenteditable="true"]{box-shadow:0 0 0 2px var(--hot-line)}
+.gsgo{flex:none;font:600 13px var(--sans);padding:7px 12px;border-radius:999px;background:var(--hot);color:#fff;white-space:nowrap}
+.gsgo.on{background:transparent;color:var(--hot);border:1px solid var(--hot-line)}
+.gsmv{display:flex;gap:2px;opacity:0;transition:opacity .12s}
+.gstep:hover .gsmv{opacity:1}
+.gsmv button{width:24px;height:24px;border-radius:6px;color:var(--ink-3);font-size:13px}
+.gsmv button:hover{background:var(--sunken);color:var(--ink)}
+
 .queue.over{outline:2px dashed var(--hot);outline-offset:6px;border-radius:18px}
 /* ---- Goals: two in focus, the rest resting ---- */
 .gfocus{margin-top:26px}
