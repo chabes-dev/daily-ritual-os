@@ -1,6 +1,6 @@
 "use strict";
 const KEY='os_v3';
-const APPVER='v13';
+const APPVER='v14';   /* shown at the bottom of the ⋯ menu — bump it so a new version is easy to spot */
 const SPARK_URL='https://spark-v2-chabes-devs-projects.vercel.app/';
 const REEL_URL='https://reel-chabes-devs-projects.vercel.app/';
 /* phones/tablets: no hover, no drag-and-drop, no keyboard — copy and controls adapt */
@@ -2283,6 +2283,9 @@ function commitIt(i,put){
   drawTriage();
 }
 function autosize(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}
+const resizeAll=()=>document.querySelectorAll('#app textarea').forEach(autosize);
+if(document.fonts){document.fonts.ready.then(resizeAll);document.fonts.addEventListener&&document.fonts.addEventListener('loadingdone',resizeAll)}
+addEventListener('resize',resizeAll);
 
 let DAY=today();
 function checkDay(){
@@ -2499,6 +2502,7 @@ function viewGoals(){
       ${st.length?`<div class="gsteps-mini"><span class="gsbar"><i style="width:${Math.round(gStepsDone(x)/st.length*100)}%"></i></span>
         <span>${gStepsDone(x)===st.length?'all '+st.length+' steps done':'step '+(gStepsDone(x)+1)+' of '+st.length}</span></div>`:''}
       ${nx?`<div class="gcard-next">Next → ${esc(nx)}</div>`:''}
+      ${!st.length&&!kids.length?`<button class="gdraft" data-gdraft="${x.id}">+ Draft the steps</button>`:''}
       ${kids.length?`<div class="gkids">${kids.map(k=>`<span data-gopen="${k.id}">${esc(k.title)}${gSteps(k).length?` · ${gStepsDone(k)}/${gSteps(k).length}`:''}</span>`).join('')}</div>`:''}
       <div class="gcard-m"><span class="groute" style="color:${r?r.color:'var(--ink-3)'}">${r?'● '+r.name:'not checked yet'}</span>
         ${by?`<span class="${daysTo(x.by)<0?'late':''}">${by}</span>`:''}
@@ -2538,6 +2542,7 @@ function viewGoals(){
       <div class="grgrid">${G_HOR.map(h=>{const L=R.filter(x=>x.horizon===h.id);
         return `<div class="gcol"><div class="ghh">${h.name}<span>${h.hint}</span></div>
           ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${gSteps(x).length?` <em class="grst">${gStepsDone(x)}/${gSteps(x).length}</em>`:''}${gNext(x)?`<small>Next → ${esc(gNext(x))}</small>`:''}</button>
+            ${!gSteps(x).length&&!gKids(x).length?`<button class="gdraft sm" data-gdraft="${x.id}" title="Draft the steps">+ steps</button>`:''}
             <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')||'<div class="grnone">—</div>'}
           <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></div>`})()}
   <div class="grulesrow"><div class="grules">
@@ -2825,6 +2830,8 @@ function wireGoals(){
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
   app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gopen)});   /* a project chip inside its parent's card opens the project */
+  app.querySelectorAll('[data-gdraft]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gdraft);
+    const f=document.querySelector('#mlayer #gsadd');if(f){if(f.scrollIntoView)f.scrollIntoView({block:'center'});f.focus()}});
   app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
   const ck=document.getElementById('gcheck');if(ck)ck.onclick=startStepBack;
   const qk=document.getElementById('gquick');if(qk)qk.onclick=gCheckSheet;
