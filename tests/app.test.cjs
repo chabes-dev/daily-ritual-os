@@ -573,6 +573,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$$('.grrow').length===5&&P.$$('.gcard').length===0,'new goals start resting, one row each');
     ok(P.$('[data-gadd="long"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
     /* ground rules */
+    P.click('#gcprules');   /* ground rules fold open in the compass */
     P.enter('#gruleadd','Rafa is an ally — never fight him');P.enter('#gruleadd','Make my value obvious to Luana and Pedro');
     ok(P.$$('[data-gredit]').length===2,'ground rules added');
     P.click('[data-gredit]');P.type('#mlayer #f','Rafa is an ally. Never fight.');P.click('#mlayer #yes');
@@ -652,6 +653,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
 
     /* achieved / let go / delete */
     P.click(`[data-gopen="${eb}"]`);P.click('#mlayer #gwin');
+    P.click('#gcpwins');
     ok(P.g(`gById('${eb}').state`)==='achieved'&&P.$$('.gwin').length===1&&!P.$(`.gcard[data-gopen="${eb}"]`),'Achieved → moves to Wins');
     P.click(`.gwin[data-gopen="${eb}"]`);P.click('#mlayer #gback');P.click('#mlayer #gok');
     ok(P.g(`gById('${eb}').state`)==='active'&&!!P.$(`.gcard[data-gopen="${eb}"]`),'… and can come back');
@@ -1119,12 +1121,13 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     P.g(`gMissionSet('Make the LATAM switchers idea impossible to ignore')`);
     /* goals tab */
     P.g(`S.ui.workView='goals';render()`);
-    ok(P.$('#gmission').value==='Make the LATAM switchers idea impossible to ignore'&&P.$('.gmission .seg-label').textContent.startsWith('This week’s mission'),'Goals tab: this week’s mission on top');
+    ok(P.$('#gmission').value==='Make the LATAM switchers idea impossible to ignore'&&P.$('#gcompass .gcp-l').textContent.startsWith('This week'),'Goals tab: this week’s mission, first line of the compass');
     P.click('#gmhist');ok(P.$('.gmhist').textContent.includes('Ship the SOIP MX route'),'past missions, newest first');
     P.type('#gmission','Rewritten here');ok(P.g('gMissionWeek().text')==='Rewritten here'&&P.g('S.goals.missions.length')===2,'editable there too (same week, same entry)');
     P.type('#gmission','');ok(!P.g('gMissionWeek()')&&P.g('gMissionLatest().text')==='Ship the SOIP MX route','cleared → falls back to the latest one as “your mission”');
     P.type('#gmission','Make the LATAM switchers idea impossible to ignore');
     /* lines */
+    P.click('#gcplines');   /* lines fold open in the compass */
     ok(P.$$('[data-gledit]').length===4,'lines that move you: listed on the Goals tab');
     P.enter('#glineadd','Back to the drawing board. Simple.');
     ok(P.g('S.goals.lines.length')===5,'add one');
@@ -1685,22 +1688,26 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
   }
 
   /* ===================================================================== */
-  section('37. goals page: work first, the compass folded below');
+  section('37. goals page: the path first, resting beside it, a compact compass');
   {
     const st={};let P=boot(NEW,st);
-    P.g(`gAdd('EB1','now');S.goals.heading='Work in the US';S.ui.mode='work';S.ui.workView='goals';save();render()`);
-    const order=P.g(`(()=>{const a=document.querySelector('.gtopbar'),f=document.querySelector('.gfocus'),c=document.querySelector('#gcompass');
-      return !!(a.compareDocumentPosition(f)&4)&&!!(f.compareDocumentPosition(c)&4)})()`);
-    ok(order,'order: slim bar, then In focus / Resting, then the compass');
-    ok(!P.$('#gcompass').open&&P.$('#gcompass #gmission')&&P.$('#gcompass #gheading').value==='Work in the US','the mission and direction live in the compass, folded by default');
+    P.g(`const a=gAdd('EB1','now');a.focus=true;a.focusAt=1;gAddSteps(a,'List the evidence\\nBook the lawyer\\nCollect letters');gAdd('Portfolio','now');
+      S.goals.heading='Work in the US';S.ui.mode='work';S.ui.workView='goals';save();render()`);
+    const order=P.g(`(()=>{const a=document.querySelector('.gtopbar'),f=document.querySelector('.gB-main'),r=document.querySelector('.gB-side'),c=document.querySelector('#gcompass');
+      return !!(a.compareDocumentPosition(f)&4)&&!!(f.compareDocumentPosition(r)&4)&&!!(r.compareDocumentPosition(c)&4)})()`);
+    ok(order,'order: slim bar, the focus checklist with resting beside it, then the compass');
+    ok(P.$$('.gB-main .gstep').length===3&&P.$('.gB-main .gstep.now').textContent.includes('List the evidence')&&!!P.$('.gB-main [data-gcweek]'),'the goal in focus shows its whole path, Now highlighted, → This week on it');
+    ok(P.$$('.gB-side .grrow').length===1&&P.$('.gB-side .grrow').textContent.includes('Portfolio'),'resting goals sit in the side column');
+    P.click('.gB-main [data-gpck]');
+    ok(P.g('gStepNow(S.goals.items[0]).text')==='Book the lawyer'&&P.$('.gB-main .gstep.now').textContent.includes('Book the lawyer'),'tick a step right on the page: the next one is Now');
+    ok(P.$$('.toast').some(t=>t.textContent.includes('next: Book the lawyer')),'… and it says what’s next');
+    ok(P.$('#gcompass #gmission')&&P.$('#gcompass #gheading').value==='Work in the US'&&!P.$('#gruleadd')&&!P.$('#glineadd'),'compass: mission and direction as lines; rules and lines folded');
+    P.click('#gcprules');ok(!!P.$('#gruleadd'),'ground rules open in place');
+    P.click('#gcplines');ok(!!P.$('#glineadd'),'… and lines');
     ok(P.$('.gtopbar #gcheck').textContent.includes('Step back'),'step back is a small button in the top bar');
-    P.$('#gcompass').open=true;P.$('#gcompass').dispatchEvent(new P.w.Event('toggle'));
-    ok(P.g('S.ui.gCompass')===true,'opening the compass is remembered');
-    P.g('render()');ok(P.$('#gcompass').open,'… and it stays open after a redraw');
     /* → This week right on the focus card */
-    P.g(`gAddSteps(S.goals.items[0],'Book the lawyer\\nCollect letters');S.goals.items[0].focus=true;save();render()`);
-    P.click('[data-gcweek]');
-    ok(P.g(`!!gStepTask(gStepNow(S.goals.items[0]))`)&&!P.$('[data-gcweek]')&&P.$('.gson').textContent==='on this week','→ This week on the card puts the step on the board; the card then says so');
+    P.click('.gB-main [data-gcweek]');
+    ok(P.g(`!!gStepTask(gStepNow(S.goals.items[0]))`)&&!P.$('.gB-main [data-gcweek]')&&P.$('.gB-main .gstep.now .gson').textContent==='on this week','→ This week puts the step on the board; the step then says so');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
