@@ -2487,81 +2487,81 @@ const gMonthEnd=k=>{const d=new Date();d.setMonth(d.getMonth()+1+k,0);return d.t
 const gMonthsOut=k=>{const d=new Date();d.setMonth(d.getMonth()+k);return d.toISOString().slice(0,10)};
 /* the work task's link to a goal, shown on the today cards */
 const gTag=i=>{const x=i.goal&&gById(i.goal);return x?`<span class="tag ggoal" title="${esc(x.title)}">◎ ${esc(x.title)}</span>`:''};
-let GLETGO=false,GMHIST=false;
+let GLETGO=false,GMHIST=false,GCPR=false,GCPL=false,GCPW=false;   /* compass folds: past missions, rules, lines, wins, let go */
 function viewGoals(){
+  /* B · steps up front: the goals in focus as checklists of their path, the rest in a side column,
+     and a compact compass (mission, direction; ground rules and lines fold open) underneath */
   const G=S.goals,act=gActive(),cur=gNow(),ds=gSinceCheck();
   const wins=G.items.filter(x=>x.state==='achieved').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
   const gone=G.items.filter(x=>x.state==='dropped');
   const pct=cur.board.length?Math.round(cur.moving.length/cur.board.length*100):0;
+  const F=gFocus(),R=act.filter(x=>!x.focus);
   const card=x=>{const r=gRoute(x),open=gTasks(x.id).filter(i=>!i.done).length,by=gByLabel(x);
-    const st=gSteps(x),nx=gNext(x),kids=gKids(x),par=x.parent&&gById(x.parent);
-    return `<div class="gcard" data-gopen="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
-      ${par&&par.state==='active'?`<div class="gpart">part of ${esc(par.title)}</div>`:''}
-      <div class="gcard-t">${esc(x.title)}</div>
-      ${x.why?`<div class="gcard-why">${esc(x.why)}</div>`:''}
-      ${st.length?`<div class="gsteps-mini"><span class="gsbar"><i style="width:${Math.round(gStepsDone(x)/st.length*100)}%"></i></span>
-        <span>${gStepsDone(x)===st.length?'all '+st.length+' steps done':'step '+(gStepsDone(x)+1)+' of '+st.length}</span></div>`:''}
-      ${nx?`<div class="gcard-next">Next → ${esc(nx)}</div>`:''}
-      ${!st.length&&!kids.length?`<button class="gdraft" data-gdraft="${x.id}">+ Draft the steps</button>`:''}
+    const st=gSteps(x),now=gStepNow(x),kids=gKids(x),par=x.parent&&gById(x.parent),dn=gStepsDone(x);
+    return `<div class="gcard gcard-b" data-gopen="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
+      <div class="gcb-h"><div class="gcb-tt">${par&&par.state==='active'?`<div class="gpart">part of ${esc(par.title)}</div>`:''}
+        <div class="gcard-t">${esc(x.title)}</div></div>
+        ${st.length?`<span class="gsbar"><i style="width:${Math.round(dn/st.length*100)}%"></i></span><span class="gcb-n">${dn}/${st.length}</span>`:''}
+        <button class="zlink gfout" data-gfocus="${x.id}:0">rest</button></div>
+      ${st.length?`<div class="gsteps gsteps-b">${st.map((p,k)=>{const d=gStepDone(p),isNow=p===now,t=gStepTask(p),onb=t&&!t.done;
+          return `<div class="gstep ${d?'done':''} ${isNow?'now':''}"><button class="gsck" data-gpck="${x.id}:${p.id}" title="${d?'Not done yet':'Mark done'}">${d?'✓':isNow?'●':k+1}</button>
+            <span class="gstx">${esc(p.text)}</span>
+            ${isNow?(onb?`<span class="gson">on this week</span>`:`<button class="gsgo" data-gcweek="${x.id}">→ This week</button>`):''}</div>`}).join('')}</div>`
+        :(x.next?`<div class="gcard-next">Next → ${esc(x.next)}</div>`:'')+(kids.length?'':`<button class="gdraft" data-gdraft="${x.id}">+ Draft the steps</button>`)}
       ${kids.length?`<div class="gkids">${kids.map(k=>`<span data-gopen="${k.id}">${esc(k.title)}${gSteps(k).length?` · ${gStepsDone(k)}/${gSteps(k).length}`:''}</span>`).join('')}</div>`:''}
       <div class="gcard-m"><span class="groute" style="color:${r?r.color:'var(--ink-3)'}">${r?'● '+r.name:'not checked yet'}</span>
         ${by?`<span class="${daysTo(x.by)<0?'late':''}">${by}</span>`:''}
         ${open?`<span>${open} task${open===1?'':'s'} on it</span>`:''}
         ${x.trail.length?`<span class="gtrail" title="the last weeks, oldest first">${x.trail.slice(-8).map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
           return `<i style="background:${c?c.color:'var(--g300)'}" title="${tShort(e.date)}"></i>`}).join('')}</span>`:''}</div></div>`};
+  const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
   return `
-  <div class="planhead"><h2>Goals</h2><span>step back · where you’re going · is the route working</span></div>
-  ${(()=>{const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
-    return `<div class="gheading gmission"><div class="seg-label" style="margin:0 0 6px">This week’s mission · week of ${tShort(isoWeek())}</div>
-      <textarea id="gmission" rows="1" placeholder="What are you going after this week — and why?">${esc(mw?mw.text:'')}</textarea>
-      ${!mw&&last?`<div class="ghint" style="margin:8px 0 0">Last week: ${esc(last.text)}</div>`:''}
-      ${past.length?`<button class="zlink" id="gmhist" style="font-size:12px;margin-top:10px">Past missions — ${past.length} · ${GMHIST?'hide':'show'}</button>
-        ${GMHIST?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}`:''}
-    </div>`})()}
-  <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
-    <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
-  <div class="gpulse">
-    <div class="gcheckwrap"><button class="gbox gcheck" id="gcheck">
-      <span class="ht-label">Goals check-in · a ritual</span>
-      <span class="gbig">${G.step?'Continue stepping back':ds===null?'Step back':'Step back again'}</span>
+  <div class="planhead"><h2>Goals</h2><span>the path for what you’re pushing now</span></div>
+  <div class="gtopbar">
+    <span class="gstat"><b>${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</b> ${cur.board.length?'things on your board move a goal':'nothing on your board yet'}<span class="gbar"><i style="width:${pct}%"></i></span>${cur.done.length?`<small>last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one</small>`:''}</span>
+    <span class="grow"></span>
+    ${act.length?`<button class="zlink" id="gquick">update the routes</button>`:''}
+    <button class="gbox gcheck gcheck-sm" id="gcheck"><span class="ht-label">Goals check-in · a ritual</span><span class="gbig">${G.step?'Continue stepping back':ds===null?'Step back':'Step back again'}</span>
       <span class="ht-meta">${G.step?'step '+(G.step.at+1)+' of '+GSTEP.length:ds===null?'whenever you need it':'last one '+(ds===0?'today':ds===1?'yesterday':ds+' days ago')} · about 5 minutes</span></button>
-      ${act.length?`<button class="zlink" id="gquick">or just update the routes</button>`:''}</div>
-    <div class="gbox gmeter">
-      <span class="ht-label">On purpose, currently</span>
-      <span class="gbig">${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</span>
-      <span class="gbar"><i style="width:${pct}%"></i></span>
-      <span class="ht-meta">${cur.board.length?'things on your board move a goal':'nothing on your board'}${cur.done.length?` · last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one`:''}</span></div>
   </div>
-  ${(()=>{const F=gFocus(),R=act.filter(x=>!x.focus);
-    return `<div class="gfocus"><div class="slotlabel" style="margin-top:0">In focus — ${F.length} of ${G_FOCUS_MAX}</div>
-      <div class="ghint">You can only push a couple of things at once. These get your energy now; the rest wait without guilt.</div>
-      <div class="gfgrid">${F.map(x=>`<div class="gfwrap">${card(x)}<button class="zlink gfout" data-gfocus="${x.id}:0">let it rest</button></div>`).join('')}
-        ${F.length<G_FOCUS_MAX?`<div class="gfempty">${R.length?'Pick one below to put in focus.':'Add a goal below.'}</div>`:''}</div></div>
-    <div class="grest"><div class="slotlabel">Resting — ${R.length}</div>
-      <div class="ghint">Still where you’re going. Not judged while they rest.</div>
+  <div class="gB">
+    <div class="gB-main gfocus"><div class="slotlabel" style="margin-top:0">In focus — ${F.length} of ${G_FOCUS_MAX}</div>
+      <div class="gfgrid">${F.map(card).join('')}
+        ${F.length<G_FOCUS_MAX?`<div class="gfempty">${R.length?'Pick one on the right to put in focus.':'Add a goal on the right.'}</div>`:''}</div></div>
+    <aside class="gB-side grest"><div class="slotlabel" style="margin-top:0">Resting — ${R.length}</div>
+      <div class="ghint">Not judged while they rest.</div>
       <div class="grgrid">${G_HOR.map(h=>{const L=R.filter(x=>x.horizon===h.id);
         return `<div class="gcol"><div class="ghh">${h.name}<span>${h.hint}</span></div>
           ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${gSteps(x).length?` <em class="grst">${gStepsDone(x)}/${gSteps(x).length}</em>`:''}${gNext(x)?`<small>Next → ${esc(gNext(x))}</small>`:''}</button>
             ${!gSteps(x).length&&!gKids(x).length?`<button class="gdraft sm" data-gdraft="${x.id}" title="Draft the steps">+ steps</button>`:''}
-            <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')||'<div class="grnone">—</div>'}
-          <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></div>`})()}
-  <div class="grulesrow"><div class="grules">
-    <div class="slotlabel">Keep straight — ${G.rules.length}</div>
-    <div class="ghint">Ground rules for how you get there. Worth a read whenever you step back.</div>
-    ${G.rules.map(r=>`<div class="grule"><span class="grule-t" data-gredit="${r.id}">${esc(r.text)}</span>
-      <button class="act del" data-grdel="${r.id}" title="Remove">×</button></div>`).join('')}
-    <input class="snew" id="gruleadd" placeholder="Add a ground rule — ⏎" /></div>
-  <div class="grules">
-    <div class="slotlabel">Lines that move you — ${G.lines.length}</div>
-    <div class="ghint">One shows on the focus clock at the end of an energy reset.</div>
-    ${G.lines.map(l=>`<div class="grule"><span class="grule-t gline" data-gledit="${l.id}">${esc(l.text)}</span>
-      <button class="act del" data-gldel="${l.id}" title="Remove">×</button></div>`).join('')}
-    <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div></div>
-  ${wins.length?`<div class="slotlabel">Wins — ${wins.length}</div>
-    ${wins.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d" style="background:#1E8E3E;opacity:1"></span>
-      <span class="t">${esc(x.title)}</span><span class="tag">${x.doneAt?tShort(x.doneAt):''}</span></div>`).join('')}`:''}
-  ${gone.length?`<div style="margin-top:22px"><button class="zlink" id="gletgo" style="font-size:12px">Let go — ${gone.length} · ${GLETGO?'hide':'show'}</button></div>
-    ${GLETGO?gone.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d"></span><span class="t" style="color:var(--ink-3)">${esc(x.title)}</span></div>`).join(''):''}`:''}`;
+            <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')}
+          <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></aside>
+  </div>
+  <div class="gcompass" id="gcompass"><div class="slotlabel" style="margin-top:0">Compass</div>
+    <div class="gcp-row"><span class="gcp-l">This week · ${tShort(isoWeek())}</span>
+      <textarea id="gmission" rows="1" placeholder="What are you going after this week — and why?">${esc(mw?mw.text:'')}</textarea></div>
+    ${!mw&&last?`<div class="ghint gcp-sub">Last week: ${esc(last.text)}</div>`:''}
+    <div class="gcp-row"><span class="gcp-l">Where it’s going</span>
+      <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
+    <div class="gcp-more">
+      ${past.length?`<button class="zlink" id="gmhist">past missions · ${past.length}</button>`:''}
+      <button class="zlink" id="gcprules">ground rules · ${G.rules.length} ${GCPR?'▾':'▸'}</button>
+      <button class="zlink" id="gcplines">lines that move you · ${G.lines.length} ${GCPL?'▾':'▸'}</button>
+      ${wins.length?`<button class="zlink" id="gcpwins">wins · ${wins.length} ${GCPW?'▾':'▸'}</button>`:''}
+      ${gone.length?`<button class="zlink" id="gletgo">let go · ${gone.length} ${GLETGO?'▾':'▸'}</button>`:''}</div>
+    ${GMHIST&&past.length?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}
+    ${GCPR?`<div class="grules gcp-fold"><div class="ghint">Ground rules for how you get there. Step back reads them back to you.</div>
+      ${G.rules.map(r=>`<div class="grule"><span class="grule-t" data-gredit="${r.id}">${esc(r.text)}</span>
+        <button class="act del" data-grdel="${r.id}" title="Remove">×</button></div>`).join('')}
+      <input class="snew" id="gruleadd" placeholder="Add a ground rule — ⏎" /></div>`:''}
+    ${GCPL?`<div class="grules gcp-fold"><div class="ghint">One shows on the focus clock at the end of an energy reset.</div>
+      ${G.lines.map(l=>`<div class="grule"><span class="grule-t gline" data-gledit="${l.id}">${esc(l.text)}</span>
+        <button class="act del" data-gldel="${l.id}" title="Remove">×</button></div>`).join('')}
+      <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div>`:''}
+    ${GCPW?wins.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d" style="background:#1E8E3E;opacity:1"></span>
+      <span class="t">${esc(x.title)}</span><span class="tag">${x.doneAt?tShort(x.doneAt):''}</span></div>`).join(''):''}
+    ${GLETGO?gone.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d"></span><span class="t" style="color:var(--ink-3)">${esc(x.title)}</span></div>`).join(''):''}
+  </div>`;
 }
 /* one goal: edits save as you go, like the task cards */
 function gSheet(id){
@@ -2830,6 +2830,12 @@ function wireGoals(){
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
   app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gopen)});   /* a project chip inside its parent's card opens the project */
+  [['gcprules',()=>GCPR=!GCPR],['gcplines',()=>GCPL=!GCPL],['gcpwins',()=>GCPW=!GCPW]].forEach(([id,f])=>{const b=document.getElementById(id);if(b)b.onclick=()=>{f();render()}});
+  app.querySelectorAll('[data-gpck]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [gid,sid]=b.dataset.gpck.split(':'),x=gById(gid),p=x&&gSteps(x).find(q=>q.id===sid);if(!p)return;
+    const t=gStepTask(p);if(gStepDone(p)){p.done=false;if(t&&t.done){t.done=false;delete t.doneAt}}else{p.done=true;if(t&&!t.done){t.done=true;t.doneAt=Date.now();clearFromPlan('work',t.id)}}
+    save();render();if(!gStepDone(p))return;const n=gStepNow(x);toast(n?'next: '+n.text.slice(0,50):'all steps done — that’s a win?')});
+  app.querySelectorAll('[data-gcweek]').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=gById(b.dataset.gcweek),n=x&&gStepNow(x);if(!n)return;
+    gStepToWeek(x,n);render();toast('“'+n.text.slice(0,40)+'” is on this week’s board')});
   app.querySelectorAll('[data-gdraft]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gdraft);
     const f=document.querySelector('#mlayer #gsadd');if(f){if(f.scrollIntoView)f.scrollIntoView({block:'center'});f.focus()}});
   app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
