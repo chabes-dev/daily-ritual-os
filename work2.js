@@ -799,7 +799,7 @@ const instr=i=>`Task: ${i.text}\nArea: ${(lane(i)||{name:'—'}).name}${i.steps&
 function attention(){const out=[];
   live().forEach(i=>{if(i.due&&i.due<today())out.push({id:i.id,k:'late',w:'Late',t:i.text,why:dl(i.due)+' past its deadline'});
     else if(wLate(i))out.push({id:i.id,k:'late',w:'Follow up',t:i.text,why:(i._wait.who||'someone')+' · was due '+dl(i._wait.checkBack)})});
-  gActive().filter(g=>g.route==='stuck').forEach(g=>out.push({goal:1,k:'stuck',w:'Goal',t:g.title,why:'stuck — step back'}));
+  gActive().filter(g=>g.route==='stuck'&&(g.focus||!gFocus().length)).forEach(g=>out.push({goal:1,k:'stuck',w:'Goal',t:g.title,why:'stuck — step back'}));
   return out}
 function ritState(){
   const b=buffer().length,od=waiting().filter(wLate).length,lc=R().goals.lastCheck,sb=lc?sinceD(lc):null,rd=ritualDone();
@@ -838,9 +838,9 @@ function planPanel(){
     ${!ritualDone()?'<button class="link" data-peek="0" style="margin-top:10px">hide — run the ritual first</button>':''}</div>`}
 function attPanel(max){const A=attention();
   return `<div class="ap"><div class="mono">Needs your attention</div>${A.length?A.slice(0,max).map(a=>`<button class="ap-i st-${a.k}" ${a.id?`data-open="${a.id}"`:'data-view="goals"'}><span class="w">${a.w}</span><span class="t">${esc(a.t)}</span><span class="why">${esc(a.why)}</span></button>`).join('')+(A.length>max?`<div class="note" style="margin-top:6px">+ ${A.length-max} more</div>`:''):'<div class="note" style="margin-top:8px">Nothing late or stuck.</div>'}</div>`}
-function goalsPanel(){const G=gActive();
+function goalsPanel(){const anyF=gFocus().length,G=gActive().slice().sort((a,b)=>!!b.focus-!!a.focus);
   return `<div class="arp"><div class="arp-h"><span class="mono">How your goals are doing</span><button class="link" data-view="goals">goals →</button></div>
-    ${G.map(g=>{const r=G_ROUTE.find(x=>x.id===g.route);return `<button class="arp-i" data-view="goals" title="${esc(g.next||'')}"><span class="n" style="font-weight:500">${esc(g.title)}</span><span class="st" style="--sc:${r?r.color:'#8A909C'}"><span class="sdot"></span>${r?r.name:'Not checked'}</span></button>`}).join('')||'<div class="note">No active goals yet.</div>'}
+    ${G.map(g=>{const rest=anyF&&!g.focus,r=rest?null:G_ROUTE.find(x=>x.id===g.route);return `<button class="arp-i ${rest?'rest':''}" data-view="goals" title="${esc(g.next||'')}"><span class="n" style="font-weight:500">${g.focus?'◎ ':''}${esc(g.title)}</span><span class="st" style="--sc:${r?r.color:'#8A909C'}"><span class="sdot"></span>${rest?'Resting':r?r.name:'Not checked'}</span></button>`}).join('')||'<div class="note">No active goals yet.</div>'}
     <div class="wcounts"><button data-view="today"><b>${onBoard('work').length}</b> on the board</button><button data-view="backlog"><b>${inBacklog('work').length}</b> backlog</button><button data-page="waiting"><b>${waiting().length}</b> waiting</button></div></div>`}
 function home(){const {L,next}=ritState(),main=L[0],others=L.slice(1),isNext=r=>r===next;
   return `<div class="hall h3"><div class="hero3"><button class="hb ${isNext(main)?'next':'later'}" data-go="${main.k}"><span class="mono">${isNext(main)?'Up next':ritualDone()?'Today’s ritual · done ✓':'Today’s ritual'}</span><span class="nm">${main.icon} ${main.name}</span><span class="sub">Music, dump, sort, pick. The whole day in about 10 minutes.</span><span class="ln">${main.line}</span><span class="go">${isNext(main)?'Start <kbd>⏎</kbd>':ritualDone()?'Open again':'Start'}</span></button>

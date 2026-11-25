@@ -368,6 +368,12 @@ function queueOf(m){
   const ord=p.order||[],at=id=>{const k=ord.indexOf(id);return k<0?1e6:k};
   return def.map(([id,slot],k)=>({id,slot,k})).sort((a,b)=>at(a.id)-at(b.id)||a.k-b.k);
 }
+/* put a task on today by hand, no ritual needed: deep if it's a deep one and the slot is free,
+   else a batch slot, else a spare one; only says no when the day is truly full */
+function toToday(m,id){
+  const i=byId(id);if(!i)return;const p=plan(m),c=dayCaps(m);
+  const ok=(i.star&&!p.deep&&c.deep&&assign(m,'deep',id,true))||(p.batch.length<c.batch&&assign(m,'batch',id,true))||(p.next.length<c.next&&assign(m,'next',id,true));
+  if(ok){render();toast('on today')}else noRoomSheet(m,'batch')}
 function queueMove(m,id,dir){
   const q=queueOf(m).map(x=>x.id),k=q.indexOf(id),j=k+dir;if(k<0||j<0||j>=q.length)return;
   [q[k],q[j]]=[q[j],q[k]];S.plan[m].order=q;save();render()}
@@ -1070,6 +1076,12 @@ function closeDP(){dplayer.innerHTML='';DPV=null}
 /* ===== render ===== */
 const app=document.getElementById('app'),layer=document.getElementById('layer'),keysbox=document.getElementById('keysbox');
 function render(){
+  /* anything marked data-keepx keeps its scroll position through the redraw */
+  const KEEP={};document.querySelectorAll('#app [data-keepx]').forEach(e=>KEEP[e.dataset.keepx]=[e.scrollLeft,e.scrollTop]);
+  renderApp();
+  document.querySelectorAll('#app [data-keepx]').forEach(e=>{const k=KEEP[e.dataset.keepx];if(k){e.scrollLeft=k[0];e.scrollTop=k[1]}});
+}
+function renderApp(){
   const m=S.ui.mode,other=m==='work'?'personal':'work';
   document.body.dataset.mode=m;
   const P=m==='personal';
@@ -1196,7 +1208,7 @@ function viewToday(){
     ${streak.count>0?`<span class="streak ${streak.hitToday?'lit':''}" title="Days in a row you finished the deep task on a day that had room for one">🔥 ${streak.count}</span>`:''}</div>
   <div class="queue">
     ${q.length?q.map((x,n)=>queueRow(x,n,n===q.length-1)).join('')
-      :`<div class="qempty">Nothing picked for today yet — the ritual does it in a minute, or pick from the board below.</div>`}
+      :`<div class="qempty">Nothing picked for today yet — run the ritual, or hit + Today on any task below (or drag it here).</div>`}
   </div></div>
   <aside class="tdside">
   ${pp?`<div class="db-chip flat tdpp" style="border-color:var(--green,#1E8E3E);display:inline-flex;margin-bottom:22px">Personal: ${esc(pp.title)}
@@ -1349,7 +1361,7 @@ function mini(i){
     <span class="d" style="background:${dotColor(i)}"></span>
     <span class="t">${esc(i.text)}</span>
     ${l?`<span class="tag" style="color:${l.c==='late'?C.red:'var(--ink-3)'}">${l.c==='late'?l.t:'due '+l.t}</span>`:''}
-    <span class="mq"><button class="act" data-done="${i.id}" title="Already done">✓</button><button class="act" data-mmore="${i.id}" title="More actions">⋯</button></span>
+    <span class="mq"><button class="act mqt" data-totoday="${i.id}" title="Put it on today">+ Today</button><button class="act" data-done="${i.id}" title="Already done">✓</button><button class="act" data-mmore="${i.id}" title="More actions">⋯</button></span>
     <span class="floatbar"><button class="act" data-done="${i.id}" title="Already done">✓ Done</button>
       <button class="act" data-todeep="${i.id}">Deep</button>
       <button class="act" data-tobatch="${i.id}">Batch</button>
@@ -1486,31 +1498,36 @@ const BL_HINT={sched:'comes back on a date',hold:'waiting on someone or somethin
 const blGoalOf=i=>{const g=i.goal&&gById(i.goal);return g&&g.state==='active'?g.id:''};
 function blCols(){
   const hor=G_HOR.map(h=>h.id);
-  return [{id:'',name:'No goal yet',sub:'not linked to a goal'}]
-    .concat(gActive().slice().sort((a,b)=>hor.indexOf(a.horizon)-hor.indexOf(b.horizon))
-      .map(g=>({id:g.id,name:g.title,sub:gHor(g.horizon).name,goal:g})))}
+  const def=[{id:'',name:'No goal yet',sub:'not linked to a goal'}]
+    .concat(gActive().slice().sort((a,b)=>(!!b.focus-!!a.focus)||hor.indexOf(a.horizon)-hor.indexOf(b.horizon))
+      .map(g=>({id:g.id,name:g.title,sub:(g.focus?'In focus · ':'')+gHor(g.horizon).name,goal:g})));
+  const o=S.ui.blGoalOrder||[],at=c=>{const k=o.indexOf(c.id);return k<0?1e6+def.indexOf(c):k};
+  return def.sort((a,b)=>at(a)-at(b))}
+function blMoveCol(id,dir){
+  const ids=blCols().map(c=>c.id),k=ids.indexOf(id),j=k+dir;if(k<0||j<0||j>=ids.length)return;
+  [ids[k],ids[j]]=[ids[j],ids[k]];S.ui.blGoalOrder=ids;save();render()}
 const blOpen=(id,n)=>{const o=(S.ui.blRows||{})[id];return o===undefined?n>0:!!o};
 function viewWorkBacklog(items){
   items=items.filter(i=>!i.project);
   const order=backlogOrder(),custom=order.join()!==WORK_BACKLOG_ORDER.join();
   const nRev=brPool().length,cols=blCols();
   const inCell=(row,g)=>items.filter(i=>backlogCol(i)===row&&blGoalOf(i)===g)
-    .sort(row==='sched'?(a,b)=>schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0:byOrd);
-  const head=c=>{const n=items.filter(i=>blGoalOf(i)===c.id).length,
+    .sort(row==='sched'?(a,b)=>((a.bOrd??1e9)-(b.bOrd??1e9))||(schedDate(a)<schedDate(b)?-1:schedDate(a)>schedDate(b)?1:0):byOrd);
+  const head=(c,ci)=>{const n=items.filter(i=>blGoalOf(i)===c.id).length,
       onb=c.goal?onBoard('work').filter(i=>i.goal===c.id).length:0;
-    return `<div class="blhd ${c.id?'':'nogoal'}"><span class="blhor">${esc(c.sub)}</span>
+    return `<div class="blhd ${c.id?'':'nogoal'}"><span class="blmv">${ci>0?`<button data-blmove="${c.id}:-1" title="Move this column left">‹</button>`:''}${ci<cols.length-1?`<button data-blmove="${c.id}:1" title="Move this column right">›</button>`:''}</span><span class="blhor">${esc(c.sub)}</span>
       <b>${esc(c.name)}</b>
       <small>${c.id?(n||onb?`${n} waiting here${onb?` · ${onb} on the board`:''}`:'<em>nothing lined up for this goal</em>'):`${n} waiting`}</small></div>`};
   return `<div class="blintro">Later — what each thing is waiting for, against the goal it moves. Nothing here appears on Today; review it once a week and pull what's ready back in.
     ${custom?`<button class="zlink" id="colreset" style="font-size:12px">reset row order</button>`:''}</div>
   <div class="bltop">${nRev?`<button class="btn btn-hot brgo" id="brgo">▶ Review one by one · ${nRev}</button>`:''}
     <span class="blkeys"><button class="zlink" data-blall="1">Open all rows</button> · <button class="zlink" data-blall="0">Fold all</button></span></div>
-  <div class="blwrap"><div class="blmap" style="grid-template-columns:var(--blrow) repeat(${cols.length},minmax(var(--blcol),1fr));min-width:calc(var(--blrow) + ${cols.length} * var(--blcol))">
+  <div class="blwrap" data-keepx="bl"><div class="blmap" style="grid-template-columns:var(--blrow) repeat(${cols.length},minmax(var(--blcol),1fr));min-width:calc(var(--blrow) + ${cols.length} * var(--blcol))">
     <div class="blcorner"></div>${cols.map(head).join('')}
     ${order.map(id=>{const c=WORK_BACKLOG.find(x=>x.id===id),sched=id==='sched',
         n=items.filter(i=>backlogCol(i)===id).length,open=blOpen(id,n);
       return `<button class="blrow ${open?'':'shut'}" data-blrow="${id}" style="--bc:${c.color}">
-          <span><em>${open?'▾':'▸'}</em>${c.name}</span><small>${n} · ${BL_HINT[id]}</small></button>
+          <div class="blrl"><span><em>${open?'▾':'▸'}</em>${c.name}</span><small>${n} · ${BL_HINT[id]}</small></div></button>
         ${cols.map(g=>{const L=inCell(id,g.id);
           return `<div class="blcell zone ${open?'':'shut'}" style="--bc:${c.color}" data-bgoal="${g.id}" ${sched?'data-bsched="1"':`data-bcol="${id}" data-bucket="backlog"`}>
             ${open?(L.map(i=>card(i,sched?schedLabel(i):null)).join('')||'<span class="blnone">—</span>')
@@ -1586,7 +1603,7 @@ function zSteps(m){
   const base=RITUALS[m];
   if(m==='work'){
     if(gMissionWeek()&&!(S.ritual.work||[]).includes('wm'))return base;
-    const at=base.findIndex(s=>s.id==='wad')+1;
+    const at=base.findIndex(s=>s.id==='w4')+1;   /* after Sort the dump, right before Pick today */
     return [...base.slice(0,at),WMISSION,...base.slice(at)]}
   const gated=m==='personal'&&S.week.iso===isoWeek()&&S.week[m];
   if(gated)return base;
@@ -2409,6 +2426,15 @@ function gMissionLine(){
   return `<div class="gmline"><span>◎ ${x.week===isoWeek()?'This week’s mission':'Your mission'}</span>${esc(x.text)}</div>`}
 const gById=id=>S.goals.items.find(x=>x.id===id);
 const gActive=()=>S.goals.items.filter(x=>x.state==='active');
+/* focus: you can only push a couple of things at once. Up to two goals are in focus; the rest rest —
+   still on the map, but not judged, so a quiet goal isn't a red "stuck" on a low-energy week */
+const G_FOCUS_MAX=2;
+const gFocus=()=>gActive().filter(x=>x.focus).sort((a,b)=>(a.focusAt||0)-(b.focusAt||0));
+function gSetFocus(id,on){const x=gById(id);if(!x)return;
+  if(on){const F=gFocus();let out=null;if(F.length>=G_FOCUS_MAX){out=F[0];out.focus=false}
+    x.focus=true;x.focusAt=Date.now();save();render();
+    toastUndo(out?'in focus — “'+out.title.slice(0,30)+'” rests':'in focus',()=>{x.focus=false;if(out){out.focus=true}save();render()})}
+  else{x.focus=false;save();render();toast('resting — no pressure')}}
 const gRoute=x=>G_ROUTE.find(r=>r.id===x.route)||null;
 const gHor=id=>G_HOR.find(h=>h.id===id)||G_HOR[0];
 function gAdd(title,horizon){
@@ -2469,11 +2495,18 @@ function viewGoals(){
       <span class="gbar"><i style="width:${pct}%"></i></span>
       <span class="ht-meta">${cur.board.length?'things on your board move a goal':'nothing on your board'}${cur.done.length?` · last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one`:''}</span></div>
   </div>
-  <div class="ghor">${G_HOR.map(h=>{const L=act.filter(x=>x.horizon===h.id);
-    return `<div class="gcol"><div class="slotlabel" style="margin-top:0">${h.name} — ${L.length}</div>
-      <div class="ghint">${h.hint}</div>
-      ${L.map(card).join('')}
-      <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div>
+  ${(()=>{const F=gFocus(),R=act.filter(x=>!x.focus);
+    return `<div class="gfocus"><div class="slotlabel" style="margin-top:0">In focus — ${F.length} of ${G_FOCUS_MAX}</div>
+      <div class="ghint">You can only push a couple of things at once. These get your energy now; the rest wait without guilt.</div>
+      <div class="gfgrid">${F.map(x=>`<div class="gfwrap">${card(x)}<button class="zlink gfout" data-gfocus="${x.id}:0">let it rest</button></div>`).join('')}
+        ${F.length<G_FOCUS_MAX?`<div class="gfempty">${R.length?'Pick one below to put in focus.':'Add a goal below.'}</div>`:''}</div></div>
+    <div class="grest"><div class="slotlabel">Resting — ${R.length}</div>
+      <div class="ghint">Still where you’re going. Not judged while they rest.</div>
+      <div class="grgrid">${G_HOR.map(h=>{const L=R.filter(x=>x.horizon===h.id);
+        return `<div class="gcol"><div class="ghh">${h.name}<span>${h.hint}</span></div>
+          ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${x.next?`<small>Next → ${esc(x.next)}</small>`:''}</button>
+            <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')||'<div class="grnone">—</div>'}
+          <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></div>`})()}
   <div class="grulesrow"><div class="grules">
     <div class="slotlabel">Keep straight — ${G.rules.length}</div>
     <div class="ghint">Ground rules for how you get there. Worth a read whenever you step back.</div>
@@ -2566,7 +2599,7 @@ const GNOTE={arrive:'One line is enough. If there’s more, write it in Spark fi
   move:'Pick one goal and the very next step. It goes to Sort, linked to the goal.',
   close:'One sentence. The next check-in shows it back to you.'};
 /* the goals the ritual walks through, in horizon order, still active */
-const gStepGoals=()=>G_HOR.flatMap(h=>gActive().filter(x=>x.horizon===h.id));
+const gStepGoals=()=>{const F=gFocus();return F.length?F:G_HOR.flatMap(h=>gActive().filter(x=>x.horizon===h.id))};
 function startStepBack(){
   if(!S.goals.step){S.goals.step={at:0,gi:0,startedAt:Date.now(),feel:'',ans:{},pick:null,move:'',close:'',taskId:null};save()}
   tzOpen('step');
@@ -2732,6 +2765,7 @@ function wireGoals(){
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
   app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=()=>gSheet(b.dataset.gopen));
+  app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
   const ck=document.getElementById('gcheck');if(ck)ck.onclick=startStepBack;
   const qk=document.getElementById('gquick');if(qk)qk.onclick=gCheckSheet;
   app.querySelectorAll('[data-gadd]').forEach(ta=>{autosize(ta);ta.oninput=()=>autosize(ta);
@@ -4270,6 +4304,7 @@ function wire(){
   app.querySelectorAll('[data-colid]>.col-head').forEach(colDrag);
   app.querySelectorAll('[data-blrow]').forEach(b=>b.onclick=()=>{const k=b.dataset.blrow,o=S.ui.blRows=S.ui.blRows||{};
     o[k]=!b.classList.contains('shut')?0:1;save();render()});
+  app.querySelectorAll('[data-blmove]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,d]=b.dataset.blmove.split(':');blMoveCol(id,+d)});
   app.querySelectorAll('[data-blall]').forEach(b=>b.onclick=()=>{S.ui.blRows={};WORK_BACKLOG.forEach(c=>S.ui.blRows[c.id]=+b.dataset.blall);save();render()});
   app.querySelectorAll('[data-bladd]').forEach(f=>f.addEventListener('keydown',e=>{if(e.key!=='Enter')return;
     const v=f.value.trim();if(!v)return;const g=f.dataset.bladd;
@@ -4329,6 +4364,7 @@ function wire(){
   app.querySelectorAll('[data-todeep]').forEach(b=>b.onclick=e=>{e.stopPropagation();
     const i=byId(b.dataset.todeep);if(i)assign(i.mode,'deep',i.id)});
   app.querySelectorAll('[data-tobatch]').forEach(b=>b.onclick=e=>{e.stopPropagation();assign(m,'batch',b.dataset.tobatch)});
+  app.querySelectorAll('[data-totoday]').forEach(b=>b.onclick=e=>{e.stopPropagation();toToday(m,b.dataset.totoday)});
   app.querySelectorAll('[data-tobuffer]').forEach(b=>b.onclick=e=>{e.stopPropagation();assign(m,'buffer',b.dataset.tobuffer)});
   app.querySelectorAll('[data-tonext]').forEach(b=>b.onclick=e=>{e.stopPropagation();assign(m,'next',b.dataset.tonext)});
   app.querySelectorAll('[data-unplan]').forEach(b=>b.onclick=e=>{e.stopPropagation();
@@ -4399,13 +4435,19 @@ function wire(){
   /* today's queue: ↑↓, or drop a row on another to take its place */
   app.querySelectorAll('[data-qup]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qup,-1)});
   app.querySelectorAll('[data-qdown]').forEach(b=>b.onclick=e=>{e.stopPropagation();queueMove(m,b.dataset.qdown,1)});
+  const qbox=app.querySelector('.tdmain .queue');
+  if(qbox){qbox.addEventListener('dragover',e=>{if(!e.target.closest('.qrow')){e.preventDefault();qbox.classList.add('over')}});
+    qbox.addEventListener('dragleave',e=>{if(!qbox.contains(e.relatedTarget))qbox.classList.remove('over')});
+    qbox.addEventListener('drop',e=>{if(e.target.closest('.qrow'))return;e.preventDefault();qbox.classList.remove('over');
+      const id=dragId||e.dataTransfer.getData('text/plain');dropPh();if(!id)return;
+      if(queueOf(m).some(x=>x.id===id))return;toToday(m,id)})}
   app.querySelectorAll('.qrow').forEach(r=>{
     r.addEventListener('dragover',e=>{e.preventDefault();r.classList.add('over')});
     r.addEventListener('dragleave',e=>{if(!r.contains(e.relatedTarget))r.classList.remove('over')});
     r.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();r.classList.remove('over');
       const id=dragId||e.dataTransfer.getData('text/plain');dropPh();if(!id||id===r.dataset.q)return;
       const qq=queueOf(m).map(x=>x.id);
-      if(!qq.includes(id)){toast('drop it on a Room chip — Deep, batch, AI or spare');return}
+      if(!qq.includes(id)){toToday(m,id);return}
       qq.splice(qq.indexOf(id),1);qq.splice(queueOf(m).findIndex(x=>x.id===r.dataset.q),0,id);
       S.plan[m].order=qq;save();render()})});
 
@@ -4440,7 +4482,7 @@ function wire(){
         clearFromPlan(item.mode,item.id)}
       const ids=[...zone.querySelectorAll('.card,.mini')].map(el=>el.dataset.id).filter(x=>x!==id);
       ids.splice(idx,0,id);
-      ids.forEach((x,k)=>{const it=byId(x);if(it)it.ord=k*100});
+      ids.forEach((x,k)=>{const it=byId(x);if(it){it.ord=k*100;if(zone.classList.contains('blcell'))it.bOrd=k*100}});
       item.fresh=true;save();render();
       setTimeout(()=>{S.items.forEach(x=>delete x.fresh);save()},700)})});
 

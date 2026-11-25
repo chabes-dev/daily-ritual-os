@@ -41,13 +41,46 @@ body[data-mode="personal"]{   /* Sand & Ink — warm sand, dark ink, olive */
   --hot:#5E6B35; --hot-2:#5E6B35; --hot-ink:#4A5527; --hot-soft:#E7EBD9; --hot-line:#B9C29A;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+.queue.over{outline:2px dashed var(--hot);outline-offset:6px;border-radius:18px}
+/* ---- Goals: two in focus, the rest resting ---- */
+.gfocus{margin-top:26px}
+.gfgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:12px}
+.gfwrap{display:flex;flex-direction:column;gap:6px}
+.gfwrap .gcard{flex:1}
+.gfout{align-self:flex-end;font-size:12px}
+.gfempty{border:1.5px dashed var(--line);border-radius:22px;display:flex;align-items:center;justify-content:center;min-height:160px;color:var(--ink-3);font-size:15px;padding:20px;text-align:center}
+.grest{margin-top:30px}
+.grgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin-top:12px}
+.ghh{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.ghh span{display:block;font:400 13px var(--sans);letter-spacing:0;text-transform:none;margin-top:2px}
+.grrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.grt{flex:1;min-width:0;text-align:left;font:400 18px/1.3 var(--serif);color:var(--ink-2)}
+.grt small{display:block;font:400 13px var(--sans);color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grt:hover{color:var(--ink)}
+.grf{flex:none}
+.grnone{color:var(--ink-3);padding:8px 0}
+@media (max-width:760px){.gfgrid,.grgrid{grid-template-columns:minmax(0,1fr)}}
+
 /* ---- Work backlog map: rows = what it waits for, columns = the goal it moves ---- */
 .blintro{font-size:18px;color:var(--ink-2);margin-bottom:16px;max-width:80ch}
 .bltop{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
 .bltop .brgo{margin:0}
 .blkeys{margin-left:auto;font-size:14px;color:var(--ink-3)}
-.blwrap{--blrow:210px;--blcol:290px;overflow-x:auto;padding-bottom:30px;margin:0 -4px}
-.blmap{display:grid;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 1px 2px rgba(40,30,10,.05),0 12px 28px -18px rgba(40,30,10,.30);overflow:hidden}
+.blwrap{--blrow:210px;--blcol:290px;overflow:auto;max-height:calc(100vh - var(--w2h,150px) - 40px);margin:0 -4px 30px;border-radius:22px}
+/* goal names stay pinned while you scroll down; row names while you scroll sideways */
+.blcorner,.blhd{position:sticky;top:0;z-index:3}
+.blcorner{z-index:5}
+.blhd{position:sticky}
+/* cards stay under the pinned row names and goal headers when the map scrolls */
+.blcell{position:relative;isolation:isolate;z-index:0}
+.blrow{z-index:4!important;display:flex!important;flex-direction:column;justify-content:flex-start}   /* buttons centre their content; row names belong at the top */
+.blhd{z-index:6!important}
+.blcorner{z-index:8!important}
+.blmv{position:absolute;top:10px;right:10px;display:flex;gap:4px;opacity:0;transition:opacity .12s}
+.blhd:hover .blmv{opacity:1}
+.blmv button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:17px;line-height:1}
+.blmv button:hover{background:var(--sunken);color:var(--ink)}
+.blmap{display:grid;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 1px 2px rgba(40,30,10,.05),0 12px 28px -18px rgba(40,30,10,.30)}
 .blcorner,.blhd{background:var(--surface);border-bottom:1px solid var(--line)}
 .blcorner{position:sticky;left:0;z-index:3}
 .blhd{padding:18px 18px 14px;border-left:1px solid var(--line-soft);display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -58,6 +91,7 @@ body[data-mode="personal"]{   /* Sand & Ink — warm sand, dark ink, olive */
 .blhd.nogoal .blhor{color:var(--ink-3)}
 .blrow{position:sticky;left:0;z-index:2;font:inherit;text-align:left;cursor:pointer;display:block;width:100%;border:0;
   background:var(--bg);border-left:5px solid var(--bc,transparent);border-bottom:1px solid var(--line-soft);box-shadow:1px 0 0 var(--line);padding:16px 14px;color:inherit}
+.blrow .blrl{position:sticky;top:150px}   /* the row's name follows you down a tall row */
 .blrow span{display:block;font:600 12.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--bc)}
 .blrow span em{font-style:normal;display:inline-block;width:16px}
 .blrow small{display:block;margin-top:4px;font-size:13px;color:var(--ink-3);line-height:1.35}
@@ -296,6 +330,7 @@ input,textarea{font-family:inherit;color:inherit;background:none;border:none;out
 .mini .mq{display:none;gap:2px;flex:none}
 .mini:hover .mq,.mini.open .mq{display:flex}
 .mini:hover{color:var(--ink)}
+.mini .mq .act.mqt{font:600 13px var(--sans);color:var(--hot);border:1px solid var(--hot-line,var(--line))}
 .mini .mq .act{font:600 16px var(--sans);letter-spacing:0;padding:4px 11px;border-radius:9px;color:var(--ink-2)}
 .mini .mq .act:hover{background:var(--sunken);color:var(--ink)}
 .mini.open .mq [data-mmore]{background:var(--sunken);color:var(--ink)}
