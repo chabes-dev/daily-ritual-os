@@ -558,7 +558,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('.nav [data-v="goals"]').textContent==='Goals','the tab is just its name');
     P.click('.nav [data-v="goals"]');
     ok(P.g('S.ui.workView')==='goals'&&!!P.$('#gheading'),'the tab opens Goals');
-    ok(P.$$('.gcol').length===3&&P.$$('.gcol .slotlabel').map(e=>e.textContent).join()==='Now — 0,3 months — 0,A year or more — 0','three horizons: Now, 3 months, a year or more');
+    ok(P.$$('.gcol').length===3&&P.$$('.gcol .ghh').map(e=>e.firstChild.textContent).join()==='Now,3 months,A year or more','three horizons: Now, 3 months, a year or more');
+    ok(P.$('.gfocus').textContent.includes('In focus — 0 of 2')&&!!P.$('.gfempty'),'focus starts empty: up to two goals');
     ok(P.$('#gcheck').textContent.includes('Step back')&&!P.$('#gquick'),'check-in is a ritual; no quick update until there are goals');
     P.type('#gheading','Become the undeniable creative lead for LATAM.');
     ok(P.g('S.goals.heading')==='Become the undeniable creative lead for LATAM.','heading autosaves');
@@ -569,7 +570,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.g(`S.goals.items.filter(x=>x.horizon==='now').map(x=>x.title).join('|')`)==='File the EB1 application|New portfolio online|Two new exciting briefs','pasting several lines adds several (bullets stripped, blanks skipped)');
     P.enter('[data-gadd="q"]','Lead SOIP MX and BR Relax');
     P.enter('[data-gadd="long"]','Creative lead for LATAM, then the US');
-    ok(P.$$('.gcard').length===5,'cards render');
+    ok(P.$$('.grrow').length===5&&P.$$('.gcard').length===0,'new goals start resting, one row each');
     ok(P.$('[data-gadd="long"]')===P.w.document.activeElement,'focus stays in the add box for the next one');
     /* ground rules */
     P.enter('#gruleadd','Rafa is an ally — never fight him');P.enter('#gruleadd','Make my value obvious to Luana and Pedro');
@@ -597,7 +598,9 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$$('#mlayer [data-gby]').map(b=>b.textContent).join('|')==='No date|End of this month|End of next month|In 3 months|In a year','by-when choices match the horizons');
     P.click('#mlayer [data-ghz="now"]');
     P.click('#mlayer #gok');
-    ok(P.$(`[data-gopen="${eb}"]`).textContent.includes('Next → Book the call')&&P.$(`[data-gopen="${eb}"]`).textContent.includes('1 task on it'),'card shows next step and linked tasks');
+    ok(P.$(`[data-gopen="${eb}"]`).textContent.includes('Next → Book the call'),'a resting goal shows its next step');
+    P.click(`[data-gfocus="${eb}:1"]`);
+    ok(P.g(`gById('${eb}').focus`)===true&&P.$(`.gcard[data-gopen="${eb}"]`).textContent.includes('1 task on it'),'Focus: it becomes a full card, with its linked tasks');
 
     /* link an existing task from its own card; the today card shows the link */
     P.g(`const [t]=add('Draft the SOIP MX idea','work','brief');t.sorted=true;assign('work','deep',t.id);S.ui.workView='today';render()`);
@@ -726,7 +729,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const dif=(a,b)=>{let i=0;while(i<a.length&&a[i]===b[i])i++;return '\n      live: …'+a.slice(Math.max(0,i-80),i+120)+'\n      new : …'+b.slice(Math.max(0,i-80),i+120)};
     /* work today became a queue in this change — compared again once the live version has it */
     for(const [n] of views){if(n==='work today'&&!A[n].includes('tdesk'))continue;
-      if(n==='work backlog'&&!A[n].includes('blmap'))continue;   /* Backlog became the goal map — compared again once live */   /* Today became the desk (queue + side column) — compared again once live */ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
+      if(n==='work backlog'&&!A[n].includes('blmv'))continue;   /* movable goal columns — compared again once live */   /* Backlog became the goal map — compared again once live */   /* Today became the desk (queue + side column) — compared again once live */ok(A[n]===B[n],n+' is unchanged'+(A[n]===B[n]?'':dif(A[n],B[n])))}
     ok(A['work task card']===B['work task card'],'work task card is unchanged when no goals exist'+(A['work task card']===B['work task card']?'':dif(A['work task card'],B['work task card'])));
     ok(B.navWork===A.navWork,'work tabs unchanged ('+B.navWork+')');
     ok(A.navPersonal===B.navPersonal,'personal tabs unchanged');
@@ -1097,9 +1100,8 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     const st={};let P=boot(NEW,st);
     /* last week's mission exists; this week's doesn't */
     P.g(`S.ui.mode='work';S.goals.missions=[{id:'mold',week:tAddPer(isoWeek(),-7,'days'),text:'Ship the SOIP MX route',at:1}];save()`);
-    ok(P.g(`zSteps('work').map(s=>s.id).slice(0,3).join()`)==='w1,wad,wm','the weekly mission step comes right after the ad breakfast');
-    P.g('startZen()');
-    let guard=0;while(P.g('ZSTEPS[ZI].id')!=='wm'&&guard++<5)P.click('#zgo');
+    ok((()=>{const ids=P.g(`zSteps('work').map(s=>s.id).join()`).split(',');return ids.indexOf('wm')===ids.indexOf('w4')+1&&ids[ids.indexOf('wm')+1]==='w6'})(),'the weekly mission step comes after sorting the dump, right before picking');
+    P.g("startZen();ZI=ZSTEPS.findIndex(s=>s.id==='wm');paintZen(true)");
     ok(P.$('#zname').textContent==='This week’s mission'&&P.$('#znote').textContent.includes('Write it fresh'),'work ritual: write this week’s mission, fresh');
     ok(P.$('#zmid').textContent.includes('Last week: Ship the SOIP MX route')&&P.$('#zmission').value==='','… last week’s shown for reference, not copied in');
     ok(P.$('#zgo').textContent==='Skip for now','… skippable');
@@ -1595,6 +1597,52 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     /* dropping a track task skips the round like any cycle, and resets the stage */
     P.g(`tSet(tCycItem(tCyc('dt')),'dropped')`);
     ok(P.g(`tCyc('dt').stage`)===null&&P.g(`tCycItem(tCyc('dt'))`)===null,'dropped: back to waiting for the next date');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  /* ===================================================================== */
+  section('34. goals: two in focus, the rest resting');
+  {
+    const st={};const P=boot(NEW,st);
+    P.g(`['A','B','C','D'].forEach(t=>gAdd(t,'now'));S.goals.items.forEach(x=>x.route='stuck');S.ui.mode='work';S.ui.workView='goals';save();render()`);
+    const id=t=>P.g(`S.goals.items.find(x=>x.title==='${t}').id`);
+    ok(P.$$('.grrow').length===4&&P.$$('.grf').every(b=>b.textContent==='Focus'),'four goals, all resting, each with Focus');
+    P.click(`[data-gfocus="${id('A')}:1"]`);P.click(`[data-gfocus="${id('B')}:1"]`);
+    ok(P.g('gFocus().map(x=>x.title).join()')==='A,B'&&P.$$('.gfgrid .gcard').length===2&&!P.$('.gfempty'),'two in focus, full cards');
+    ok(P.$$('.grf').every(b=>b.textContent==='Swap in'),'when focus is full the button says Swap in');
+    P.click(`[data-gfocus="${id('C')}:1"]`);
+    ok(P.g('gFocus().map(x=>x.title).join()')==='B,C'&&P.g(`gById('${id('A')}').focus`)===false,'swapping in rests the oldest one');
+    P.g(`[...document.querySelectorAll('.toast .undo')].pop().click()`);   /* the newest toast's Undo */
+    ok(P.g('gFocus().map(x=>x.title).sort().join()')==='A,B','… and undo puts it back');
+    P.click(`[data-gfocus="${id('A')}:0"]`);
+    ok(P.g('gFocus().map(x=>x.title).join()')==='B'&&!!P.$('.gfempty'),'let it rest: back to the resting list');
+    ok(P.g('gStepGoals().map(x=>x.title).join()')==='B','the step-back check-in walks the goal in focus');
+    ok(P.g(`blCols().map(c=>c.name).join()`).startsWith('No goal yet,B'),'backlog map: the focus goal is the first goal column');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  /* ===================================================================== */
+  section('35. today by hand: + Today, drag onto Up next, backlog map keeps its place');
+  {
+    const st={};const P=boot(NEW,st);
+    P.g(`const m=add('Write the deck\\nReply to Pedro\\nPlan the shoot\\nCall the lawyer\\nBook travel\\nUpdate the brief','work');
+      m.forEach(i=>{i.sorted=true;i.lane='batch'});m[0].star=true;S.ui.mode='work';S.ui.workView='today';save();render()`);
+    const id=t=>P.g(`S.items.find(x=>x.text==='${t}').id`);
+    ok(P.$('.qempty').textContent.includes('+ Today'),'empty Today says how to fill it by hand');
+    P.click(`[data-totoday="${id('Write the deck')}"]`);
+    ok(P.g(`plan('work').deep`)===id('Write the deck'),'+ Today on a deep task fills the deep slot');
+    ['Reply to Pedro','Plan the shoot','Call the lawyer'].forEach(t=>P.click(`[data-totoday="${id(t)}"]`));
+    ok(P.g(`plan('work').batch.length`)===3,'… then batch slots');
+    P.click(`[data-totoday="${id('Book travel')}"]`);
+    ok(P.g(`plan('work').next.includes('${id('Book travel')}')`),'… then spare');
+    const drop=(el,i)=>{const e=new P.w.Event('drop',{bubbles:true,cancelable:true});e.dataTransfer={getData:()=>i};el.dispatchEvent(e)};
+    drop(P.$('.tdmain .queue'),id('Update the brief'));
+    ok(P.g(`queueOf('work').some(x=>x.id==='${id('Update the brief')}')`),'dragging a board task onto Up next puts it on today');
+    ok(P.$$('.qrow').length===6,'the queue shows all six');
+    /* the backlog map keeps its sideways scroll through a redraw */
+    P.g(`S.ui.workView='backlog';render()`);
+    const w=P.$('.blwrap');w.scrollLeft=420;P.g('render()');
+    ok(P.$('.blwrap').scrollLeft===w.scrollLeft&&P.$('.blwrap')!==w,'backlog map: redraw keeps where you scrolled to');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 
