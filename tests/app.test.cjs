@@ -622,11 +622,10 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
       a.goal='${eb}';d.goal='${soip}';c.goal='${eb}';setBucket(c,'backlog');
       const [e,f,g]=add('Linked done\\nUnlinked done\\nOld linked','work');e.goal='${eb}';g.goal='${eb}';
       [e,f,g].forEach(i=>{i.done=true;i.doneAt=Date.now()});g.doneAt=Date.now()-14*864e5;S.ui.workView='goals';save();render()`);
-    ok(P.$('.gmeter .ht-label').textContent==='On purpose, currently','labelled “currently”, not “this week”');
-    ok(P.$('.gmeter .gbig').textContent==='2 of 3'&&P.$('.gmeter .gbar i').style.width==='67%','2 of the 3 things on the board move a goal (backlog not counted)');
-    ok(P.$('.gmeter .ht-meta').textContent.includes('last 7 days: 1 of 2 finished moved one'),'plus the last 7 days of finished work');
+    ok(P.$('.gstat b').textContent==='2 of 3'&&P.$('.gstat .gbar i').style.width==='67%','2 of the 3 things on the board move a goal (backlog not counted)');
+    ok(P.$('.gstat small').textContent.includes('last 7 days: 1 of 2 finished moved one'),'plus the last 7 days of finished work');
     P.g(`gById('${soip}').state='dropped';save();render()`);
-    ok(P.$('.gmeter .gbig').textContent==='1 of 3','a let-go goal no longer counts');
+    ok(P.$('.gstat b').textContent==='1 of 3','a let-go goal no longer counts');
     P.g(`gById('${soip}').state='active';save();render()`);
 
     /* goals check-in — whenever you want, no schedule */
@@ -1682,6 +1681,26 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
     ok(P.$('#mlayer #gti').value==='EB1','clicking a project chip opens the project, not its parent');
     P.g(`closeSheet();gSheet(US.id)`);P.click('#mlayer #gdel');P.click('#mlayer #yes');
     ok(!P.g('EB.parent'),'deleting the big goal leaves its projects standing, unlinked');
+    ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
+  }
+
+  /* ===================================================================== */
+  section('37. goals page: work first, the compass folded below');
+  {
+    const st={};let P=boot(NEW,st);
+    P.g(`gAdd('EB1','now');S.goals.heading='Work in the US';S.ui.mode='work';S.ui.workView='goals';save();render()`);
+    const order=P.g(`(()=>{const a=document.querySelector('.gtopbar'),f=document.querySelector('.gfocus'),c=document.querySelector('#gcompass');
+      return !!(a.compareDocumentPosition(f)&4)&&!!(f.compareDocumentPosition(c)&4)})()`);
+    ok(order,'order: slim bar, then In focus / Resting, then the compass');
+    ok(!P.$('#gcompass').open&&P.$('#gcompass #gmission')&&P.$('#gcompass #gheading').value==='Work in the US','the mission and direction live in the compass, folded by default');
+    ok(P.$('.gtopbar #gcheck').textContent.includes('Step back'),'step back is a small button in the top bar');
+    P.$('#gcompass').open=true;P.$('#gcompass').dispatchEvent(new P.w.Event('toggle'));
+    ok(P.g('S.ui.gCompass')===true,'opening the compass is remembered');
+    P.g('render()');ok(P.$('#gcompass').open,'… and it stays open after a redraw');
+    /* → This week right on the focus card */
+    P.g(`gAddSteps(S.goals.items[0],'Book the lawyer\\nCollect letters');S.goals.items[0].focus=true;save();render()`);
+    P.click('[data-gcweek]');
+    ok(P.g(`!!gStepTask(gStepNow(S.goals.items[0]))`)&&!P.$('[data-gcweek]')&&P.$('.gson').textContent==='on this week','→ This week on the card puts the step on the board; the card then says so');
     ok(P.errors.length===0,'no errors: '+P.errors.join(' | '));P.close();
   }
 

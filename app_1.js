@@ -2501,7 +2501,7 @@ function viewGoals(){
       ${x.why?`<div class="gcard-why">${esc(x.why)}</div>`:''}
       ${st.length?`<div class="gsteps-mini"><span class="gsbar"><i style="width:${Math.round(gStepsDone(x)/st.length*100)}%"></i></span>
         <span>${gStepsDone(x)===st.length?'all '+st.length+' steps done':'step '+(gStepsDone(x)+1)+' of '+st.length}</span></div>`:''}
-      ${nx?`<div class="gcard-next">Next → ${esc(nx)}</div>`:''}
+      ${nx?`<div class="gcard-next">Next → ${esc(nx)}${(()=>{const n=gStepNow(x),t=n&&gStepTask(n);return n&&!(t&&!t.done)?` <button class="gsgo sm" data-gcweek="${x.id}">→ This week</button>`:n?' <span class="gson">on this week</span>':''})()}</div>`:''}
       ${!st.length&&!kids.length?`<button class="gdraft" data-gdraft="${x.id}">+ Draft the steps</button>`:''}
       ${kids.length?`<div class="gkids">${kids.map(k=>`<span data-gopen="${k.id}">${esc(k.title)}${gSteps(k).length?` · ${gStepsDone(k)}/${gSteps(k).length}`:''}</span>`).join('')}</div>`:''}
       <div class="gcard-m"><span class="groute" style="color:${r?r.color:'var(--ink-3)'}">${r?'● '+r.name:'not checked yet'}</span>
@@ -2510,28 +2510,15 @@ function viewGoals(){
         ${x.trail.length?`<span class="gtrail" title="the last weeks, oldest first">${x.trail.slice(-8).map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
           return `<i style="background:${c?c.color:'var(--g300)'}" title="${tShort(e.date)}"></i>`}).join('')}</span>`:''}</div></div>`};
   return `
-  <div class="planhead"><h2>Goals</h2><span>step back · where you’re going · is the route working</span></div>
-  ${(()=>{const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
-    return `<div class="gheading gmission"><div class="seg-label" style="margin:0 0 6px">This week’s mission · week of ${tShort(isoWeek())}</div>
-      <textarea id="gmission" rows="1" placeholder="What are you going after this week — and why?">${esc(mw?mw.text:'')}</textarea>
-      ${!mw&&last?`<div class="ghint" style="margin:8px 0 0">Last week: ${esc(last.text)}</div>`:''}
-      ${past.length?`<button class="zlink" id="gmhist" style="font-size:12px;margin-top:10px">Past missions — ${past.length} · ${GMHIST?'hide':'show'}</button>
-        ${GMHIST?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}`:''}
-    </div>`})()}
-  <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
-    <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
-  <div class="gpulse">
-    <div class="gcheckwrap"><button class="gbox gcheck" id="gcheck">
-      <span class="ht-label">Goals check-in · a ritual</span>
-      <span class="gbig">${G.step?'Continue stepping back':ds===null?'Step back':'Step back again'}</span>
+  <div class="planhead"><h2>Goals</h2><span>what you’re pushing now · one step at a time</span></div>
+  <div class="gtopbar">
+    <span class="gstat"><b>${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</b> ${cur.board.length?'things on your board move a goal':'nothing on your board yet'}<span class="gbar"><i style="width:${pct}%"></i></span>${cur.done.length?`<small>last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one</small>`:''}</span>
+    <span class="grow"></span>
+    ${act.length?`<button class="zlink" id="gquick">update the routes</button>`:''}
+    <button class="gbox gcheck gcheck-sm" id="gcheck"><span class="ht-label">Goals check-in · a ritual</span><span class="gbig">${G.step?'Continue stepping back':ds===null?'Step back':'Step back again'}</span>
       <span class="ht-meta">${G.step?'step '+(G.step.at+1)+' of '+GSTEP.length:ds===null?'whenever you need it':'last one '+(ds===0?'today':ds===1?'yesterday':ds+' days ago')} · about 5 minutes</span></button>
-      ${act.length?`<button class="zlink" id="gquick">or just update the routes</button>`:''}</div>
-    <div class="gbox gmeter">
-      <span class="ht-label">On purpose, currently</span>
-      <span class="gbig">${cur.board.length?cur.moving.length+' of '+cur.board.length:'—'}</span>
-      <span class="gbar"><i style="width:${pct}%"></i></span>
-      <span class="ht-meta">${cur.board.length?'things on your board move a goal':'nothing on your board'}${cur.done.length?` · last 7 days: ${cur.moved.length} of ${cur.done.length} finished moved one`:''}</span></div>
   </div>
+
   ${(()=>{const F=gFocus(),R=act.filter(x=>!x.focus);
     return `<div class="gfocus"><div class="slotlabel" style="margin-top:0">In focus — ${F.length} of ${G_FOCUS_MAX}</div>
       <div class="ghint">You can only push a couple of things at once. These get your energy now; the rest wait without guilt.</div>
@@ -2545,6 +2532,17 @@ function viewGoals(){
             ${!gSteps(x).length&&!gKids(x).length?`<button class="gdraft sm" data-gdraft="${x.id}" title="Draft the steps">+ steps</button>`:''}
             <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')||'<div class="grnone">—</div>'}
           <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></div>`})()}
+  <details class="gcompass" id="gcompass" ${S.ui.gCompass?'open':''}><summary><span class="slotlabel" style="margin:0">Compass</span>
+    <span class="ghint" style="margin:0">this week’s mission · where all this is going · ground rules · lines that move you</span></summary>
+  ${(()=>{const mw=gMissionWeek(),past=G.missions.filter(x=>x.week!==isoWeek()).slice().reverse(),last=past[0];
+    return `<div class="gheading gmission"><div class="seg-label" style="margin:0 0 6px">This week’s mission · week of ${tShort(isoWeek())}</div>
+      <textarea id="gmission" rows="1" placeholder="What are you going after this week — and why?">${esc(mw?mw.text:'')}</textarea>
+      ${!mw&&last?`<div class="ghint" style="margin:8px 0 0">Last week: ${esc(last.text)}</div>`:''}
+      ${past.length?`<button class="zlink" id="gmhist" style="font-size:12px;margin-top:10px">Past missions — ${past.length} · ${GMHIST?'hide':'show'}</button>
+        ${GMHIST?`<div class="gmhist">${past.map(x=>`<div class="gtr"><span class="gtr-w">${tShort(x.week)}</span><span class="gtr-n" style="font-style:normal">${esc(x.text)}</span></div>`).join('')}</div>`:''}`:''}
+    </div>`})()}
+  <div class="gheading"><div class="seg-label" style="margin:0 0 6px">Where is all this going?</div>
+    <textarea id="gheading" rows="1" placeholder="One or two sentences. The direction — not the to-do list.">${esc(G.heading)}</textarea></div>
   <div class="grulesrow"><div class="grules">
     <div class="slotlabel">Keep straight — ${G.rules.length}</div>
     <div class="ghint">Ground rules for how you get there. Worth a read whenever you step back.</div>
@@ -2557,6 +2555,7 @@ function viewGoals(){
     ${G.lines.map(l=>`<div class="grule"><span class="grule-t gline" data-gledit="${l.id}">${esc(l.text)}</span>
       <button class="act del" data-gldel="${l.id}" title="Remove">×</button></div>`).join('')}
     <input class="snew" id="glineadd" placeholder="Add a line — ⏎" /></div></div>
+  </details>
   ${wins.length?`<div class="slotlabel">Wins — ${wins.length}</div>
     ${wins.map(x=>`<div class="donerow gwin" data-gopen="${x.id}"><span class="d" style="background:#1E8E3E;opacity:1"></span>
       <span class="t">${esc(x.title)}</span><span class="tag">${x.doneAt?tShort(x.doneAt):''}</span></div>`).join('')}`:''}
@@ -2830,6 +2829,9 @@ function wireGoals(){
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
   app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gopen)});   /* a project chip inside its parent's card opens the project */
+  const gc=document.getElementById('gcompass');if(gc)gc.addEventListener('toggle',()=>{S.ui.gCompass=gc.open;save();if(gc.open)resizeAll()});
+  app.querySelectorAll('[data-gcweek]').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=gById(b.dataset.gcweek),n=x&&gStepNow(x);if(!n)return;
+    gStepToWeek(x,n);render();toast('“'+n.text.slice(0,40)+'” is on this week’s board')});
   app.querySelectorAll('[data-gdraft]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gdraft);
     const f=document.querySelector('#mlayer #gsadd');if(f){if(f.scrollIntoView)f.scrollIntoView({block:'center'});f.focus()}});
   app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
