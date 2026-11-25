@@ -16,6 +16,17 @@ let pass=0,fail=0;const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m)}else{fai
    S.ui.workView='home';save();window.render()});
  const tab=async name=>{await p.locator('#work2 .tab',{hasText:name}).first().click();await p.waitForTimeout(250)};
  ok(await p.locator('#work2 .hb').count()===1,'Home: the new home');
+ /* the look switch in ⋯: classic ↔ new, on the page and inside the layer, and it survives a reload */
+ const looks=()=>p.evaluate(()=>({html:document.documentElement.dataset.look,host:document.getElementById('work2').dataset.look,
+   bg:getComputedStyle(document.body).backgroundColor,hero:getComputedStyle(document.getElementById('work2').shadowRoot.querySelector('.hb')).backgroundImage.slice(0,30)}));
+ const l1=await looks();
+ await p.locator('#work2 .more2').click();await p.locator('#work2 [data-m="look"]').click();await p.waitForTimeout(200);
+ const l2=await looks();
+ ok(l1.html==='lime'&&l2.html==='classic'&&l2.host==='classic'&&l1.bg!==l2.bg&&l1.hero!==l2.hero,'⋯ → switch to the classic look: page and Home both change ('+l1.bg+' → '+l2.bg+')');
+ await p.reload();await p.waitForTimeout(600);
+ ok((await looks()).html==='classic','… and it stays after a reload');
+ await p.locator('#work2 .more2').click();await p.locator('#work2 [data-m="look"]').click();await p.waitForTimeout(900);   /* the background fades */
+ const l3=await looks();ok(l3.html==='lime'&&l3.bg===l1.bg&&l3.hero===l1.hero,'… and back to the new look');
  /* a refresh on Backlog (or Today, Goals) comes back with the new bar, not the old header */
  await p.evaluate(()=>{S.ui.mode='work';S.ui.workView='backlog';save()});await p.reload();await p.waitForTimeout(600);
  ok(await p.evaluate(()=>document.body.hasAttribute('data-w2strip'))&&await p.locator('#app .top').isHidden(),'refresh on Backlog: new bar straight away, old header hidden');
