@@ -23,3 +23,6 @@ html:not([data-look="classic"]) .blcell{background:var(--bg)!important}html:not(
 html:not([data-look="classic"]) .qroom{border-style:solid!important;border-color:transparent!important;background:var(--sunken)!important;border-radius:999px!important}
 html:not([data-look="classic"]) .capbar i{background:var(--ink)!important}
 html:not([data-look="classic"]) body::before{background:var(--hero)!important;height:4px}
+
+/* the links on the lime mission card read in its ink, not white */
+html:not([data-look="classic"]) .gmission .zlink,html:not([data-look="classic"]) .gmission .ghint{color:var(--heroInk)!important;opacity:.7}

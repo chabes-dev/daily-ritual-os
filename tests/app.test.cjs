@@ -714,7 +714,7 @@ const TOWN_SEED=`(()=>{const D=n=>tAddPer(today(),n,'days');
       ['town dept',`S.ui.mode='personal';S.ui.personalView='town';S.ui.townView='dept';S.ui.townDept='health';render()`],
       ['north star',`S.ui.mode='personal';S.ui.personalView='north';render()`]];
     /* random ids and spacing differ between runs; what you see must not */
-    const norm=h=>h.replace(/="[a-z0-9]{8}(:[a-z0-9]+)?"/g,'="ID"').replace(/\s+/g,' ').replace(/> </g,'><');
+    const norm=h=>h.replace(/>v\d+</g,'>vN<').replace(/="[a-z0-9]{8}(:[a-z0-9]+)?"/g,'="ID"')   /* the version label is meant to change */.replace(/\s+/g,' ').replace(/> </g,'><');
     const snap=(code)=>{const st={};const P=boot(code,st);P.g(seed);const out={};
       for(const [n,js] of views){P.g(js);const a=intended(P.$('#app').cloneNode(true));a.querySelectorAll('.nav').forEach(e=>e.remove());
         out[n]=norm(a.innerHTML)}
