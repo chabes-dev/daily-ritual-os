@@ -2448,6 +2448,26 @@ const gHor=id=>G_HOR.find(h=>h.id===id)||G_HOR[0];
 function gAdd(title,horizon){
   const x={id:nid(),title,horizon:horizon||'now',why:'',by:null,next:'',route:null,trail:[],state:'active',created:Date.now(),doneAt:null};
   S.goals.items.push(x);save();return x}
+/* ---- steps and projects (both optional) ----
+   A goal can carry a drafted path of steps. Only one is "now": the first not done. "→ This week"
+   puts that one step on the board as an ordinary task linked to the goal; when the task is done the
+   step counts as done (so undo works for free) and the next one becomes "now". A goal can also be
+   part of a bigger one (EB1 and Portfolio, part of Work in the US); the big one shows its projects. */
+const gSteps=x=>Array.isArray(x.steps)?x.steps:[];
+const gStepTask=s=>s.itemId?S.items.find(i=>i.id===s.itemId)||null:null;
+const gStepDone=s=>!!s.done||!!(gStepTask(s)&&gStepTask(s).done);
+const gStepNow=x=>gSteps(x).find(s=>!gStepDone(s))||null;
+const gStepsDone=x=>gSteps(x).filter(gStepDone).length;
+/* the goal's next move: the current step if it has a path, otherwise the free-text next step */
+const gNext=x=>{const st=gSteps(x);if(!st.length)return x.next||'';const n=gStepNow(x);return n?n.text:''};
+const gKids=x=>gActive().filter(g=>g.parent===x.id);
+const gSplit=t=>t.split('\n').map(l=>l.replace(/^(\s*(?:[•\-–*·]|\d+[.)])\s*)+/,'').trim()).filter(Boolean);   /* bullets and "1." go; a leading number in the text stays */
+function gAddSteps(x,text){const L=gSplit(text);if(!x.steps)x.steps=[];L.forEach(t=>x.steps.push({id:nid(),text:t,done:false,itemId:null}));save();return L.length}
+/* one step onto this week's board, linked to its goal */
+function gStepToWeek(x,st){
+  const live=gStepTask(st);if(live&&!live.done)return live;
+  const [i]=add(st.text,'work');i.sorted=true;i.lane='important';i.goal=x.id;i.step=st.id;setBucket(i,'board');
+  st.itemId=i.id;save();return i}
 /* the work tasks that point at a goal */
 const gTasks=id=>S.items.filter(i=>i.mode==='work'&&i.goal===id);
 /* on purpose, currently: what's on the work board right now, and how much of it moves a goal;
@@ -2471,10 +2491,15 @@ function viewGoals(){
   const gone=G.items.filter(x=>x.state==='dropped');
   const pct=cur.board.length?Math.round(cur.moving.length/cur.board.length*100):0;
   const card=x=>{const r=gRoute(x),open=gTasks(x.id).filter(i=>!i.done).length,by=gByLabel(x);
+    const st=gSteps(x),nx=gNext(x),kids=gKids(x),par=x.parent&&gById(x.parent);
     return `<div class="gcard" data-gopen="${x.id}" style="--gc:${r?r.color:'var(--g300)'}">
+      ${par&&par.state==='active'?`<div class="gpart">part of ${esc(par.title)}</div>`:''}
       <div class="gcard-t">${esc(x.title)}</div>
       ${x.why?`<div class="gcard-why">${esc(x.why)}</div>`:''}
-      ${x.next?`<div class="gcard-next">Next → ${esc(x.next)}</div>`:''}
+      ${st.length?`<div class="gsteps-mini"><span class="gsbar"><i style="width:${Math.round(gStepsDone(x)/st.length*100)}%"></i></span>
+        <span>${gStepsDone(x)===st.length?'all '+st.length+' steps done':'step '+(gStepsDone(x)+1)+' of '+st.length}</span></div>`:''}
+      ${nx?`<div class="gcard-next">Next → ${esc(nx)}</div>`:''}
+      ${kids.length?`<div class="gkids">${kids.map(k=>`<span data-gopen="${k.id}">${esc(k.title)}${gSteps(k).length?` · ${gStepsDone(k)}/${gSteps(k).length}`:''}</span>`).join('')}</div>`:''}
       <div class="gcard-m"><span class="groute" style="color:${r?r.color:'var(--ink-3)'}">${r?'● '+r.name:'not checked yet'}</span>
         ${by?`<span class="${daysTo(x.by)<0?'late':''}">${by}</span>`:''}
         ${open?`<span>${open} task${open===1?'':'s'} on it</span>`:''}
@@ -2512,7 +2537,7 @@ function viewGoals(){
       <div class="ghint">Still where you’re going. Not judged while they rest.</div>
       <div class="grgrid">${G_HOR.map(h=>{const L=R.filter(x=>x.horizon===h.id);
         return `<div class="gcol"><div class="ghh">${h.name}<span>${h.hint}</span></div>
-          ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${x.next?`<small>Next → ${esc(x.next)}</small>`:''}</button>
+          ${L.map(x=>`<div class="grrow"><button class="grt" data-gopen="${x.id}">${esc(x.title)}${gSteps(x).length?` <em class="grst">${gStepsDone(x)}/${gSteps(x).length}</em>`:''}${gNext(x)?`<small>Next → ${esc(gNext(x))}</small>`:''}</button>
             <button class="btn btn-sm grf" data-gfocus="${x.id}:1">${F.length>=G_FOCUS_MAX?'Swap in':'Focus'}</button></div>`).join('')||'<div class="grnone">—</div>'}
           <textarea class="snew gadd" data-gadd="${h.id}" rows="1" placeholder="Add a goal — ⏎"></textarea></div>`}).join('')}</div></div>`})()}
   <div class="grulesrow"><div class="grules">
@@ -2552,8 +2577,20 @@ function gSheet(id){
         <div class="dates"><button class="dbtn ${!x.by?'on':''}" data-gby="">No date</button>
           ${ends.map(([l,d])=>`<button class="dbtn ${x.by===d?'on':''}" data-gby="${d}">${l}</button>`).join('')}
           <button class="dbtn ${custom?'on':''}" id="gbypick">${custom?tShort(x.by):'Pick a date'}</button></div></div>
-      <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Next step</div>
-        <input class="snew" id="gnext" placeholder="The very next move — small enough to start" value="${esc(x.next)}" style="margin:0" /></div>
+      ${(()=>{const cand=gActive().filter(g=>g.id!==x.id&&g.parent!==x.id);
+        return cand.length?`<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Part of a bigger goal? <span class="gopt">optional</span></div>
+          <div class="chips"><button class="chip ${!x.parent?'on':''}" data-gpar="" style="color:var(--ink-3)"><b></b>No</button>
+          ${cand.map(g=>`<button class="chip ${x.parent===g.id?'on':''}" data-gpar="${g.id}" style="color:var(--hot);max-width:100%"><b></b>${esc(g.title)}</button>`).join('')}</div></div>`:''})()}
+      ${(()=>{const st=gSteps(x),now=gStepNow(x);
+        return `<div class="dsec"><div class="seg-label" style="margin:0 0 10px">Steps ${st.length?`— ${gStepsDone(x)} of ${st.length} done`:''} <span class="gopt">optional · draft the whole path, take one step at a time</span></div>
+        ${st.length?`<div class="gsteps">${st.map((p,k)=>{const d=gStepDone(p),isNow=p===now,t=gStepTask(p),onb=t&&!t.done;
+          return `<div class="gstep ${d?'done':''} ${isNow?'now':''}"><button class="gsck" data-gsck="${p.id}" title="${d?'Not done yet':'Mark done'}">${d?'✓':isNow?'●':k+1}</button>
+            <span class="gstx" data-gsedit="${p.id}">${esc(p.text)}</span>
+            ${isNow?(onb?`<button class="gsgo on" data-gtopen="${t.id}">on this week ↗</button>`:`<button class="gsgo" data-gsweek="${p.id}">→ This week</button>`):''}
+            <span class="gsmv">${k>0?`<button data-gsmv="${p.id}:-1" title="Earlier">↑</button>`:''}${k<st.length-1?`<button data-gsmv="${p.id}:1" title="Later">↓</button>`:''}<button data-gsdel="${p.id}" title="Remove">×</button></span></div>`}).join('')}</div>`:''}
+        <textarea class="snew" id="gsadd" rows="${st.length?1:3}" placeholder="${st.length?'Add a step — ⏎':'Draft the path — one step per line, ⏎ to add them all.&#10;e.g. List the evidence I already have&#10;Book the call with the lawyer&#10;Collect 5 recommendation letters'}" style="margin:8px 0 0"></textarea>
+        ${!st.length?`<div class="seg-label" style="margin:16px 0 8px">or just the next step</div>
+          <input class="snew" id="gnext" placeholder="The very next move — small enough to start" value="${esc(x.next)}" style="margin:0" />`:''}</div>`})()}
       <div class="dsec"><div class="seg-label" style="margin:0 0 10px">Is the route working?</div>
         <div class="chips">${G_ROUTE.map(r=>`<button class="chip ${x.route===r.id?'on':''}" data-grt="${r.id}" style="color:${r.color}"><b></b>${r.name}</button>`).join('')}</div>
         ${x.trail.length?`<div class="gtrailrows">${x.trail.slice(-6).reverse().map(e=>{const c=G_ROUTE.find(q=>q.id===e.route);
@@ -2575,7 +2612,22 @@ function gSheet(id){
     q('#gwhy').oninput=e=>{x.why=e.target.value;save()};
     box.querySelectorAll('[data-gby]').forEach(b=>b.onclick=()=>{x.by=b.dataset.gby||null;save();draw()});
     q('#gbypick').onclick=()=>openDate(x,draw,'by');
-    q('#gnext').oninput=e=>{x.next=e.target.value;save()};
+    const gn=q('#gnext');if(gn)gn.oninput=e=>{x.next=e.target.value;save()};
+    box.querySelectorAll('[data-gpar]').forEach(b=>b.onclick=()=>{if(b.dataset.gpar)x.parent=b.dataset.gpar;else delete x.parent;save();draw()});
+    const sa=q('#gsadd');if(sa){autosize(sa);sa.oninput=()=>autosize(sa);
+      sa.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();const n=gAddSteps(x,sa.value);if(!n)return;draw();
+        toast(n===1?'step added':n+' steps added');const f=box.querySelector('#gsadd');if(f)f.focus()}}}
+    const stp=id2=>gSteps(x).find(p=>p.id===id2);
+    box.querySelectorAll('[data-gsck]').forEach(b=>b.onclick=()=>{const p=stp(b.dataset.gsck);if(!p)return;
+      const t=gStepTask(p);if(gStepDone(p)){p.done=false;if(t&&t.done){t.done=false;delete t.doneAt}}else{p.done=true;if(t&&!t.done){t.done=true;t.doneAt=Date.now();clearFromPlan('work',t.id)}}
+      save();draw()});
+    box.querySelectorAll('[data-gsweek]').forEach(b=>b.onclick=()=>{const p=stp(b.dataset.gsweek);if(!p)return;gStepToWeek(x,p);draw();toast('on this week’s board, linked to the goal')});
+    box.querySelectorAll('[data-gsmv]').forEach(b=>b.onclick=()=>{const [id2,d]=b.dataset.gsmv.split(':'),L=x.steps,k=L.findIndex(p=>p.id===id2),j=k+(+d);
+      if(k<0||j<0||j>=L.length)return;[L[k],L[j]]=[L[j],L[k]];save();draw()});
+    box.querySelectorAll('[data-gsdel]').forEach(b=>b.onclick=()=>{x.steps=gSteps(x).filter(p=>p.id!==b.dataset.gsdel);save();draw()});
+    box.querySelectorAll('[data-gsedit]').forEach(el=>el.onclick=()=>{const p=stp(el.dataset.gsedit);if(!p)return;
+      el.contentEditable='true';el.focus();const done=()=>{el.contentEditable='false';const v=el.textContent.trim();if(v&&v!==p.text){p.text=v;const t=gStepTask(p);if(t&&!t.done)t.text=v;save()}draw()};
+      el.onblur=done;el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();el.blur()}if(e.key==='Escape'){el.textContent=p.text;el.blur()}}});
     box.querySelectorAll('[data-grt]').forEach(b=>b.onclick=()=>{x.route=x.route===b.dataset.grt?null:b.dataset.grt;save();draw()});
     box.querySelectorAll('[data-gtopen]').forEach(b=>b.onclick=()=>{SHEET_CLOSE=null;closeSheet();openDetail(b.dataset.gtopen)});
     const ta=q('#gtadd');ta.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const v=ta.value.trim();if(!v)return;
@@ -2586,7 +2638,7 @@ function gSheet(id){
     const dr=q('#gdrop');if(dr)dr.onclick=()=>st('dropped','let go — it stays under “Let go”');
     const bk=q('#gback');if(bk)bk.onclick=()=>{x.state='active';x.doneAt=null;save();draw()};
     q('#gdel').onclick=()=>sheetConfirm('Delete this goal?',x.title+' — tasks linked to it stay, unlinked.','Delete',()=>{
-      S.goals.items=S.goals.items.filter(g=>g.id!==id);S.items.forEach(i=>{if(i.goal===id)delete i.goal});save();render()});
+      S.goals.items=S.goals.items.filter(g=>g.id!==id);S.goals.items.forEach(g=>{if(g.parent===id)delete g.parent});S.items.forEach(i=>{if(i.goal===id)delete i.goal});save();render()});
   };
   draw();
   SHEET_CLOSE=()=>render();
@@ -2772,7 +2824,7 @@ function wireGoals(){
   if(S.ui.mode!=='work'||S.ui.workView!=='goals')return;
   const h=document.getElementById('gheading');
   if(h){autosize(h);h.oninput=()=>{autosize(h);S.goals.heading=h.value;save()}}
-  app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=()=>gSheet(b.dataset.gopen));
+  app.querySelectorAll('[data-gopen]').forEach(b=>b.onclick=e=>{e.stopPropagation();gSheet(b.dataset.gopen)});   /* a project chip inside its parent's card opens the project */
   app.querySelectorAll('[data-gfocus]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [id,on]=b.dataset.gfocus.split(':');gSetFocus(id,on==='1')});
   const ck=document.getElementById('gcheck');if(ck)ck.onclick=startStepBack;
   const qk=document.getElementById('gquick');if(qk)qk.onclick=gCheckSheet;
